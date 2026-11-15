@@ -1,0 +1,6 @@
+^README\.md$
+^.*\.tar\.gz$
+^LICENSE\.md$
+^\.gitignore$
+^\.github$
+^man/figures$

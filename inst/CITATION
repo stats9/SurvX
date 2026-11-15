@@ -1,0 +1,11 @@
+bibentry(
+  bibtype = "Manual",
+  title   = "{SurvX}: Survival and Competing Risks Analysis with Direct Parametric Models for the Cumulative Incidence Function",
+  author  = person("Habib", "Ezzatabadipour"),
+  year    = "2026",
+  note    = paste("R package version", utils::packageVersion("SurvX")),
+  url     = "https://github.com/stats9/SurvX",
+  textVersion = paste0("Ezzatabadipour, H. (2026). SurvX: Survival and Competing Risks Analysis with Direct ",
+                       "Parametric Models for the Cumulative Incidence Function. R package version ",
+                       utils::packageVersion("SurvX"), ". https://github.com/stats9/SurvX")
+)

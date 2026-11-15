@@ -1,0 +1,20 @@
+# compiled code
+src/*.o
+src/*.so
+src/*.dll
+src/*.dylib
+# R
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+# build and check output
+*.tar.gz
+SurvX.Rcheck/
+# outputs of the validation, simulation and analysis scripts
+check_SurvX_report.csv
+SurvX_output_examples.txt
+SurvX_plots*.pdf
+direct_vs_finegray_results*.csv
+analysis_*

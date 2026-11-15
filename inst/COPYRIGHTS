@@ -1,0 +1,2 @@
+src/survcore/tests.hpp: the variance computation of gray_test() is a C++ port of the Fortran
+routine crstm of the R package cmprsk, Copyright (C) 2000 Robert Gray, distributed under GPL (>= 2).
