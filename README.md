@@ -5,6 +5,7 @@
 [![Ubuntu R-devel](https://github.com/stats9/SurvX/actions/workflows/check-ubuntu-devel.yaml/badge.svg)](https://github.com/stats9/SurvX/actions/workflows/check-ubuntu-devel.yaml)
 [![macOS](https://github.com/stats9/SurvX/actions/workflows/check-macos.yaml/badge.svg)](https://github.com/stats9/SurvX/actions/workflows/check-macos.yaml)
 [![Windows](https://github.com/stats9/SurvX/actions/workflows/check-windows.yaml/badge.svg)](https://github.com/stats9/SurvX/actions/workflows/check-windows.yaml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24255828.svg)](https://doi.org/10.5281/zenodo.24255828)
 [![License: GPL (>= 3)](https://img.shields.io/badge/license-GPL%20(%3E%3D%203)-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
