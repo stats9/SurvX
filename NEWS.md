@@ -1,3 +1,11 @@
+# SurvX 0.5.3
+
+* `cif_plot()`: when several models are compared at one covariate profile (for example
+  `type = "marginal", reference = TRUE`), the curves are labelled by the model names only; the long
+  labels "model: average over the sample" no longer overflow the legend.
+* Without grouping variables the single group is called "All patients" (was "all"); the top band of
+  the stacked layout is labelled "no event yet" (was "event-free").
+
 # SurvX 0.5.2
 
 * New simulation study in `inst/simulations/`, replacing `direct_vs_finegray.R`. It has a shared engine (`sim_core.R`) and

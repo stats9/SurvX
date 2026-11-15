@@ -371,7 +371,9 @@ cif_plot <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
   }
   if (!nrow(d)) stop("nothing to plot", call. = FALSE)
   # one key per curve: model and profile (only what distinguishes the curves)
-  nmod <- length(unique(d$model)); nprof <- length(unique(d$profile))
+  # (the Aalen-Johansen reference curve does not count as a profile, so that a comparison of models at one
+  # profile is labelled by the model names only)
+  nmod <- length(unique(d$model)); nprof <- length(unique(d$profile[d$model != "Aalen-Johansen"]))
   d$curve <- if (nmod > 1L && nprof > 1L) paste0(d$model, ": ", d$profile) else if (nmod > 1L) d$model else d$profile
   keys <- unique(d$curve)
   if (!is.null(labels)) { if (length(labels) != length(keys)) stop("labels must have ", length(keys), " elements", call. = FALSE); d$curve <- labels[match(d$curve, keys)]; keys <- labels }
@@ -534,7 +536,7 @@ cif_plot <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
   # the note goes inside the plotting region, top right, so that it never collides with the title
   if (length(over)) graphics::mtext(sprintf("sum of the risks > 1 from t = %s", format(signif(tg[over[1L]], 3L))),
                                     side = 3, line = -1.1, adj = 0.98, cex = 0.7, col = "#D55E00")
-  if (isTRUE(legend)) graphics::legend("topleft", legend = c(rev(cn), "event-free"), fill = c(rev(grDevices::adjustcolor(fills, alpha.f = 0.55)), "white"),
+  if (isTRUE(legend)) graphics::legend("topleft", legend = c(rev(cn), "no event yet"), fill = c(rev(grDevices::adjustcolor(fills, alpha.f = 0.55)), "white"),
                                        border = c(rev(fills), "grey50"), bty = "n", cex = 0.85)
 }
 

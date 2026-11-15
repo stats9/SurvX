@@ -1,7 +1,10 @@
 # SurvX
 
 <!-- badges: start -->
-[![R-CMD-check](https://github.com/stats9/SurvX/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/stats9/SurvX/actions/workflows/R-CMD-check.yaml)
+[![Ubuntu](https://github.com/stats9/SurvX/actions/workflows/check-ubuntu.yaml/badge.svg)](https://github.com/stats9/SurvX/actions/workflows/check-ubuntu.yaml)
+[![Ubuntu R-devel](https://github.com/stats9/SurvX/actions/workflows/check-ubuntu-devel.yaml/badge.svg)](https://github.com/stats9/SurvX/actions/workflows/check-ubuntu-devel.yaml)
+[![macOS](https://github.com/stats9/SurvX/actions/workflows/check-macos.yaml/badge.svg)](https://github.com/stats9/SurvX/actions/workflows/check-macos.yaml)
+[![Windows](https://github.com/stats9/SurvX/actions/workflows/check-windows.yaml/badge.svg)](https://github.com/stats9/SurvX/actions/workflows/check-windows.yaml)
 [![License: GPL (>= 3)](https://img.shields.io/badge/license-GPL%20(%3E%3D%203)-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
@@ -485,7 +488,7 @@ citation("SurvX")
 ```
 
 Ezzatabadipour, H. (2026). *SurvX: Survival and Competing Risks Analysis with Direct Parametric
-Models for the Cumulative Incidence Function*. R package version 0.5.2.
+Models for the Cumulative Incidence Function*. R package version 0.5.3.
 <https://github.com/stats9/SurvX>
 
 When you use the direct models, please also cite Jeong & Fine (2006, 2007). For the weighted and

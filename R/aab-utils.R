@@ -55,7 +55,7 @@
   y <- mf[[1L]]
   if (!inherits(y, "Event")) stop("the left-hand side of the formula must be Event(time, status)", call. = FALSE)
   y <- unclass(y)
-  g <- if (ncol(mf) > 1L) interaction(mf[-1L], drop = TRUE, sep = ", ") else factor(rep("all", nrow(mf)))
+  g <- if (ncol(mf) > 1L) interaction(mf[-1L], drop = TRUE, sep = ", ") else factor(rep("All patients", nrow(mf)))
   list(time = as.double(y[, 1L]), status = as.integer(round(y[, 2L])), group = droplevels(as.factor(g)))
 }
 

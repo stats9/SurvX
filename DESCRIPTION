@@ -1,7 +1,7 @@
 Package: SurvX
 Type: Package
 Title: Survival and Competing Risks Analysis with Direct Parametric Models for the Cumulative Incidence Function
-Version: 0.5.2
+Version: 0.5.3
 Authors@R: c(
     person("Habib", "Ezzatabadipour", email = "habibezati@outlook.com", role = c("aut", "cre")),
     person("Robert", "Gray", role = "cph",

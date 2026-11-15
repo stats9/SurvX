@@ -1,0 +1,11 @@
+{
+  "title": "SurvX: Survival and Competing Risks Analysis with Direct Parametric Models for the Cumulative Incidence Function",
+  "upload_type": "software",
+  "version": "0.5.3",
+  "creators": [
+    { "name": "Ezzatabadipour, Habib" }
+  ],
+  "description": "R package for survival and competing-risks analysis with a dependency-free C++ core: direct parametric models for the cumulative incidence function (Jeong-Fine joint PH/PO/GOR, the constrained model of Shi et al.), Fine-Gray and cause-specific Cox models, Aalen-Johansen estimation, prediction performance (Brier, IPA, time-dependent AUC, calibration) and the simulation code of the accompanying article.",
+  "license": "GPL-3.0-only",
+  "keywords": ["competing risks", "cumulative incidence function", "Fine-Gray", "direct parametric models", "survival analysis", "R"]
+}

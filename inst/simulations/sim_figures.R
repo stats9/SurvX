@@ -64,7 +64,7 @@ save_fig <- function(p, name, width_mm = 170, height_mm = 120) {
   cat("  ", name, sprintf("(%g x %g mm)\n", width_mm, height_mm))
 }
 scen_labels <- vapply(SC, `[[`, "", "label")
-scen_factor <- function(id) factor(scen_labels[id], levels = scen_labels)
+scen_factor <- function(id) factor(unname(scen_labels[id]), levels = unname(scen_labels))
 
 # ---- LaTeX table writer (booktabs) -------------------------------------------------------------------
 write_tex <- function(df, file, caption, label, align = NULL) {
@@ -97,12 +97,12 @@ hz <- do.call(rbind, lapply(SC, function(S) data.frame(scen = scen_factor(S$id),
 p1 <- ggplot(truth_df, aes(time, cif, colour = profile, linetype = cause)) +
   geom_vline(data = hz, aes(xintercept = time), colour = "grey75", linewidth = 0.3, linetype = "dotted") +
   geom_line(linewidth = 0.45) +
-  facet_wrap(~ scen, ncol = 4, scales = "free_x") +
+  facet_wrap(~ scen, ncol = 4, scales = "free_x", labeller = label_wrap_gen(width = 26)) +
   scale_colour_manual(values = okabe[1:4]) + scale_linetype_manual(values = c("solid", "22")) +
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
   labs(x = "Time (years)", y = "True cumulative incidence") + theme_bmc() +
   guides(colour = guide_legend(nrow = 1, order = 1), linetype = guide_legend(nrow = 1, order = 2))
-save_fig(p1, "Fig1_scenarios", 170, 105)
+save_fig(p1, "Fig1_scenarios", 170, 115)
 
 # =====================================================================================================
 # Figure 2: subdistribution hazard ratio of x1 over time (x2 = 0)
@@ -116,18 +116,24 @@ shr_df <- do.call(rbind, lapply(SC, function(S) {
   }
   data.frame(scen = scen_factor(S$id), time = tg / max(S$times), shr = lam(1) / lam(0))
 }))
-p2 <- ggplot(shr_df, aes(time, shr, colour = scen)) +
-  geom_hline(yintercept = 1, colour = "grey60", linewidth = 0.3) + geom_line(linewidth = 0.5) +
-  scale_y_log10() + scale_colour_manual(values = okabe) +
+# S1 and S7 both have a constant ratio exp(0.5): S7 is dashed so that S1 stays visible
+pal8 <- c("#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#000000", "#999999")
+p2 <- ggplot(shr_df, aes(time, shr, colour = scen, linetype = scen)) +
+  geom_hline(yintercept = 1, colour = "grey60", linewidth = 0.3) + geom_line(linewidth = 0.55) +
+  scale_y_log10() + scale_colour_manual(values = pal8) +
+  scale_linetype_manual(values = c("solid", "solid", "solid", "solid", "solid", "solid", "22", "solid")) +
   labs(x = "Time / last prediction horizon", y = "Subdistribution hazard ratio of x1 (log scale)") +
-  theme_bmc() + theme(legend.position = "right", legend.key.height = unit(3.2, "mm")) + guides(colour = guide_legend(ncol = 1))
+  theme_bmc() + theme(legend.position = "right", legend.key.height = unit(3.2, "mm")) + guides(colour = guide_legend(ncol = 1, override.aes = list(linewidth = 0.8)))
 save_fig(p2, "Fig2_shr_over_time", 170, 75)
 
 # =====================================================================================================
 # Results of each study
 # =====================================================================================================
+# the constrained models are shown in the additional figure only: their errors in S1-S2 (up to -275%)
+# would compress the scale of the main figure
+extra_models <- list(published = c("Constrained PH", "Constrained PO"), survx = character(0))
 main_models <- list(
-  published = c("Direct (AIC)", "Direct PH", "Direct PO", "Direct GOR", "Constrained PO", "Cause-specific Cox"),
+  published = c("Direct (AIC)", "Direct PH", "Direct PO", "Direct GOR", "Cause-specific Cox"),
   survx = c("Direct (AIC)", "Weighted (AIC)", "Constrained PO, G by AIC", "Direct spline PH", "SurvX (AIC)", "Cause-specific Cox"))
 shapes <- c(16, 17, 15, 18, 4, 1, 3, 8)
 
@@ -140,7 +146,8 @@ study_figures <- function(study) {
   utils::write.csv(summ, file.path(tab_dir, paste0("TableS1_", study, ".csv")), row.names = FALSE)
   mods <- intersect(main_models[[study]], unique(summ$model))
   mid <- do.call(rbind, lapply(split(summ, summ$scenario), function(s) { tm <- sort(unique(s$time)); s[s$time == tm[min(2L, length(tm))], ] }))
-  col_m <- stats::setNames(okabe[seq_along(mods)], mods); shp_m <- stats::setNames(shapes[seq_along(mods)], mods)
+  mods_all <- c(mods, intersect(extra_models[[study]], unique(summ$model)))
+  col_m <- stats::setNames(okabe[seq_along(mods_all)], mods_all); shp_m <- stats::setNames(shapes[seq_along(mods_all)], mods_all)
 
   # Figure 3: % reduction of the RMSE against Fine-Gray, middle horizon
   d3 <- mid[mid$model %in% mods, ]
@@ -149,22 +156,23 @@ study_figures <- function(study) {
   pd <- position_dodge(width = 0.12)
   p3 <- ggplot(d3, aes(n, reduction_pct, colour = model, shape = model)) +
     geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.35) +
-    geom_line(linewidth = 0.4, position = pd) + geom_errorbar(aes(ymin = lo, ymax = hi), width = 0, linewidth = 0.3, position = pd) +
+    (if (length(unique(d3$n)) > 1L) geom_line(linewidth = 0.4, position = pd)) + geom_errorbar(aes(ymin = lo, ymax = hi), width = 0, linewidth = 0.3, position = pd) +
     geom_point(size = 1.4, position = pd) +
-    facet_wrap(~ scen, ncol = 4) +
+    facet_wrap(~ scen, ncol = 4, labeller = label_wrap_gen(width = 26)) +
     scale_x_log10(breaks = sort(unique(d3$n))) + scale_colour_manual(values = col_m) + scale_shape_manual(values = shp_m) +
+    coord_cartesian(ylim = c(max(-60, min(d3$lo, 0, na.rm = TRUE)), min(60, max(d3$hi, 0, na.rm = TRUE)))) +
     labs(x = "Training sample size (log scale)", y = "RMSE reduction against Fine-Gray (%)") +
     theme_bmc() + guides(colour = guide_legend(nrow = 2), shape = guide_legend(nrow = 2))
-  save_fig(p3, paste0("Fig3_", study), 170, 115)
+  save_fig(p3, paste0("Fig3_", study), 170, 125)
 
   # Figure S1: every horizon
-  dS <- summ[summ$model %in% mods, ]
-  dS$model <- factor(dS$model, levels = mods); dS$scen <- scen_factor(dS$scenario)
+  dS <- summ[summ$model %in% mods_all, ]
+  dS$model <- factor(dS$model, levels = mods_all); dS$scen <- scen_factor(dS$scenario)
   dS$horizon <- ave(dS$time, dS$scenario, FUN = function(t) match(t, sort(unique(t))))
   dS$horizon <- factor(paste("horizon", dS$horizon))
   pS <- ggplot(dS, aes(n, reduction_pct, colour = model, shape = model)) +
-    geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.35) + geom_line(linewidth = 0.35) + geom_point(size = 1) +
-    facet_grid(scen ~ horizon, labeller = labeller(scen = function(x) sub(":.*", "", x))) +
+    geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.35) + (if (length(unique(dS$n)) > 1L) geom_line(linewidth = 0.35)) + geom_point(size = 1) +
+    facet_grid(scen ~ horizon, scales = "free_y", labeller = labeller(scen = function(x) sub(":.*", "", x))) +
     scale_x_log10(breaks = sort(unique(dS$n))) + scale_colour_manual(values = col_m) + scale_shape_manual(values = shp_m) +
     labs(x = "Training sample size (log scale)", y = "RMSE reduction against Fine-Gray (%)") +
     theme_bmc(7) + guides(colour = guide_legend(nrow = 2), shape = guide_legend(nrow = 2))
@@ -181,7 +189,7 @@ study_figures <- function(study) {
   p4 <- ggplot(r4, aes(ratio, model, fill = model)) +
     geom_vline(xintercept = 1, colour = "grey40", linewidth = 0.35) +
     geom_boxplot(outlier.size = 0.2, outlier.alpha = 0.3, linewidth = 0.3, width = 0.65) +
-    facet_wrap(~ scen, ncol = 2) + scale_x_log10() + scale_fill_manual(values = col_m, guide = "none") +
+    facet_wrap(~ scen, ncol = 2, labeller = label_wrap_gen(width = 40)) + scale_x_log10() + scale_fill_manual(values = col_m, guide = "none") +
     labs(x = sprintf("RMSE of the model / RMSE of Fine-Gray in each replication (n = %d, log scale)", n4), y = NULL) +
     theme_bmc() + theme(panel.grid.major.y = element_blank())
   save_fig(p4, paste0("Fig4_", study), 170, 200)
@@ -192,11 +200,11 @@ study_figures <- function(study) {
   m5 <- c(mods, "Fine-Gray"); d5$model <- factor(d5$model, levels = m5); d5$scen <- scen_factor(d5$scenario)
   p5 <- ggplot(d5, aes(time, 100 * bias, colour = model, shape = model)) +
     geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.35) + geom_line(linewidth = 0.4) + geom_point(size = 1.3) +
-    facet_wrap(~ scen, ncol = 4, scales = "free_x") +
+    facet_wrap(~ scen, ncol = 4, scales = "free_x", labeller = label_wrap_gen(width = 26)) +
     scale_colour_manual(values = c(col_m, "Fine-Gray" = "grey35")) + scale_shape_manual(values = c(shp_m, "Fine-Gray" = 5)) +
     labs(x = "Prediction horizon (years)", y = sprintf("Mean bias of the predicted risk x 100 (n = %d)", n5)) +
     theme_bmc() + guides(colour = guide_legend(nrow = 2), shape = guide_legend(nrow = 2))
-  save_fig(p5, paste0("Fig5_", study), 170, 110)
+  save_fig(p5, paste0("Fig5_", study), 170, 120)
 
   # Table 2: RMSE x 100 (MCSE) and % reduction, middle horizon, every n
   t2 <- mid[mid$model %in% c("Fine-Gray", mods), ]
@@ -227,7 +235,7 @@ if (!is.null(res$published) && !is.null(res$survx)) {
   d6$model <- factor(d6$model, levels = lv); d6$scen <- scen_factor(d6$scenario)
   p6 <- ggplot(d6, aes(n, reduction_pct, colour = model, shape = model)) +
     geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.35) + geom_line(linewidth = 0.4) + geom_point(size = 1.4) +
-    facet_wrap(~ scen, ncol = 4) + scale_x_log10(breaks = sort(unique(d6$n))) +
+    facet_wrap(~ scen, ncol = 4, labeller = label_wrap_gen(width = 26)) + scale_x_log10(breaks = sort(unique(d6$n))) +
     scale_colour_manual(values = stats::setNames(okabe[c(1, 3, 2, 6)], lv)) + scale_shape_manual(values = stats::setNames(c(16, 15, 17, 1), lv)) +
     labs(x = "Training sample size (log scale)", y = "RMSE reduction against Fine-Gray (%)") + theme_bmc()
   save_fig(p6, "Fig6_published_vs_survx", 170, 110)

@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use SurvX, please cite it as below."
+title: "SurvX: Survival and Competing Risks Analysis with Direct Parametric Models for the Cumulative Incidence Function"
+type: software
+authors:
+  - family-names: Ezzatabadipour
+    given-names: Habib
+version: 0.5.3
+date-released: 2026-11-15
+license: GPL-3.0-only
+repository-code: "https://github.com/stats9/SurvX"
+keywords:
+  - competing risks
+  - cumulative incidence function
+  - Fine-Gray
+  - direct parametric models
+  - survival analysis
+  - R
