@@ -383,7 +383,7 @@ The C++ core has a further test suite of about 400 checks. These cover:
 
 | Script | Content |
 | --- | --- |
-| `inst/simulations/direct_vs_finegray.R` | six data-generating scenarios × three sample sizes × 13 models (direct joint, weighted and constrained; Fine-Gray; cause-specific Cox). Reports bias, RMSE and coverage of predicted risks and Brier scores. Usage: `Rscript direct_vs_finegray.R <replications> <sizes>` |
+| `inst/simulations/` | simulation study in two parts, with eight scenarios × four sample sizes × 1000 replications. **Study 1** (`sim_published_models.R`) uses the published models only: direct PH/PO/GOR, the constrained model, Fine-Gray and cause-specific Cox. **Study 2** (`sim_survx_models.R`) adds the SurvX extensions. `sim_figures.R` writes figures and tables in BMC format. The design is documented in `inst/simulations/README.md` |
 | `inst/analysis/analyse_data.R` | fits and cross-validates every model on one data set, writes reports, tables and plots. Demonstration: `mgus2`. Edit its SETTINGS block for your own data |
 
 Find the installed scripts with `system.file("simulations", package = "SurvX")`.
@@ -485,7 +485,7 @@ citation("SurvX")
 ```
 
 Ezzatabadipour, H. (2026). *SurvX: Survival and Competing Risks Analysis with Direct Parametric
-Models for the Cumulative Incidence Function*. R package version 0.5.1.
+Models for the Cumulative Incidence Function*. R package version 0.5.2.
 <https://github.com/stats9/SurvX>
 
 When you use the direct models, please also cite Jeong & Fine (2006, 2007). For the weighted and

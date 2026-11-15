@@ -1,3 +1,12 @@
+# SurvX 0.5.2
+
+* New simulation study in `inst/simulations/`, replacing `direct_vs_finegray.R`. It has a shared engine (`sim_core.R`) and
+  two studies: published models only (`sim_published_models.R`) and published models plus the SurvX
+  extensions (`sim_survx_models.R`). The study covers eight scenarios, from proportional subdistribution
+  hazards to a strongly waning effect, plus two scenarios unfavourable to the direct models. It uses
+  paired Monte Carlo comparisons with Fine-Gray, parallel computing with per-replication seeds, and
+  resumable runs. BMC-format figures and LaTeX tables come from `sim_figures.R`.
+
 # SurvX 0.5.1
 
 * Long titles ran off the page because `mtext()` in the outer margin ignores `par("cex")`: the title
