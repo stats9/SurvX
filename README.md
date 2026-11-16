@@ -57,7 +57,8 @@ layer uses [S7](https://rconsortium.github.io/S7/) classes and supports the usua
 
 ```r
 # install.packages("remotes")
-remotes::install_github("stats9/SurvX")
+remotes::install_github("stats9/SurvX", build_vignettes = TRUE)
+vignette("SurvX")   # getting started: a complete competing risks analysis
 ```
 
 You need a C++17 compiler: Rtools on Windows, or the Xcode command line tools on macOS

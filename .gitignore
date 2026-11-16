@@ -18,3 +18,11 @@ SurvX_output_examples.txt
 SurvX_plots*.pdf
 direct_vs_finegray_results*.csv
 analysis_*
+# vignette outputs
+vignettes/*.html
+vignettes/*.R
+vignettes/*_files/
+inst/doc
+doc
+Meta
+benchmark_results/

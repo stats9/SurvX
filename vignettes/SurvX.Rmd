@@ -1,0 +1,183 @@
+---
+title: "Getting started with SurvX"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with SurvX}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 4.5, dpi = 96)
+```
+
+SurvX brings the standard tools of survival and competing risks analysis together with the
+**direct** parametric regression models for the cumulative incidence function (CIF) of Jeong and
+Fine (2006, 2007). This vignette walks through a typical competing risks analysis:
+
+1. describe the data with the Aalen–Johansen estimator and Gray's test;
+2. fit cause-specific Cox, Fine–Gray and direct parametric models;
+3. predict and plot the CIF of each model;
+4. compare the models by cross-validated prediction error;
+5. check that the predicted CIFs are coherent.
+
+```{r}
+library(SurvX)
+```
+
+## Data
+
+We simulate 600 patients with two competing events. About a third of them never experience
+either event (a cured fraction), so each CIF levels off below one. `x` is a binary covariate,
+`z` a continuous one. Censoring is uniform over eight years.
+
+```{r}
+set.seed(2026)
+n <- 600
+x <- rbinom(n, 1, 0.5)
+z <- round(runif(n, -1, 1), 2)
+p1 <- plogis(-0.6 + 0.8 * x + 0.5 * z)            # probability of eventually failing from cause 1
+p2 <- (1 - p1) * 0.45                             # ... from cause 2; the rest never fails
+u <- runif(n)
+cause <- ifelse(u < p1, 1L, ifelse(u < p1 + p2, 2L, 0L))
+t_event <- ifelse(cause == 1, rweibull(n, 1.3, 2), ifelse(cause == 2, rweibull(n, 1.1, 3), Inf))
+cens <- runif(n, 0, 8)
+d <- data.frame(time = pmin(t_event, cens), status = ifelse(t_event <= cens, cause, 0L), x = x, z = z)
+table(d$status)
+```
+
+Status 0 is censoring and 1, 2 are the two causes. Every model is specified with
+`Event(time, status)` on the left-hand side of a formula.
+
+## Non-parametric description
+
+The Aalen–Johansen estimator gives the CIF of each cause without covariates; with a grouping
+variable it also reports Gray's test.
+
+```{r}
+a <- aj(Event(time, status) ~ x, d)
+a
+summary(a, times = c(1, 2, 4))
+```
+
+```{r aj-plot}
+plot(a)
+```
+
+Treating the competing event as censoring (one minus Kaplan–Meier) overstates the risk; compare
+`km(Event(time, status == 1) ~ 1, d)` with the curve above.
+
+## Regression models
+
+The three approaches answer different questions.
+
+```{r}
+f_csc <- csc(Event(time, status) ~ x + z, d)   # cause-specific hazards, one Cox model per cause
+f_fg  <- fg(Event(time, status) ~ x + z, d)    # Fine-Gray: subdistribution hazard of cause 1
+f_dir <- directcif(Event(time, status) ~ x + z, d, baseline = "gompertz", link = "PH")
+f_fg
+```
+
+`directcif()` models the CIF of **all** causes jointly. With the Gompertz baseline,
+$F_k(t \mid z) = 1 - \{1 + \alpha\, e^{\beta_k^\top z} u_k(t)\}^{-1/\alpha}$ with
+$u_k(t) = \tau_k (e^{\rho_k t} - 1)/\rho_k$; `link = "PH"` is $\alpha \to 0$ (proportional
+subdistribution hazards), `"PO"` is $\alpha = 1$ (proportional odds) and `"GOR"` estimates
+$\alpha$. When $\rho_k < 0$ the CIF levels off at a plateau, the long-run probability of cause $k$.
+
+```{r}
+summary(f_dir)
+```
+
+The link can be chosen by AIC:
+
+```{r}
+f_po  <- update(f_dir, link = "PO")
+f_gor <- update(f_dir, link = "GOR")
+AIC(f_dir, f_po, f_gor)
+```
+
+`estimates()` returns the coefficient table as a data frame, with exponentiated effects and
+confidence limits:
+
+```{r}
+estimates(f_fg)
+```
+
+## Prediction
+
+`predict()` gives the CIF for new covariate values at chosen times; `se = TRUE` adds
+delta-method standard errors for the direct models.
+
+```{r}
+nd <- data.frame(x = c(0, 1), z = 0)
+predict(f_dir, nd, times = c(1, 2, 4), cause = 1)
+predict(f_fg,  nd, times = c(1, 2, 4))
+predict(f_csc, nd, times = c(1, 2, 4), cause = 1)
+```
+
+`cif_plot()` draws the predicted CIFs of one or several models with confidence bands and a
+risk table. Here the three models are compared for the two covariate profiles:
+
+```{r cif-plot, fig.height = 5}
+cif_plot(list("direct PH" = f_dir, "Fine-Gray" = f_fg, "cause-specific Cox" = f_csc),
+         newdata = nd, labels = c("x = 0", "x = 1"), cause = 1, B = 50)
+```
+
+The average predicted curve over the sample can be checked against the Aalen–Johansen estimate,
+a quick visual test of calibration-in-the-large:
+
+```{r cif-marginal}
+cif_plot(f_dir, type = "marginal", reference = TRUE)
+```
+
+The numbers behind any plot are available with `cif_data()`, and `cif_plot(..., engine = "ggplot2")`
+returns a ggplot object.
+
+## Comparing the models
+
+`compare_models()` fits a default set of direct models together with Fine–Gray and cause-specific
+Cox, and scores them by the Brier score, the index of prediction accuracy (IPA), the time-dependent
+AUC and the calibration error, both in the data (apparent) and by K-fold cross-validation.
+
+```{r compare}
+cm <- compare_models(Event(time, status) ~ x + z, d, times = c(1, 2, 4), folds = 5)
+cm
+```
+
+```{r compare-plot}
+plot(cm, measure = "ipa")
+```
+
+For a list of your own models use `cv_compare()`; the individual measures are also available as
+`brier_score()`, `auc_t()` and `calibration()`.
+
+## Coherence: do the CIFs add up?
+
+The CIFs of all causes must sum to at most one. The cause-specific Cox approach satisfies this
+by construction. Fine–Gray models fitted separately for each cause, and direct models fitted cause
+by cause, do not. The joint likelihood of the direct model ties the causes together through the
+event-free patients, but only if some patients remain event-free: when (almost) every subject
+eventually experiences one of the events, the plateaus are not identified and the fitted CIFs can
+add up to far more than one. Always check the sum before reporting predictions for several causes:
+
+```{r}
+tt <- c(1, 2, 4, 8)
+s_dir <- predict(f_dir, d, times = tt, cause = 1) + predict(f_dir, d, times = tt, cause = 2)
+f_fg2 <- fg(Event(time, status) ~ x + z, d, cause = 2)
+s_fg  <- predict(f_fg, d, times = tt) + predict(f_fg2, d, times = tt)
+c(direct = max(s_dir), "Fine-Gray" = max(s_fg))
+```
+
+For two causes in which every subject eventually fails, `directcif(..., estimation = "constrained")`
+fits the model of Shi, Cheng and Jeong (2013), whose plateaus add up to one by construction.
+
+## References
+
+- Jeong JH, Fine J (2006). Direct parametric inference for the cumulative incidence function.
+  *Journal of the Royal Statistical Society, Series C*, 55, 187–200.
+- Jeong JH, Fine JP (2007). Parametric regression on cumulative incidence function.
+  *Biostatistics*, 8, 184–196.
+- Fine JP, Gray RJ (1999). A proportional hazards model for the subdistribution of a competing
+  risk. *Journal of the American Statistical Association*, 94, 496–509.
+- Shi H, Cheng Y, Jeong JH (2013). Constrained parametric model for simultaneous inference of two
+  cumulative incidence functions. *Biometrical Journal*, 55, 82–96.

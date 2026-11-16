@@ -6,3 +6,5 @@
 ^man/figures$
 ^CITATION\.cff$
 ^\.zenodo\.json$
+^doc$
+^Meta$

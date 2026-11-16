@@ -1,3 +1,19 @@
+# SurvX 0.5.4
+
+* Test suite with testthat (`tests/testthat/`), replacing `tests/smoke.R`. It checks the estimators
+  against survival, cmprsk and riskRegression when these are installed (Kaplan-Meier, Greenwood
+  standard errors, log-rank and Gray tests, Aalen-Johansen, Cox, Fine-Gray, cause-specific Cox,
+  Brier score and time-dependent AUC), the direct models against independent R code of the published
+  likelihoods (joint, weighted and constrained), and every print, summary, predict and plot method.
+  Run it with `devtools::test()` or as part of `R CMD check`.
+* New vignette "Getting started with SurvX" (`vignette("SurvX")`): a complete competing risks
+  analysis from the Aalen-Johansen estimator to cross-validated model comparison and the coherence check.
+* New benchmark script `inst/benchmark/benchmark_SurvX.R`: accuracy (coefficients, standard
+  errors, predicted CIFs, Gray test, Brier score, AUC), stability (convergence, errors and warnings
+  with tied times, rare events and a nearly separating covariate) and speed (n = 500 to 50 000) of
+  SurvX against cmprsk, survival and riskRegression on the same simulated data.
+* The GitHub checks install pandoc, which the vignette needs.
+
 # SurvX 0.5.3
 
 * `cif_plot()`: when several models are compared at one covariate profile (for example
