@@ -25,6 +25,19 @@ test_that("fg() agrees with cmprsk::crr", {
   expect_close(predict(f, d[1:5, ], times = tp), refp)
 })
 
+test_that("fg() robust variance agrees with cmprsk::crr on tied times", {
+  skip_if_not_installed("cmprsk")
+  set.seed(11)
+  n <- 300; x1 <- rnorm(n); x2 <- rbinom(n, 1, 0.5)
+  t <- ceiling(rexp(n, exp(0.4 * x1)) * 4) / 4                    # heavy ties, censoring tied with events
+  st <- sample(0:2, n, replace = TRUE, prob = c(0.3, 0.4, 0.3))
+  d <- data.frame(time = t, status = st, x1 = x1, x2 = x2)
+  f <- fg(Event(time, status) ~ x1 + x2, d)
+  r <- cmprsk::crr(d$time, d$status, cbind(x1, x2), failcode = 1, cencode = 0, gtol = 1e-12)
+  expect_close(coef(f), r$coef, 1e-7)
+  expect_close(vcov(f), r$var, 1e-6)
+})
+
 test_that("csc() agrees with coxph and riskRegression::CSC", {
   d <- mgus_cr(); skip_if(is.null(d), "survival not installed")
   f <- csc(Event(time, status) ~ sex + age + hgb + mspike, d)

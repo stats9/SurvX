@@ -19,6 +19,15 @@
   also evaluates log{1 - F} directly, so it no longer rejects parameter values where F rounds to 1.
   Checked against the previous implementation (log-likelihood, score and information to 1e-9) for
   every baseline and link.
+* `ph_test(transform = "rank")` now ranks each event time among all observed times, censored
+  included, as `survival::cox.zph` does since version 3.0; before, the rank was taken among the event
+  times only, and the test statistic differed slightly from `cox.zph`. The other transforms were
+  already identical to `cox.zph`.
+* `fg()`: the robust (Fine-Gray) variance now treats a censoring time tied with event times exactly
+  as `cmprsk::crr` does: the censoring-correction term q(u) includes events of interest at u and
+  excludes competing events at u. Estimates were already identical; standard errors could differ by
+  up to a few per cent on data with many ties and are now identical to `crr` (checked against a
+  line-by-line port of crr's variance routine).
 * New validation suite in `validation/` (not part of the package build): accuracy against survival,
   cmprsk, riskRegression, flexsurv, flexsurvcure, survRM2 and timeROC; speed; a Monte Carlo study of
   bias, standard errors and coverage for every model; stability and invariance checks. One run

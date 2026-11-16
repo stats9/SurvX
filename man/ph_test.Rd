@@ -12,7 +12,8 @@ ph_test(fit, transform = c("km", "rank", "identity", "log"))
 \arguments{
 \item{fit}{a model fitted by \code{\link{cox}} or by \code{\link{csc}} with a Cox baseline.}
 \item{transform}{the function \eqn{g(t)} of time: \code{"km"} (default, one minus the Kaplan-Meier
-  estimate just before \eqn{t}), \code{"rank"}, \code{"identity"} or \code{"log"}.}
+  estimate just before \eqn{t}), \code{"rank"} (rank of \eqn{t} among all observed times,
+  censored included, as in \code{survival::cox.zph}), \code{"identity"} or \code{"log"}.}
 }
 \section{Plot}{
 \code{plot(x, var = NULL, cause = 1, df = 4, level = 0.95, col = "#0072B2", xlab = NULL,

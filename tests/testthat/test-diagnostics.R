@@ -35,7 +35,7 @@ test_that("ph_test() agrees with survival::cox.zph", {
   d <- sim_cont()
   f <- cox(Event(time, status) ~ x + z, d, ties = "breslow")
   r <- survival::coxph(survival::Surv(time, status) ~ x + z, d, ties = "breslow")
-  for (tr in c("identity", "log")) {
+  for (tr in c("identity", "log", "km", "rank")) {
     ours <- ph_test(f, transform = tr)@tests[[1]]$table
     ref <- survival::cox.zph(r, transform = tr, terms = FALSE)$table
     expect_close(ours$chisq, ref[, "chisq"], 1e-5)

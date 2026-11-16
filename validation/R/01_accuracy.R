@@ -193,20 +193,37 @@ acc_fg <- function(d, label, vars) {
   if (has("survival")) {
     dd <- d; dd$ev <- factor(dd$status, 0:max(dd$status))
     fd <- attempt(survival::finegray(fml("survival::Surv(time, ev)", vars), data = dd, etype = "1"))
-    ctl <- survival::coxph.control(eps = 1e-12, iter.max = 100)
+    ctl <- survival::coxph.control(eps = 1e-12, toler.chol = 1e-13, iter.max = 100)
     tied <- anyDuplicated(d$time) > 0
     tl <- if (tied) "info" else "exact"
     nt <- if (tied) "tied times: finegray and crr order censoring and events at the same time differently" else ""
     r2 <- if (failed(fd)) fd else attempt(survival::coxph(fml("survival::Surv(fgstart, fgstop, fgstatus)", vars), data = fd, weights = fgwt,
                                                           ties = "breslow", control = ctl))
-    check("Fine-Gray", "fg", "survival::finegray + coxph", label, "coefficients", attempt(coef(o)), attempt(coef(r2)), tol = tl, note = nt)
+    # log partial likelihood of the reference model (the expanded, weighted Cox model) at SurvX's
+    # estimate: if it is at least the reference's own maximum, both maximise the same function and
+    # the reference stopped early
+    ref_ll_at <- function(fd, beta, entry = FALSE) {
+      fo <- fml("survival::Surv(fgstart, fgstop, fgstatus)", vars)
+      tryCatch(survival::coxph(fo, data = fd, weights = fgwt, ties = "breslow", init = unname(beta),
+                               control = survival::coxph.control(iter.max = 0))$loglik[2], error = function(e) NA_real_)
+    }
+    judge <- function(ours, ref, fd, tl0, nt0) {
+      if (failed(ours) || failed(ref) || failed(fd)) return(list(tol = tl0, note = nt0))
+      gain <- ref_ll_at(fd, coef(ours)) - ref$loglik[2]
+      if (is.finite(gain) && gain >= -1e-9 * abs(ref$loglik[2]) && max(abs(coef(ours) - coef(ref))) > 1e-6)
+        list(tol = "info", note = sprintf("same objective: at SurvX's estimate the reference's log-likelihood is higher by %.2g, the reference stopped early", gain))
+      else list(tol = tl0, note = nt0)
+    }
+    jg <- judge(o, r2, fd, tl, nt)
+    check("Fine-Gray", "fg", "survival::finegray + coxph", label, "coefficients", attempt(coef(o)), attempt(coef(r2)), tol = jg$tol, note = jg$note)
     if (!is.null(d$entry)) {
       oe <- attempt(fg(fml("Event(time, status, entry = entry)", vars), d))
       dd$rid <- seq_len(nrow(dd))
       fe <- attempt(survival::finegray(fml("survival::Surv(entry, time, ev)", c(vars, "rid")), data = dd, etype = "1", id = rid))
       re <- if (failed(fe)) fe else attempt(survival::coxph(fml("survival::Surv(fgstart, fgstop, fgstatus)", vars), data = fe, weights = fgwt,
                                                              ties = "breslow", cluster = rid, control = ctl))
-      check("Fine-Gray", "fg (delayed entry)", "survival::finegray + coxph", label, "coefficients", attempt(coef(oe)), attempt(coef(re)), tol = tl, note = nt)
+      je <- judge(oe, re, fe, tl, nt)
+      check("Fine-Gray", "fg (delayed entry)", "survival::finegray + coxph", label, "coefficients", attempt(coef(oe)), attempt(coef(re)), tol = je$tol, note = je$note)
       check("Fine-Gray", "fg (delayed entry)", "survival::finegray + coxph", label, "robust variance", attempt(vcov(oe)), attempt(vcov(re)), tol = tl, note = nt)
     }
   }
@@ -254,6 +271,17 @@ acc_parametric <- function(d, label, vars) {
     tag <- paste0(ds[1], " ", ds[2])
     check("parametric", "parsurv", "flexsurv::flexsurvreg", label, paste(tag, "log-likelihood"),
           attempt(as.numeric(logLik(o))), attempt(r$loglik), tol = "optimiser")
+    # covariate effects and their standard errors (the covariate block of the inverse information
+    # does not depend on how the baseline parameters are parametrised)
+    cv <- if (failed(o) || failed(r)) character(0) else intersect(names(coef(o)), rownames(stats::vcov(r)))
+    g0 <- tryCatch(as.numeric(logLik(o)) - r$loglik, error = function(e) NA_real_)
+    tl_c <- if (is.finite(g0) && g0 > 1e-4) "info" else "optimiser"
+    if (length(cv)) {
+      check("parametric", "parsurv", "flexsurv::flexsurvreg", label, paste(tag, "covariate coefficients"),
+            unname(coef(o)[cv]), unname(coef(r)[cv]), tol = tl_c)
+      check("parametric", "parsurv", "flexsurv::flexsurvreg", label, paste(tag, "covariate standard errors"),
+            unname(sqrt(diag(vcov(o)))[match(cv, names(coef(o)))]), unname(sqrt(diag(stats::vcov(r))[cv])), tol = tl_c)
+    }
     rp <- attempt(t(vapply(seq_len(nrow(nd)), function(i) summary(r, newdata = nd[i, , drop = FALSE], t = tq, type = "survival", tidy = TRUE)$est,
                            numeric(length(tq)))))
     # when SurvX reached a clearly higher likelihood the reference stopped early: report, do not judge
@@ -276,6 +304,10 @@ acc_parametric <- function(d, label, vars) {
           attempt(unname(coef(o)[seq_len(1 + length(coef(r)) - 1)])), attempt(unname(coef(r))), tol = "optimiser")
     check("parametric", "parsurv", "survival::survreg", label, paste(ds[1], "AFT log-likelihood"),
           attempt(as.numeric(logLik(o))), attempt(as.numeric(logLik(r))), tol = "optimiser")
+    k <- if (failed(r)) 0L else length(coef(r))
+    if (k > 0 && !failed(o))
+      check("parametric", "parsurv", "survival::survreg", label, paste(ds[1], "AFT standard errors"),
+            unname(sqrt(diag(vcov(o)))[seq_len(k)]), unname(sqrt(diag(stats::vcov(r)))[seq_len(k)]), tol = "optimiser")
   }
   # cure models
   if (has("flexsurvcure") && !entry) {
@@ -314,7 +346,8 @@ acc_metrics <- function(d, label, vars) {
     check("prediction", "auc_t", "timeROC::timeROC (definition 2)", label, "time-dependent AUC",
           attempt(auc_t(d$time, d$status, risk, t0)),
           attempt(unname(utils::tail(timeROC::timeROC(d$time, d$status, risk, cause = 1, weighting = "marginal", times = t0, iid = FALSE)$AUC_2, 1))),
-          note = "definition 2: subjects with a competing event before t are controls (as riskRegression::Score)")
+          tol = "info",
+          note = "definition 2 (competing events before t are controls). Reported only: timeROC and riskRegression::Score differ on the same data; SurvX is judged against Score")
   invisible()
 }
 

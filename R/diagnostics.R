@@ -158,11 +158,13 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
 # ----------------------------------------------------------------------------------------------
 # test of proportional hazards
 # ----------------------------------------------------------------------------------------------
-.time_transform <- function(time, status, t_event, transform, entry = NULL) {
+.time_transform <- function(time, status, t_event, transform, entry = NULL, rows = NULL) {
   switch(transform,
          identity = t_event,
          log = log(t_event),
-         rank = rank(t_event),
+         # rank of the event time among all observed (stop) times, censored included, as in
+         # survival::cox.zph (version 3.0 and later)
+         rank = if (is.null(rows)) rank(t_event) else rank(time)[rows],
          km = {                                                # 1 - Kaplan-Meier just before each event time
            inc <- .na_increments(time, status, 1L, entry)
            S <- cumprod(1 - inc$d / inc$Y)
@@ -173,7 +175,7 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
 .zph_core <- function(time, status, X, beta, vcov, transform, w = NULL, entry = NULL, strata = NULL) {
   rs <- .cox_risksets(time, status, X, beta, w, entry, strata)
   sch <- X[rs$rows, , drop = FALSE] - rs$xbar
-  g <- .time_transform(time, status, rs$time, transform, entry)
+  g <- .time_transform(time, status, rs$time, transform, entry, rs$rows)
   g <- g - mean(g)
   p <- ncol(X); nd <- length(rs$rows)
   U <- colSums(sch * g)
@@ -189,7 +191,7 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
                     row.names = c(colnames(X), "GLOBAL"))
   scaled <- sch %*% vcov * nd + matrix(beta, nd, p, byrow = TRUE)
   colnames(scaled) <- colnames(X)
-  list(table = tab, x = g + mean(.time_transform(time, status, rs$time, transform, entry)), y = scaled, time = rs$time,
+  list(table = tab, x = g + mean(.time_transform(time, status, rs$time, transform, entry, rs$rows)), y = scaled, time = rs$time,
        transform = transform, beta = beta, vcov = vcov)
 }
 
@@ -211,7 +213,8 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
 #'
 #' @param fit a model fitted by \code{\link{cox}} or by \code{\link{csc}} with a Cox baseline.
 #' @param transform the function \eqn{g(t)} of time: \code{"km"} (default, one minus the Kaplan-Meier
-#'   estimate just before \eqn{t}), \code{"rank"}, \code{"identity"} or \code{"log"}.
+#'   estimate just before \eqn{t}), \code{"rank"} (rank of \eqn{t} among all observed times,
+#'   censored included, as in \code{survival::cox.zph}), \code{"identity"} or \code{"log"}.
 #' @return an object of class \code{"ph_test"} (a list per cause for cause-specific models) with the
 #'   table of tests; \code{print} and \code{plot(x, var, df = 4)} methods.
 #' @references Grambsch PM, Therneau TM (1994) Proportional hazards tests and diagnostics based on

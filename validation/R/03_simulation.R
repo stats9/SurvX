@@ -268,6 +268,11 @@ sim_one <- function(rep, n, seed) {
       add(val_rows("tests", paste0("ph_test (", tr, "): size, global"), "rejection rate", 0.05, rej(pt$p[pt$term == "GLOBAL"])))
       add(val_rows("tests", paste0("ph_test (", tr, "): size, x1"), "rejection rate", 0.05, rej(pt$p[pt$term == "x1"])))
     }
+    # survival::cox.zph on the same data sets: separates a property of the test from the code
+    rz <- attempt(survival::cox.zph(survival::coxph(survival::Surv(time, status) ~ x1 + x2, data = dw), transform = tr)$table)
+    if (!failed(rz))
+      add(val_rows("tests", paste0("survival::cox.zph (", tr, "), same data: size, global"), "rejection rate", NA_real_,
+                   rej(rz["GLOBAL", "p"]), judged = FALSE))
   }
   x <- rbinom(n, 1, 0.5); tn <- rweibull(n, ifelse(x == 1, 0.7, 1.6), 2); cc <- runif(n, 0, 5)
   dnph <- data.frame(time = pmin(tn, cc), status = as.integer(tn <= cc), x = x)

@@ -10,9 +10,10 @@
 // the spirit of Kawaguchi et al. (2021, R Journal 12(2), fastcmprsk). All
 // running sums are accumulated by addition only.
 //
-// Conventions (to be cross-checked against cmprsk::crr on tied data):
+// Conventions, those of cmprsk::crr on tied data:
 //  * the censoring Kaplan-Meier is evaluated left-continuously, G(t-);
-//  * ties among events of interest use the Breslow form.
+//  * ties among events of interest use the Breslow form;
+//  * ties between censoring and event times in psi_i as in crr's subroutine crrvv (see robust_meat).
 //
 // Robust variance: Fine & Gray (1999), Section 4, Sigma-hat built from
 // eta_i + psi_i, where eta_i is the weighted score residual and psi_i corrects
@@ -225,31 +226,36 @@ class FineGrayModel {
       }
     }
     // psi_i: forward scan over distinct observed times; h(u) is non-zero only at censoring times.
+    // Ties follow cmprsk::crr (subroutine crrvv): at a censoring time u, q(u) integrates over the
+    // event times s >= u (an event of interest tied with the censoring is included) and over
+    // competing subjects with X_j < u strictly (one tied with the censoring is not yet included).
     std::vector<double> A1(p, 0.0), Hc(p, 0.0), h(p);
     double A0 = 0.0, at_risk = static_cast<double>(n);
     for (std::size_t i = 0; i < n;) {
       const double t = time_[ord_[i]];
       double cens = 0.0;
+      bool interest = false;
       std::size_t j = i;
       for (; j < n && time_[ord_[j]] == t; ++j) {
-        const std::size_t k = ord_[j];
-        if (kind_[k] == 0) cens += 1.0;
-        if (kind_[k] == 2) {                   // competing subjects with X_i <= u
-          const double v = e[k] / gminus_[k];
-          const double* x = X_ + k * p;
-          A0 += v;
-          for (std::size_t a = 0; a < p; ++a) A1[a] += v * x[a];
-        }
+        const int kk = kind_[ord_[j]];
+        if (kk == 0) cens += 1.0;
+        if (kk == 1) interest = true;
       }
       if (cens > 0.0) {
-        const std::size_t jl = jle_[ord_[i]];  // number of event times <= u
+        const std::size_t jq = jle_[ord_[i]] - (interest ? 1 : 0);   // number of event times < u
         for (std::size_t a = 0; a < p; ++a) {
-          h[a] = (A1[a] * Q0[jl] - A0 * Q1[jl * p + a]) / at_risk;
+          h[a] = (A1[a] * Q0[jq] - A0 * Q1[jq * p + a]) / at_risk;
           Hc[a] += h[a] * cens / at_risk;
         }
       }
       for (std::size_t q = i; q < j; ++q) {
         const std::size_t k = ord_[q];
+        if (kind_[k] == 2) {                   // competing subjects with X_k <= u, for later censoring times
+          const double v = e[k] / gminus_[k];
+          const double* x = X_ + k * p;
+          A0 += v;
+          for (std::size_t a = 0; a < p; ++a) A1[a] += v * x[a];
+        }
         double* r = &res[k * p];
         for (std::size_t a = 0; a < p; ++a) r[a] += ((kind_[k] == 0 && cens > 0.0) ? h[a] : 0.0) - Hc[a];
       }

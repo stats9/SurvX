@@ -92,7 +92,7 @@ make_report <- function(cfg, out_dir) {
     }
     v <- log10(pmax(s$max_rel_diff, 1e-16))
     dot_pages(v, paste0(s$func, " vs ", sub("::.*", "", s$reference), ": ", s$quantity),
-              "log10 of the largest relative difference from the reference (dashed: 1e-6 and 1e-3)",
+              "log10 relative difference (dashed: 1e-6, 1e-3)",
               "Accuracy: agreement of SurvX with the reference implementation (red: FAIL or ERROR)",
               ifelse(s$fail + s$error > 0, "#D55E00", ifelse(s$tolerance == "info", "grey55", "#0072B2")), c(-16, 0), c(-6, -3))
   }
@@ -112,11 +112,11 @@ make_report <- function(cfg, out_dir) {
     js <- sim[!is.na(sim$coverage_pct), ]
     if (nrow(js)) {
       lab <- paste0(js$method, ": ", js$parameter, " (n=", js$n, ")")
-      dot_pages(js$coverage_pct, lab, "coverage of the 95% interval (%)  -  dashed: Monte Carlo band",
+      dot_pages(js$coverage_pct, lab, "coverage of 95% interval, % (dashed: MC band)",
                 "Monte Carlo: coverage of 95% intervals (red: CHECK; grey: reported, not judged)",
                 ifelse(js$verdict == "CHECK", "#D55E00", ifelse(js$judged, "#0072B2", "grey55")),
                 c(min(75, js$coverage_pct, na.rm = TRUE), 100), 95 + c(-1, 1) * js$mc_band[1])
-      dot_pages(js$se_ratio, lab, "mean model-based SE / empirical SD of the estimates  -  dashed: Monte Carlo band",
+      dot_pages(js$se_ratio, lab, "mean SE / empirical SD (dashed: MC band)",
                 "Monte Carlo: accuracy of the standard errors",
                 ifelse(!js$judged, "grey55", ifelse(abs(js$se_ratio - 1) > js$se_ratio_band, "#D55E00", "#0072B2")),
                 range(c(0.7, 1.3, js$se_ratio), na.rm = TRUE), c(1 - js$se_ratio_band[1], 1 + js$se_ratio_band[1]))
