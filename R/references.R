@@ -23,6 +23,7 @@
   hall_marron1991 = c("Hall & Marron (1991)", "Hall P, Marron JS (1991). Local minima in cross-validation functions. Journal of the Royal Statistical Society, Series B 53:245-252."),
   # Cox
   cox1972 = c("Cox (1972)", "Cox DR (1972). Regression models and life-tables. Journal of the Royal Statistical Society, Series B 34:187-220."),
+  breslow1972 = c("Breslow (1972)", "Breslow NE (1972). Discussion of the paper by D. R. Cox. Journal of the Royal Statistical Society, Series B 34:216-217."),
   breslow1974 = c("Breslow (1974)", "Breslow NE (1974). Covariance analysis of censored survival data. Biometrics 30:89-99."),
   andersen_gill1982 = c("Andersen & Gill (1982)", "Andersen PK, Gill RD (1982). Cox's regression model for counting processes: a large sample study. Annals of Statistics 10:1100-1120."),
   lin_wei1989 = c("Lin & Wei (1989)", "Lin DY, Wei LJ (1989). The robust inference for the Cox proportional hazards model. Journal of the American Statistical Association 84:1074-1078."),
@@ -94,7 +95,8 @@
   gray_test = c("gray1988"),
   rmst = c("irwin1949", "royston_parmar2013"),
   hazard_np = c("nelson1972", "aalen1978", "ramlau1983", "muller_wang1994", "patil1993", "hall_marron1991"),
-  cox = c("cox1972", "breslow1974", "efron1977", "andersen_gill1982", "lin_wei1989", "kalbfleisch2002", "wilks1938", "akaike1974"),
+  cox = c("cox1972", "breslow1974", "breslow1972", "efron1977", "andersen_gill1982", "lin_wei1989", "kalbfleisch2002",
+          "therneau1990", "grambsch1994", "therneau2000", "wilks1938", "akaike1974"),
   fg = c("fine_gray1999", "geskus2011", "white1982"),
   csc = c("prentice1978", "cox1972", "breslow1974", "efron1977", "benichou1990", "kalbfleisch2002", "andersen_gill1982", "lin_wei1989"),
   parsurv = c("kalbfleisch2002", "lawless2003", "klein2003", "casella2002", "akaike1974", "schwarz1978",
