@@ -11,8 +11,10 @@
   delta-method bands; coherent by construction. Works in `cif_plot()`, `cif_data()`, `cv_compare()`,
   `AIC()` and the new `hazard_plot()`.
 * New `hazard_np()`: Nelson-Aalen cumulative hazard and kernel-smoothed hazard (Epanechnikov kernel
-  with the boundary kernels of Mueller and Wang, bandwidth by the least-squares cross-validation of
-  Patil), by group and cause, with delayed entry.
+  with the boundary kernels of Mueller and Wang; bandwidth by the least-squares cross-validation of
+  Patil, taking the largest local minimum as recommended by Hall and Marron), by group and cause, with
+  delayed entry. The smoothed hazard is shown only where at least max(10, 10% of the initial risk
+  set) subjects are at risk.
 * New `hazard_plot()`: fitted hazard, cumulative hazard or survival of parametric models with
   confidence bands and the non-parametric estimate as reference, to check the chosen distribution.
 * `Event()` gains `entry` for delayed entry (left truncation). Functions that do not support it yet

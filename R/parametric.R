@@ -408,8 +408,17 @@ S7::method(summary, ParCSCFit) <- function(object, level = 0.95, ...) {
              lower = H * exp(-zq * se / H), upper = H * exp(zq * se / H))
 }
 
+# the smoothed hazard is shown up to the last event time with at least max(10, 10% of the initial risk
+# set) subjects at risk (the end of the cross-validation region in the C++ core); beyond it the
+# estimate rests on a handful of subjects
+.kernel_end <- function(inc) {
+  need <- max(10, 0.1 * inc$Y[1L])
+  ok <- inc$Y >= need
+  if (any(ok)) max(inc$time[ok]) else inc$time[1L]
+}
+
 .kernel_frame <- function(inc, bw, boundary, grid, level) {
-  x <- seq(0, max(inc$time), length.out = grid)
+  x <- seq(0, .kernel_end(inc), length.out = grid)
   r <- .C("SX_kernel_hazard", as.integer(length(inc$time)), as.double(inc$time), as.double(inc$d), as.double(inc$Y),
           as.double(if (is.null(bw)) -1 else bw), as.integer(boundary), as.integer(grid), as.double(x),
           h = double(grid), se = double(grid), bw = double(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
@@ -431,8 +440,10 @@ S7::method(summary, ParCSCFit) <- function(object, level = 0.95, ...) {
 #' \eqn{\hat h(t) = b^{-1}\sum_j K((t - t_j)/b)\, d_j / Y_j} with the Epanechnikov kernel and, near
 #' the ends of follow-up, the boundary kernels of Mueller and Wang (1994), so the estimate is not
 #' biased downwards at time zero. Its variance is \eqn{b^{-2}\sum_j K^2 d_j / Y_j^2}; limits on the
-#' log scale. The bandwidth \eqn{b} minimises the least-squares cross-validation criterion of
-#' Patil (1993) unless \code{bw} is given.
+#' log scale. The smoothed hazard is shown up to the last event time with at least max(10, 10\%
+#' of the initial risk set) subjects at risk. The bandwidth \eqn{b} is the largest local minimiser
+#' of the least-squares cross-validation criterion of Patil (1993) on that range (Hall and Marron
+#' 1991), unless \code{bw} is given.
 #'
 #' @param formula \code{Event(time, status) ~ 1} or \code{~ group}.
 #' @param data a data frame.
@@ -454,6 +465,7 @@ S7::method(summary, ParCSCFit) <- function(object, level = 0.95, ...) {
 #'   and bandwidths. Biometrics 50:61-76.
 #' Patil PN (1993) On the least squares cross-validation bandwidth in hazard rate estimation.
 #'   Ann Stat 21:1792-1810.
+#' Hall P, Marron JS (1991) Local minima in cross-validation functions. J R Stat Soc B 53:245-252.
 #' @examples
 #' set.seed(3)
 #' d <- data.frame(time = rweibull(300, 1.5, 3), status = 1, arm = rep(c("A", "B"), 150))
@@ -484,7 +496,7 @@ hazard_np <- function(formula, data, smooth = TRUE, bw = NULL, boundary = TRUE, 
 }
 
 S7::method(print, HazardFit) <- function(x, ...) {
-  cat("Non-parametric hazard", if (x@K > 1L) "(cause-specific)" else "", "\n")
+  cat(paste0("Non-parametric hazard", if (x@K > 1L) " (cause-specific)" else ""), "\n", sep = "")
   cat("  Nelson-Aalen cumulative hazard; kernel-smoothed hazard (Epanechnikov, boundary-corrected)\n\n")
   if (!is.null(x@bandwidth)) {
     b <- x@bandwidth

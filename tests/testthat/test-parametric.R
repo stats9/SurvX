@@ -172,6 +172,7 @@ test_that("the kernel-smoothed hazard matches the formula of Ramlau-Hansen with 
   expect_close(h$hazard, ref, 1e-10)
   auto <- hazard_np(Event(time, status) ~ 1, d)
   expect_true(auto@bandwidth$bandwidth > 0)
+  expect_true(max(auto@hazard[[1]]$time) < max(inc$time))       # stops where the risk set is small
   expect_output(print(auto), "bandwidth")
   expect_no_error(with_null_device({ plot(auto); plot(auto, type = "cumhaz") }))
 })

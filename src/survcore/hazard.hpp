@@ -7,8 +7,8 @@
 // Wang (1994, Biometrics 50:61-76, eq. 2.4) keep the estimate free of the bias of the plain kernel:
 //   K_q(z) = 12 (1+q)^-4 (z+1) [z(1-2q) + (3q^2-2q+1)/2],  -1 <= z <= q,  q = x/b,
 // mirrored at the right end. The bandwidth minimises the least-squares cross-validation criterion
-// of Patil (1993, Ann Stat 21:1792-1810):
-//   CV(b) = int h_b(x)^2 dx - 2 sum_{i != j} K_b(t_i - t_j) dN_i dN_j / (Y_i Y_j).
+// of Patil (1993, Ann Stat 21:1792-1810) on [0, tau], where the risk set is not small; of its local
+// minima the largest is taken (Hall & Marron 1991).
 #pragma once
 #include <algorithm>
 #include <cmath>
@@ -52,39 +52,61 @@ inline void kernel_hazard(int m, const double* et, const double* d, const double
   }
 }
 
-// least-squares cross-validation criterion of Patil (1993) at bandwidth b; the integral of h^2 by the
-// trapezoidal rule on 401 points over [0, R]
-inline double hazard_cv(int m, const double* et, const double* d, const double* Y, double b, bool boundary) {
+// End of the region where the hazard is estimated reliably: the last event time at which at least
+// max(10, 10% of the initial risk set) subjects are at risk. Beyond it the estimate rests on a
+// handful of subjects; the cross-validation and the default plotting range stop there, as in the
+// weighted criterion of Patil (1993), whose weight function vanishes in the right tail.
+inline double hazard_support_end(int m, const double* et, const double* Y) {
+  const double need = std::fmax(10.0, 0.1 * Y[0]);
+  double end = et[0];
+  for (int j = 0; j < m; ++j) if (Y[j] >= need) end = et[j];
+  return end;
+}
+
+// least-squares cross-validation criterion of Patil (1993) at bandwidth b on [0, tau]:
+//   CV(b) = int_0^tau h_b(x)^2 dx - 2 sum_{t_i <= tau} h_b^(-i)(t_i) dH_i,
+// where h_b^(-i) leaves out the events at t_i (the tied events at t_i other than one are kept:
+// weight (d_i - 1)/d_i). The integral by the trapezoidal rule on 401 points.
+inline double hazard_cv(int m, const double* et, const double* d, const double* Y, double b, bool boundary, double tau) {
   const double R = et[m - 1];
   const int ng = 401;
   std::vector<double> xg(ng), hg(ng);
-  for (int i = 0; i < ng; ++i) xg[i] = R * i / (ng - 1);
+  for (int i = 0; i < ng; ++i) xg[i] = tau * i / (ng - 1);
   kernel_hazard(m, et, d, Y, b, boundary, ng, xg.data(), hg.data(), nullptr);
   double integral = 0.0;
   for (int i = 1; i < ng; ++i) integral += 0.5 * (hg[i] * hg[i] + hg[i - 1] * hg[i - 1]) * (xg[i] - xg[i - 1]);
   double cross = 0.0;
-  for (int i = 0; i < m; ++i)
-    for (int j = 0; j < m; ++j) {
-      const double k = epan((et[i] - et[j]) / b) / b;
-      if (k == 0.0) continue;
-      // pairs of distinct events: d_i d_j for i != j, d_i (d_i - 1) for tied events at the same time
-      const double pairs = i == j ? d[i] * (d[i] - 1.0) : d[i] * d[j];
-      cross += k * pairs / (Y[i] * Y[j]);
+  int lo = 0;
+  for (int i = 0; i < m && et[i] <= tau; ++i) {
+    while (lo < m && et[lo] < et[i] - b) ++lo;
+    double h = 0.0;
+    for (int j = lo; j < m && et[j] <= et[i] + b; ++j) {
+      const double w = j == i ? (d[i] - 1.0) / d[i] : 1.0;
+      if (w == 0.0) continue;
+      h += w * kernel_weight(et[i], et[j], b, R, boundary) * d[j] / Y[j];
     }
+    cross += h / b * d[i] / Y[i];
+  }
   return integral - 2.0 * cross;
 }
 
-// bandwidth on a grid of 40 values, log-spaced from R/100 to R/2, minimising the CV criterion
+// Bandwidth: 40 values log-spaced from tau/50 to tau/2; the largest local minimiser of the CV
+// criterion, which is far more stable than the global minimiser (Hall & Marron 1991, J R Stat Soc B
+// 53:245-252).
 inline double hazard_bandwidth(int m, const double* et, const double* d, const double* Y, bool boundary) {
-  const double R = et[m - 1];
-  if (!(R > 0.0) || m < 3) return R > 0.0 ? R / 4.0 : 1.0;
-  double best = R / 4.0, best_cv = INFINITY;
-  for (int i = 0; i < 40; ++i) {
-    const double b = R / 100.0 * std::pow(50.0, i / 39.0);
-    const double cv = hazard_cv(m, et, d, Y, b, boundary);
-    if (std::isfinite(cv) && cv < best_cv) { best_cv = cv; best = b; }
+  const double tau = hazard_support_end(m, et, Y);
+  if (!(tau > 0.0) || m < 3) return tau > 0.0 ? tau / 4.0 : 1.0;
+  const int nb = 40;
+  std::vector<double> bs(nb), cv(nb);
+  for (int i = 0; i < nb; ++i) { bs[i] = tau / 50.0 * std::pow(25.0, i / (nb - 1.0)); cv[i] = hazard_cv(m, et, d, Y, bs[i], boundary, tau); }
+  int best = -1;
+  for (int i = 0; i < nb; ++i) {
+    if (!std::isfinite(cv[i])) continue;
+    const bool left = i == 0 || !std::isfinite(cv[i - 1]) || cv[i] <= cv[i - 1];
+    const bool right = i == nb - 1 || !std::isfinite(cv[i + 1]) || cv[i] <= cv[i + 1];
+    if (left && right) best = i;
   }
-  return best;
+  return best >= 0 ? bs[best] : tau / 4.0;
 }
 
 }  // namespace survcore

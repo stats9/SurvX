@@ -24,9 +24,11 @@ The cumulative hazard is \eqn{\hat H(t) = \sum_{t_j \le t} d_j / Y_j} with varia
 \eqn{\hat h(t) = b^{-1}\sum_j K((t - t_j)/b)\, d_j / Y_j} with the Epanechnikov kernel and, within
 one bandwidth of either end of follow-up, the boundary kernels of Mueller and Wang (1994), so the
 estimate is not biased downwards at time zero. Its variance is \eqn{b^{-2}\sum_j K^2 d_j / Y_j^2};
-limits on the log scale. The bandwidth \eqn{b} minimises the least-squares cross-validation
-criterion of Patil (1993) over 40 values from 1/100 to 1/2 of the follow-up, unless \code{bw} is
-given.
+limits on the log scale. The smoothed hazard is shown up to the last event time with at least
+max(10, 10\% of the initial risk set) subjects at risk; beyond it the estimate rests on a handful of
+subjects. The bandwidth \eqn{b} is chosen on that range from 40 values (1/50 to 1/2 of it) as the
+largest local minimiser of the least-squares cross-validation criterion of Patil (1993), which is
+far more stable than its global minimiser (Hall and Marron 1991), unless \code{bw} is given.
 }
 \value{
 an S7 object of class \code{HazardFit}: \code{x@cumhaz} and \code{x@hazard} are lists of data
@@ -48,6 +50,9 @@ Mueller HG, Wang JL (1994) Hazard rate estimation under random censoring with va
 
 Patil PN (1993) On the least squares cross-validation bandwidth in hazard rate estimation. Annals
   of Statistics 21:1792-1810.
+
+Hall P, Marron JS (1991) Local minima in cross-validation functions. Journal of the Royal
+  Statistical Society, Series B 53:245-252.
 }
 \examples{
 set.seed(3)

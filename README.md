@@ -409,7 +409,7 @@ Find the installed scripts with `system.file("simulations", package = "SurvX")`.
 | `csc()` | cause-specific Cox models combined into CIFs | Prentice et al. (1978); Benichou & Gail (1990) |
 | `parsurv()` | parametric PH and AFT models by maximum likelihood with delayed entry | Kalbfleisch & Prentice (2002); Lawless (2003); Klein & Moeschberger (2003) |
 | `csc(baseline = )` | CIF from parametric cause-specific hazards by numerical integration | Prentice et al. (1978); Hinchliffe & Lambert (2013) |
-| `hazard_np()` | Nelson-Aalen estimator; kernel-smoothed hazard with boundary kernels; cross-validated bandwidth | Nelson (1972); Aalen (1978); Ramlau-Hansen (1983); Müller & Wang (1994); Patil (1993) |
+| `hazard_np()` | Nelson-Aalen estimator; kernel-smoothed hazard with boundary kernels; cross-validated bandwidth | Nelson (1972); Aalen (1978); Ramlau-Hansen (1983); Müller & Wang (1994); Patil (1993); Hall & Marron (1991) |
 | `fg()` | proportional subdistribution hazards with IPCW risk sets; robust variance | Fine & Gray (1999) |
 | `directcif(estimation = "joint")` | direct parametric CIF models, joint likelihood | Jeong & Fine (2006, 2007) |
 | links PH / PO / GOR | generalized odds rate transformation | Dabrowska & Doksum (1988); Jeong & Fine (2007) |
@@ -447,6 +447,7 @@ Find the installed scripts with `system.file("simulations", package = "SurvX")`.
 - Greenwood, M. (1926). The natural duration of cancer. *Reports on Public Health and Medical Subjects*, 33. HMSO.
 - Hinchliffe, S. R. and Lambert, P. C. (2013). Flexible parametric modelling of cause specific hazards to estimate cumulative incidence functions. *BMC Medical Research Methodology*, 13, 13.
 - Haile, S. R., Jeong, J.-H., Chen, X. and Cheng, Y. (2016). A 3-parameter Gompertz distribution for survival data with competing risks, with an application to breast cancer data. *Journal of Applied Statistics*, 43(12), 2239–2253.
+- Hall, P. and Marron, J. S. (1991). Local minima in cross-validation functions. *Journal of the Royal Statistical Society, Series B*, 53, 245–252.
 - Harrington, D. P. and Fleming, T. R. (1982). A class of rank test procedures for censored survival data. *Biometrika*, 69, 553–566.
 - Hastie, T., Tibshirani, R. and Friedman, J. (2009). *The Elements of Statistical Learning*, 2nd ed. Springer.
 - Irwin, J. O. (1949). The standard error of an estimate of expectation of life. *Journal of Hygiene*, 47, 188–189.
