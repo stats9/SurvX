@@ -26,3 +26,5 @@ inst/doc
 doc
 Meta
 benchmark_results/
+validation_results/
+validation/validation_results/

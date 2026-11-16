@@ -8,3 +8,5 @@
 ^\.zenodo\.json$
 ^doc$
 ^Meta$
+^validation$
+^validation_results$
