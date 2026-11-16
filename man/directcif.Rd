@@ -89,7 +89,7 @@ Jeong J-H, Fine JP (2007) Parametric regression on cumulative incidence function
 Biostatistics 8:184-196.
 
 Cheng Y (2009) Modeling cumulative incidences of dementia and dementia-free death using a novel
-three-parameter logistic function. Int J Biostat 5(1):29.
+three-parameter logistic function. Int J Biostat 5(1), Article 29.
 
 Shi H, Cheng Y, Jeong J-H (2013) Constrained parametric model for simultaneous inference of two
 cumulative incidence functions. Biom J 55:82-96.

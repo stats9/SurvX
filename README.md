@@ -460,7 +460,7 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 - Breslow, N. E. (1974). Covariance analysis of censored survival data. *Biometrics*, 30, 89–99.
 - Brookmeyer, R. and Crowley, J. (1982). A confidence interval for the median survival time. *Biometrics*, 38, 29–41.
 - Casella, G. and Berger, R. L. (2002). *Statistical Inference*, 2nd ed. Duxbury.
-- Cheng, Y. (2009). Modeling cumulative incidences of dementia and dementia-free death using a novel three-parameter logistic function. *The International Journal of Biostatistics*, 5(1), Article 19. doi:10.2202/1557-4679.1183
+- Cheng, Y. (2009). Modeling cumulative incidences of dementia and dementia-free death using a novel three-parameter logistic function. *The International Journal of Biostatistics*, 5(1), Article 29.
 - Cox, D. R. (1972). Regression models and life-tables. *Journal of the Royal Statistical Society, Series B*, 34, 187–220.
 - Dabrowska, D. M. and Doksum, K. A. (1988). Estimation and testing in a two-sample generalized odds-rate model. *Journal of the American Statistical Association*, 83, 744–749. doi:10.1080/01621459.1988.10478657
 - Efron, B. (1977). The efficiency of Cox's likelihood function for censored data. *Journal of the American Statistical Association*, 72, 557–565.

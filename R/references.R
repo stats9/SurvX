@@ -37,7 +37,7 @@
   geskus2011 = c("Geskus (2011)", "Geskus RB (2011). Cause-specific cumulative incidence estimation and the Fine and Gray model under both left truncation and right censoring. Biometrics 67:39-49."),
   lambert2017 = c("Lambert et al. (2017)", "Lambert PC, Wilkes SR, Crowther MJ (2017). Flexible parametric modelling of the cause-specific cumulative incidence function. Statistics in Medicine 36:1429-1446."),
   shi2013 = c("Shi, Cheng & Jeong (2013)", "Shi H, Cheng Y, Jeong JH (2013). Constrained parametric model for simultaneous inference of two cumulative incidence functions. Biometrical Journal 55:82-96."),
-  cheng2009 = c("Cheng (2009)", "Cheng Y (2009). Modeling cumulative incidences of dementia and dementia-free death using a novel three-parameter logistic function. International Journal of Biostatistics 5(1), Article 13."),
+  cheng2009 = c("Cheng (2009)", "Cheng Y (2009). Modeling cumulative incidences of dementia and dementia-free death using a novel three-parameter logistic function. International Journal of Biostatistics 5(1), Article 29."),
   haile2016 = c("Haile et al. (2016)", "Haile SR, Jeong JH, Chen X, Cheng Y (2016). A 3-parameter Gompertz distribution for survival data with competing risks, with an application to breast cancer data. Journal of Applied Statistics 43:2239-2253."),
   larson1985 = c("Larson & Dinse (1985)", "Larson MG, Dinse GE (1985). A mixture model for the regression analysis of competing risks data. Journal of the Royal Statistical Society, Series C 34:201-211."),
   hinchliffe2013 = c("Hinchliffe & Lambert (2013)", "Hinchliffe SR, Lambert PC (2013). Flexible parametric modelling of cause-specific hazards to estimate cumulative incidence functions. BMC Medical Research Methodology 13:13."),
