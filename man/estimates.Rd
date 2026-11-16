@@ -20,6 +20,21 @@ a data frame with the columns \code{cause, term, role, scale, estimate, se, lowe
   coefficients; for direct models also \code{"baseline"}, \code{"alpha"} and \code{"conditional"}
   (on the scale used for estimation; \code{summary()} shows them on the natural scale).
 }
+\details{
+Standard errors are the square roots of the diagonal of the inverse observed information (for
+\code{fg()} the robust sandwich variance by default, for weighted direct models the sandwich with
+one score per subject). Limits are Wald intervals \eqn{\hat\beta \pm z_{1-(1-level)/2}\,SE} on
+the estimation scale, and \code{exp_*} columns are their exponentials; \code{p} is the two-sided
+Wald test of a zero coefficient.
+}
+\references{
+Wald A (1943) Tests of statistical hypotheses concerning several parameters when the number of
+  observations is large. Transactions of the American Mathematical Society 54:426-482.
+
+Casella G, Berger RL (2002) Statistical Inference, 2nd ed. Duxbury, Section 10.3.
+
+White H (1982) Maximum likelihood estimation of misspecified models. Econometrica 50:1-25.
+}
 \examples{
 set.seed(4)
 d <- data.frame(time = rexp(200), status = rbinom(200, 1, 0.7), x = rnorm(200))

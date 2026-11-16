@@ -38,6 +38,15 @@ invisibly, a data frame of the plotted curves.
 \references{
 Klein JP, Moeschberger ML (2003) Survival Analysis: Techniques for Censored and Truncated Data,
   2nd ed. Springer, Chapter 12.
+
+Nelson W (1972) Theory and applications of hazard plotting for censored failure data.
+  Technometrics 14:945-966.
+
+Ramlau-Hansen H (1983) Smoothing counting process intensities by means of kernel functions. Annals
+  of Statistics 11:453-466.
+
+Mueller HG, Wang JL (1994) Hazard rate estimation under random censoring with varying kernels and
+  bandwidths. Biometrics 50:61-76.
 }
 \examples{
 set.seed(1)

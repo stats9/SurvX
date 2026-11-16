@@ -2,16 +2,16 @@
 # The likelihoods, fits, predictions and numerical integration are in the C++ core
 # (src/survcore/parametric.hpp, src/survcore/hazard.hpp); this file only prepares data and output.
 
-.par_dists <- c(exponential = 0L, weibull = 1L, gompertz = 2L, lognormal = 3L, loglogistic = 4L, rp = 6L, pwexp = 7L)
+.par_dists <- c(exponential = 0L, weibull = 1L, gompertz = 2L, lognormal = 3L, loglogistic = 4L, gengamma = 5L, rp = 6L, pwexp = 7L)
 .par_label <- c(exponential = "exponential", weibull = "Weibull", gompertz = "Gompertz",
-                lognormal = "log-normal", loglogistic = "log-logistic", rp = "Royston-Parmar spline",
+                lognormal = "log-normal", loglogistic = "log-logistic", gengamma = "generalized gamma", rp = "Royston-Parmar spline",
                 pwexp = "piecewise exponential")
 .par_types <- c(survival = 0L, hazard = 1L, cumhaz = 2L, quantile = 3L, rmst = 4L)
 
 # the covariate scale of a distribution: PH or AFT, checked against what the distribution supports
 .par_scale <- function(dist, scale) {
   allowed <- switch(dist, exponential = c("PH", "AFT"), weibull = c("PH", "AFT"), gompertz = "PH",
-                    lognormal = "AFT", loglogistic = "AFT", rp = "PH", pwexp = "PH")
+                    lognormal = "AFT", loglogistic = "AFT", gengamma = "AFT", rp = "PH", pwexp = "PH")
   if (is.null(scale) || is.na(scale)) return(allowed[1L])
   sc <- toupper(scale)
   if (!sc %in% c("PH", "AFT")) stop("scale must be \"PH\" or \"AFT\"", call. = FALSE)
@@ -29,6 +29,7 @@
 }
 
 .shape_name <- function(dist, scale, knots = numeric(0)) {
+  if (dist == "gengamma") return(c("log(scale)", "Q"))
   if (dist == "rp") return(paste0("gamma", seq_len(length(knots) - 1L)))
   if (dist == "pwexp") {
     if (!length(knots)) return(character(0))
@@ -39,7 +40,7 @@
 }
 
 .nshape <- function(dist, knots) {
-  switch(dist, exponential = 0L, rp = length(knots) - 1L, pwexp = length(knots), 1L)
+  switch(dist, exponential = 0L, gengamma = 2L, rp = length(knots) - 1L, pwexp = length(knots), 1L)
 }
 
 # knots of the spline model (log time, boundary knots at the smallest and largest log event time, internal
@@ -132,7 +133,8 @@
 #'   entry = )} for delayed entry.
 #' @param data a data frame.
 #' @param baseline \code{"weibull"} (default), \code{"exponential"}, \code{"gompertz"},
-#'   \code{"lognormal"}, \code{"loglogistic"}, \code{"rp"} (Royston-Parmar spline) or
+#'   \code{"lognormal"}, \code{"loglogistic"}, \code{"gengamma"} (generalized gamma), \code{"rp"}
+#'   (Royston-Parmar spline) or
 #'   \code{"pwexp"} (piecewise exponential).
 #' @param df,knots spline baseline: degrees of freedom (internal knots plus one) or internal knots on
 #'   the time scale.
@@ -323,6 +325,7 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
       else list("baseline rate exp(intercept), all covariates 0", exp(r$estimate), exp(r$lower), exp(r$upper))
     } else if (m@dist == "rp") list(paste0(r$term, " (spline coefficient)"), r$estimate, r$lower, r$upper)
     else if (m@dist == "pwexp") list(sub("log rate ratio", "rate ratio against the first interval,", r$term), exp(r$estimate), exp(r$lower), exp(r$upper))
+    else if (r$term == "Q") list("Q (0: log-normal, 1: Weibull, equal to sigma: gamma)", r$estimate, r$lower, r$upper)
     else if (r$term == "shape") list("Gompertz shape a (a < 0: a fraction never fails)", r$estimate, r$lower, r$upper)
     else if (r$term == "log(shape)") list("Weibull shape (1: constant hazard, > 1 rising, < 1 falling)", exp(r$estimate), exp(r$lower), exp(r$upper))
     else list(paste0("scale sigma of log time", if (m@dist == "weibull") " (Weibull shape = 1/sigma)" else ""), exp(r$estimate), exp(r$lower), exp(r$upper))
@@ -359,6 +362,36 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
     }
     out <- c(out, paste0("  - ", sent))
   }
+  out
+}
+
+# readings of effects on the cumulative incidence scale (Fine-Gray and direct models)
+.reading_cif <- function(e, xlevels, link, what, level) {
+  e <- e[e$role == "beta" & is.finite(e$p), , drop = FALSE]
+  if (!nrow(e)) return(character(0))
+  sig <- e[e$p < 0.05, , drop = FALSE]
+  if (!nrow(sig)) return(c("  Reading:", "    No covariate effect reached p < 0.05."))
+  lab <- .pretty_terms(sig$term, xlevels)
+  is_level <- grepl(": ", lab, fixed = TRUE) & grepl(" vs ", lab, fixed = TRUE)
+  who <- paste0(ifelse(is_level, sub(": ", " (", lab, fixed = TRUE), paste0(lab, " (per one-unit increase")), ")")
+  out <- "  Reading (effects with p < 0.05):"
+  for (i in seq_len(nrow(sig))) {
+    r <- sig$exp_estimate[i]
+    rt <- .ratio_text(r, sig$exp_lower[i], sig$exp_upper[i])
+    ci <- paste0(.pct(level), " CI ", rt$ci)
+    dir <- if (r > 1) "higher" else "lower"
+    sent <- if (identical(link, "PO")) {
+      size <- if (r >= 2) paste0(rt$ratio, " times the") else paste0(round(100 * abs(r - 1)), "% ", dir)
+      paste0(who[i], ": ", size, " odds of having had ", what, " by any time (OR ", rt$ratio, ", ", ci, ").")
+    } else if (identical(link, "PH")) {
+      paste0(who[i], ": ", dir, " cumulative incidence of ", what, " at every time (sHR ", rt$ratio, ", ", ci, ").")
+    } else {
+      paste0(who[i], ": ", dir, " cumulative incidence of ", what, " at every time (exp(b) ", rt$ratio, ", ", ci,
+             "; generalized odds rate scale).")
+    }
+    out <- c(out, paste0("    - ", sent))
+  }
+  if (identical(link, "PH")) out <- c(out, "    The size of an sHR is not a ratio of risks; predict() and cif_plot() give absolute risks.")
   out
 }
 
@@ -435,12 +468,12 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
 }
 
 S7::method(print, ParCSCFit) <- function(x, level = 0.95, ...) {
-  cat(.render_parcsc(x, level, FALSE), sep = "\n")
+  cat(.render_parcsc(x, level, FALSE), "", .method_lines(.method_keys(x)), sep = "\n")
   invisible(x)
 }
 S7::method(summary, ParCSCFit) <- function(object, level = 0.95, ...) {
   FitSummary(call = object@call, coefficients = estimates(object, level = level), tables = list(),
-             text = .render_parcsc(object, level, TRUE))
+             text = c(.render_parcsc(object, level, TRUE), "", .method_lines(.method_keys(object))))
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -563,6 +596,7 @@ S7::method(print, HazardFit) <- function(x, ...) {
     cat("\n  The bandwidth is the half-width of the time window over which events are averaged;\n")
     cat("  it was chosen by cross-validation unless given. plot(x) draws the hazard over time.\n")
   }
+  cat("\n", .method_lines(.method_keys(x)), sep = "\n")
   invisible(x)
 }
 

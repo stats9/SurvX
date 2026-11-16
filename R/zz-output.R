@@ -190,17 +190,23 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
 .render_cox <- function(x, level, detail) {
   e <- estimates(x, level = level)
   lr <- 2 * (x@loglik - x@loglik_null); df <- length(x@coefficients)
+  pv <- .pval(stats::pchisq(lr, df, lower.tail = FALSE))
   out <- c(paste0("Cox proportional hazards regression (", x@ties, " method for ties)"),
-           paste0("  Subjects: ", x@n, "   events: ", x@nevent),
+           paste0("  Subjects: ", x@n, "   events: ", x@nevent, "   censored: ", x@n - x@nevent),
            "",
            "Effect of covariates: hazard ratio (HR)",
            .effect_lines(e, "HR", level, x@xlevels),
            "",
-           sprintf("Likelihood ratio test: chi-square = %.2f on %d df, p = %s", lr, df, .pval(stats::pchisq(lr, df, lower.tail = FALSE))))
+           .reading_lines(e, x@xlevels, "PH", "the event", level),
+           "",
+           sprintf("Fit: log partial likelihood %.2f | AIC %.2f | %d coefficients", x@loglik, -2 * x@loglik + 2 * df, df),
+           sprintf("     likelihood ratio test against no covariates: chi-square %.2f on %d df, p %s", lr, df,
+                   if (startsWith(pv, "<")) sub("<", "< ", pv) else paste("=", pv)))
   if (detail)
-    out <- c(out, sprintf("Log partial likelihood: %.3f (null model: %.3f); iterations: %d", x@loglik, x@loglik_null, x@iterations),
+    out <- c(out, sprintf("     log partial likelihood without covariates: %.3f; iterations: %d", x@loglik_null, x@iterations), "",
              "HR > 1: the event occurs at a higher rate; HR < 1: at a lower rate.",
-             "Numeric covariates: effect of a one-unit increase; categorical covariates: level against the reference level.")
+             "Numeric covariates: effect of a one-unit increase; categorical covariates: level against the reference level.",
+             "Check proportional hazards with ph_test(fit); absolute risks with predict(fit, newdata, times, type = \"survival\").")
   c(out, .status_lines(x@converged, x@flags))
 }
 
@@ -212,7 +218,8 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
            paste0("  Standard errors: ", if (x@variance == "robust") "robust sandwich (Fine & Gray 1999)" else "model-based"),
            "",
            "Effect of covariates: subdistribution hazard ratio (sHR)",
-           .effect_lines(e, "sHR", level, x@xlevels))
+           .effect_lines(e, "sHR", level, x@xlevels), "",
+           sub("^  ", "", .reading_cif(e, x@xlevels, "PH", paste("cause", x@cause), level)))
   if (detail)
     out <- c(out, "",
              sprintf("Log pseudo-likelihood: %.3f (null model: %.3f); iterations: %d", x@loglik, x@loglik_null, x@iterations),
@@ -228,8 +235,14 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
            paste0("  Subjects: ", x@n, "   censored: ", sum(x@status == 0L)))
   for (k in seq_len(x@K)) {
     m <- x@models[[k]]
+    ek <- e[e$cause == k, , drop = FALSE]
     out <- c(out, "", paste0("Cause ", k, " (", m$nevent, " events): cause-specific hazard ratio (csHR)"),
-             .effect_lines(e[e$cause == k, , drop = FALSE], "csHR", level, x@xlevels),
+             .effect_lines(ek, "csHR", level, x@xlevels),
+             .reading_lines(ek, x@xlevels, "PH", paste0("cause ", k, " among subjects still event-free"), level, "csHR"))
+    pk <- length(m$coefficients); lr <- 2 * (m$loglik - m$loglik_null)
+    pv <- .pval(stats::pchisq(lr, pk, lower.tail = FALSE))
+    out <- c(out, sprintf("Fit: log partial likelihood %.2f | AIC %.2f | LR test %.2f on %d df, p %s", m$loglik,
+                          -2 * m$loglik + 2 * pk, lr, pk, if (startsWith(pv, "<")) sub("<", "< ", pv) else paste("=", pv)),
              .status_lines(m$converged, m$flags))
   }
   if (detail)
@@ -237,8 +250,9 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
              "csHR: effect on the rate of one cause among subjects who are still event-free.",
              "A covariate can raise the rate of a cause and still lower its cumulative incidence,",
              "because the incidence also depends on the other causes; use predict() for absolute risks.",
-             "Numeric covariates: effect of a one-unit increase; categorical covariates: level against the reference level.")
-  out
+             "Numeric covariates: effect of a one-unit increase; categorical covariates: level against the reference level.",
+             "Check proportional hazards with ph_test(fit).")
+  c(out, "", "Check: the cumulative incidences of all causes and the event-free probability add up to one (coherent by construction).")
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -316,7 +330,8 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
     b <- if (x@estimation == "joint") x@baseline[k] else x@baseline[1L]
     out <- c(out, "", paste0("Cause ", k, ": baseline ", .base_label[[b]], ", link ", .link_label(link)))
     eb <- ek[ek$role == "beta", , drop = FALSE]
-    if (nrow(eb)) out <- c(out, paste0("  Effect of covariates: ", en[2L]), .effect_lines(eb, en[1L], level, x@xlevels))
+    if (nrow(eb)) out <- c(out, paste0("  Effect of covariates: ", en[2L]), .effect_lines(eb, en[1L], level, x@xlevels),
+                           .reading_cif(eb, x@xlevels, link, paste("cause", k), level))
     ea <- ek[ek$role == "alpha", , drop = FALSE]
     if (nrow(ea))
       out <- c(out, sprintf("  alpha = %s (%s CI %s); alpha = 0 is the PH model, alpha = 1 the PO model",
@@ -350,8 +365,9 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
   if (ncol(x@X)) out <- c(out, paste0("Typical covariate values: ", .profile(x)$label, " (mean of numeric, most frequent level of categorical covariates)"))
   if (x@estimation == "weighted")
     out <- c(out, sprintf("Weighted log pseudo-likelihood: %.3f on %d parameters (compare weighted fits only)", x@loglik, length(x@coefficients)))
-  else out <- c(out, sprintf("Log-likelihood: %.3f on %d parameters; AIC: %.2f", x@loglik, length(x@coefficients),
-                             -2 * x@loglik + 2 * length(x@coefficients)))
+  else out <- c(out, sprintf("Fit: log-likelihood %.2f | AIC %.2f | BIC %.2f | %d parameters", x@loglik,
+                             -2 * x@loglik + 2 * length(x@coefficients), -2 * x@loglik + log(x@n) * length(x@coefficients),
+                             length(x@coefficients)))
   d <- x@diagnostics
   if (isTRUE(d$n_exceed_range > 0))
     out <- c(out, sprintf("NOTE: for %d of %d subjects the fitted risks of all causes add up to more than 1 within follow-up",
@@ -375,12 +391,13 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
 # print and summary of the regression models
 # ----------------------------------------------------------------------------------------------
 .render <- function(x, level, detail) {
-  if (S7::S7_inherits(x, DirectCIFFit)) return(.render_direct(x, level, detail))
-  if (S7::S7_inherits(x, ParSurvFit)) return(list(text = .render_par(x, level, detail), tables = list()))
-  text <- if (S7::S7_inherits(x, CoxFit)) .render_cox(x, level, detail)
-          else if (S7::S7_inherits(x, FineGrayFit)) .render_fg(x, level, detail)
-          else .render_csc(x, level, detail)
-  list(text = text, tables = list())
+  r <- if (S7::S7_inherits(x, DirectCIFFit)) .render_direct(x, level, detail)
+       else if (S7::S7_inherits(x, ParSurvFit)) list(text = .render_par(x, level, detail), tables = list())
+       else list(text = if (S7::S7_inherits(x, CoxFit)) .render_cox(x, level, detail)
+                        else if (S7::S7_inherits(x, FineGrayFit)) .render_fg(x, level, detail)
+                        else .render_csc(x, level, detail), tables = list())
+  r$text <- c(r$text, "", .method_lines(.method_keys(x)))
+  r
 }
 
 .print_fit <- function(x, level = 0.95, ...) {
@@ -428,7 +445,7 @@ S7::method(print, KMFit) <- function(x, ...) {
   out <- c("Kaplan-Meier estimate of the survival function", .table_lines(df))
   if (!is.null(x@test))
     out <- c(out, sprintf("Log-rank test: chi-square = %.2f on %d df, p = %s", x@test$statistic, x@test$df, .pval(x@test$p.value)))
-  cat(out, sep = "\n")
+  cat(out, "", .method_lines(.method_keys(x)), sep = "\n")
   invisible(x)
 }
 
@@ -471,7 +488,7 @@ S7::method(print, AJFit) <- function(x, ...) {
     names(tt) <- c("cause", "chi-square", "df", "p")
     out <- c(out, "Gray's test for equal cumulative incidence across groups", .table_lines(tt))
   }
-  out <- c(out, "Use summary(x, times = ...) for the cumulative incidence at chosen times.")
+  out <- c(out, "Use summary(x, times = ...) for the cumulative incidence at chosen times.", "", .method_lines(.method_keys(x)))
   cat(out, sep = "\n")
   invisible(x)
 }
@@ -545,7 +562,8 @@ S7::method(print, ModelComparison) <- function(x, ...) {
            "AUC: probability that a subject with the event by that time has the higher predicted risk.",
            "Calibration error: mean absolute difference between predicted and observed risk in risk groups.",
            "AIC is shown for models fitted by a full likelihood of the data: joint and constrained direct models and",
-           "parametric cause-specific hazards; it can be compared among these models only.")
+           "parametric cause-specific hazards; it can be compared among these models only.", "",
+           .method_lines(.method_keys(x)))
   cat(out, sep = "\n")
   invisible(x)
 }

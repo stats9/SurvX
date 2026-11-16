@@ -52,6 +52,13 @@ int sc_par_fit(int n, int p, int dist, int aft, int nk, const double* knots, con
   ParData dat; dat.n = n; dat.entry = entry; dat.time = time; dat.status = status; dat.X = X;
   ParModel m{sp, dat};
   std::vector<double> start = init ? std::vector<double>(init, init + sp.npar()) : par_start(sp, dat);
+  if (!init && sp.dist == PD_GENGAMMA) {
+    // start from the Weibull AFT fit, which is the generalized gamma with Q = 1
+    ParSpec w = sp; w.dist = PD_WEIBULL; w.knots.clear();
+    ParModel mw{w, dat};
+    FitResult rw = par_newton(mw, par_start(w, dat), max_iter, tol);
+    if (std::isfinite(rw.ll)) { start.assign(rw.beta.begin(), rw.beta.end()); start.push_back(1.0); }
+  }
   FitResult r = par_newton(m, start, max_iter, tol);
   const std::size_t P = sp.npar();
   for (std::size_t j = 0; j < P; ++j) theta[j] = r.beta[j];

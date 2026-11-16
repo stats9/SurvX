@@ -157,6 +157,28 @@ hazard_plot(f_wei)
 
 For a single event, `parsurv()` fits the same distributions as proportional hazards or
 accelerated failure time models, with delayed entry if needed (`Event(time, status, entry = )`).
+The generalized gamma (`baseline = "gengamma"`) contains the Weibull (Q = 1) and log-normal
+(Q = 0) distributions, so its estimate of Q is a guide to the choice between them.
+
+## Checking the models
+
+`dist_plot()` shows the classic linearising plots of the non-parametric cumulative hazard: the
+distribution whose panel gives straight lines is a good candidate. Given a fitted model it draws the
+Cox-Snell residual plot instead, which follows the diagonal when the model fits.
+
+```{r dist-plot, fig.height = 6}
+dist_plot(Event(time, status) ~ x, d, cause = 1)
+```
+
+`ph_test()` tests proportional hazards for every covariate of a Cox or cause-specific Cox model
+(the score test of Grambsch and Therneau, as in `survival::cox.zph`); `plot()` shows how the effect
+changes over time. `residuals()` gives martingale, deviance, Cox-Snell and Schoenfeld residuals.
+
+```{r ph-test, fig.height = 3.5}
+pt <- ph_test(f_csc)
+pt
+plot(pt, cause = 1)
+```
 
 ## Comparing the models
 

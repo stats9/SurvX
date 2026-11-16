@@ -1,3 +1,36 @@
+# SurvX 0.7.0
+
+* `parsurv()` and `csc(baseline = )` gain `"gengamma"`, the generalized gamma distribution
+  (Prentice 1974; the parametrisation of `flexsurv`), AFT, with delayed entry. It nests the
+  log-normal (Q = 0), Weibull (Q = 1) and gamma (Q = sigma) distributions, so the estimate of Q
+  helps to choose among them. The log density is computed without cancellation near Q = 0 and the
+  survivor function switches from the incomplete gamma function to numerical integration of the
+  density for |Q| < 0.01, so the likelihood is smooth across the log-normal limit. Validated against
+  independent high-precision code and, in the tests, `flexsurv::flexsurvreg(dist = "gengamma")`.
+* New `residuals()` methods for `cox()`, `csc()` and `parsurv()` fits: martingale, deviance and
+  Cox-Snell residuals, and for Cox models Schoenfeld and scaled Schoenfeld residuals. Agree with
+  `survival` (Breslow).
+* New `ph_test()`: the score test of proportional hazards of Grambsch and Therneau (1994) for every
+  covariate and globally, in the exact form of `survival::cox.zph` (>= 3.0), with time scales
+  `"km"`, `"rank"`, `"identity"` and `"log"`; works for every cause of a cause-specific Cox model.
+  The print gives a Reading line; `plot()` shows the scaled Schoenfeld residuals with a natural
+  spline smooth and its confidence band (estimate of beta(t)).
+* New `dist_plot()`: linearising plots of the Nelson-Aalen estimate for the exponential, Weibull,
+  log-normal and log-logistic distributions, by group; with a fitted model, the Cox-Snell residual
+  plot.
+* Printed output of `cox()`, `fg()`, `csc()` and `directcif()` now has the same layout as the
+  parametric models: Reading lines that state each effect with p < 0.05 in words on its own scale
+  (rate for HR and csHR, cumulative incidence for sHR, odds of having had the event for OR), and a
+  Fit line (log-likelihood, AIC, and for Cox models the likelihood ratio test against no
+  covariates).
+* Every result names its scientific sources. The printed output of every model, estimate, test and
+  comparison ends with a "Methods:" line (for example "Cox (1972); Efron (1977); Breslow (1974)"),
+  which depends on the options actually used (ties, estimation method, baseline, delayed entry).
+  The new `sx_references(fit)` prints the full references behind a fitted object, and
+  `sx_references("brier_score")` those of a function. Every help page has a References section;
+  `predict()`, `estimates()` and the generic methods (AIC, BIC, confint) gained theirs.
+* `splines` (base R) is now imported, for the smooth of `plot(ph_test())`.
+
 # SurvX 0.6.1
 
 * `parsurv()` and `csc(baseline = )` gain two baselines: `"rp"`, the flexible parametric model of
@@ -12,9 +45,7 @@
   direct models (all are full likelihoods of the same data).
 * `cv_compare()` reports log-likelihood and AIC for parametric fits; internally `compare_models()` and
   `cv_compare()` share one cross-validation routine.
-* The generalized gamma distribution is postponed: it needs an incomplete gamma function that is
-  accurate for very large shape parameters (near the log-normal limit), which the C++ core does not
-  have yet.
+* (The generalized gamma distribution followed in 0.7.0.)
 
 # SurvX 0.6.0
 

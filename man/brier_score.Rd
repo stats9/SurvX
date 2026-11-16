@@ -28,8 +28,19 @@ calibration(time, status, risk, t, cause = 1L, groups = 10L)
   group; its attribute \code{"error"} is the size-weighted mean absolute difference.
 }
 \references{
-Graf E et al. (1999) Stat Med 18:2529-2545.
-  Gerds TA, Schumacher M (2006) Biom J 48:1029-1040.
-  Kattan MW, Gerds TA (2018) Diagn Progn Res 2:7.
-  Blanche P, Dartigues J-F, Jacqmin-Gadda H (2013) Stat Med 32:5381-5397.
+Graf E, Schmoor C, Sauerbrei W, Schumacher M (1999) Assessment and comparison of prognostic
+  classification schemes for survival data. Statistics in Medicine 18:2529-2545.
+
+Gerds TA, Schumacher M (2006) Consistent estimation of the expected Brier score in general survival
+  models with right-censored event times. Biometrical Journal 48:1029-1040.
+
+Kattan MW, Gerds TA (2018) The index of prediction accuracy: an intuitive measure useful for
+  evaluating risk prediction models. Diagnostic and Prognostic Research 2:7.
+
+Blanche P, Dartigues J-F, Jacqmin-Gadda H (2013) Estimating and comparing time-dependent areas
+  under receiver operating characteristic curves for censored event times with competing risks.
+  Statistics in Medicine 32:5381-5397.
+
+Gerds TA, Andersen PK, Kattan MW (2014) Calibration plots for risk prediction models in the
+  presence of competing risks. Statistics in Medicine 33:3191-3203.
 }

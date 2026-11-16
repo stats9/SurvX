@@ -123,7 +123,11 @@ patient, which keeps the plateau parameters interpretable and stabilises the fit
 | `gray_test(time, status, group, cause, strata, rho)` | Gray's K-sample test for equal cumulative incidence; stratified |
 | `cox(formula, data, ties, weights)` | Cox proportional hazards model: Efron or Breslow ties, case weights, baseline hazard, predicted survival |
 | `csc(formula, data, ties, product_limit, baseline)` | cause-specific hazard models for all causes and the cumulative incidence they imply: Cox (default) or parametric (`baseline = "weibull"`, ...) |
-| `parsurv(formula, data, baseline, scale)` | parametric survival regression: exponential, Weibull, Gompertz, log-normal, log-logistic, piecewise exponential, Royston-Parmar spline; PH or AFT; delayed entry |
+| `parsurv(formula, data, baseline, scale)` | parametric survival regression: exponential, Weibull, Gompertz, log-normal, log-logistic, generalized gamma, piecewise exponential, Royston-Parmar spline; PH or AFT; delayed entry |
+| `residuals(fit, type)` | martingale, deviance, Cox-Snell and (scaled) Schoenfeld residuals of Cox, cause-specific and parametric models |
+| `ph_test(fit, transform)` | test of proportional hazards per covariate and global, for Cox and cause-specific Cox models; plot of beta(t) |
+| `sx_references(x)` | full references of the methods behind a fitted object or a function; every printed result ends with a short "Methods:" line |
+| `dist_plot(x, data)` | linearising plots for choosing a distribution; Cox-Snell residual plot of a fitted model |
 | `hazard_np(formula, data, smooth, bw)` | Nelson-Aalen cumulative hazard and kernel-smoothed hazard by group and cause |
 | `hazard_plot(fit, type)` | fitted hazard, cumulative hazard or survival of parametric models, with the non-parametric estimate as reference |
 | `fg(formula, data, cause, variance)` | Fine-Gray proportional subdistribution hazards model: robust or model-based variance, predicted CIF |
@@ -398,6 +402,21 @@ Find the installed scripts with `system.file("simulations", package = "SurvX")`.
 
 ## Methods and references by function
 
+SurvX is meant to be a reference implementation, not only a calculator: every estimate, test and
+plot follows a published method, and the package tells you which. Each printed result ends with a
+**Methods:** line naming the sources of what was computed, adapted to the options you chose, and
+`sx_references(fit)` prints the full references so they can be cited and checked:
+
+```r
+fit <- cox(Event(time, status) ~ x, d)
+fit                   # ... Methods: Cox (1972); Efron (1977); Breslow (1974). Full references: sx_references(fit).
+sx_references(fit)    # full bibliographic references
+sx_references("brier_score")
+```
+
+Where SurvX goes beyond the literature (new baselines, estimation variants), this is stated in
+[Methods original to SurvX](#methods-original-to-survx).
+
 | Function / feature | Method | References |
 | --- | --- | --- |
 | `km()` | product-limit estimator; Greenwood variance; log-scale intervals; median and its limits where the confidence limits of the curve cross 0.5, as in `survival::survfit` | Kaplan & Meier (1958); Greenwood (1926); Brookmeyer & Crowley (1982) |
@@ -407,7 +426,11 @@ Find the installed scripts with `system.file("simulations", package = "SurvX")`.
 | `gray_test()` | K-sample test for CIFs; variance ported from the Fortran routine `crstm` of cmprsk | Gray (1988) |
 | `cox()` | partial likelihood; Efron and Breslow ties; Breslow baseline hazard | Cox (1972); Breslow (1974); Efron (1977) |
 | `csc()` | cause-specific Cox models combined into CIFs | Prentice et al. (1978); Benichou & Gail (1990) |
-| `parsurv()` | parametric PH and AFT models by maximum likelihood with delayed entry; spline and piecewise exponential baselines | Kalbfleisch & Prentice (2002); Lawless (2003); Klein & Moeschberger (2003); Royston & Parmar (2002); Friedman (1982) |
+| `parsurv()` | parametric PH and AFT models by maximum likelihood with delayed entry; spline, piecewise exponential and generalized gamma baselines | Kalbfleisch & Prentice (2002); Lawless (2003); Klein & Moeschberger (2003); Royston & Parmar (2002); Friedman (1982); Prentice (1974); Cox et al. (2007) |
+| `residuals()` | martingale, deviance, Cox-Snell, Schoenfeld and scaled Schoenfeld residuals | Cox & Snell (1968); Schoenfeld (1982); Therneau, Grambsch & Fleming (1990) |
+| `ph_test()` | score test of proportional hazards with a time function g(t), exact form of `survival::cox.zph` | Grambsch & Therneau (1994); Therneau & Grambsch (2000) |
+| `sx_references()` | full references of the methods behind any result | — |
+| `dist_plot()` | linearising (probability) plots of the Nelson-Aalen estimate; Cox-Snell residual plot | Klein & Moeschberger (2003), Ch. 12; Collett (2015), Ch. 5 |
 | `csc(baseline = )` | CIF from parametric cause-specific hazards by numerical integration | Prentice et al. (1978); Hinchliffe & Lambert (2013) |
 | `hazard_np()` | Nelson-Aalen estimator; kernel-smoothed hazard with boundary kernels; cross-validated bandwidth | Nelson (1972); Aalen (1978); Ramlau-Hansen (1983); Müller & Wang (1994); Patil (1993); Hall & Marron (1991) |
 | `fg()` | proportional subdistribution hazards with IPCW risk sets; robust variance | Fine & Gray (1999) |

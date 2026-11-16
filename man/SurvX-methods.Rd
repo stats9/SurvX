@@ -41,6 +41,24 @@ of R work as for \code{lm()} or \code{survival::coxph()}.
     wrapped to the width of the device so that they never run off the page.}
 }
 }
+\references{
+Akaike H (1974) A new look at the statistical model identification. IEEE Transactions on Automatic
+  Control 19:716-723 (\code{AIC}).
+
+Schwarz G (1978) Estimating the dimension of a model. Annals of Statistics 6:461-464 (\code{BIC}).
+
+Wilks SS (1938) The large-sample distribution of the likelihood ratio for testing composite
+  hypotheses. Annals of Mathematical Statistics 9:60-62 (likelihood ratio tests).
+
+Casella G, Berger RL (2002) Statistical Inference, 2nd ed. Duxbury, Section 5.5 (delta method).
+
+Efron B, Tibshirani RJ (1993) An Introduction to the Bootstrap. Chapman and Hall (bootstrap bands
+  of \code{plot()} for Fine-Gray and cause-specific Cox models).
+
+Levenberg K (1944) Quarterly of Applied Mathematics 2:164-168; Marquardt DW (1963) Journal of the
+  Society for Industrial and Applied Mathematics 11:431-441 (optimiser of the parametric models).
+}
+\seealso{\code{\link{sx_references}} for the references of the method behind any fitted object.}
 \examples{
 set.seed(5)
 n <- 300

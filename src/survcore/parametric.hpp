@@ -31,7 +31,13 @@
 namespace survcore {
 
 enum ParDist : int { PD_EXPONENTIAL = 0, PD_WEIBULL = 1, PD_GOMPERTZ = 2, PD_LOGNORMAL = 3, PD_LOGLOGISTIC = 4,
-                     PD_RP = 6, PD_PWEXP = 7 };
+                     PD_GENGAMMA = 5, PD_RP = 6, PD_PWEXP = 7 };
+
+// PD_GENGAMMA: generalized gamma in the parametrisation of Prentice (1974, Biometrika 61:539-544), as
+//   flexsurv "gengamma": log T = mu + sigma W, and with Q != 0, gamma = 1/Q^2, the variable
+//   gamma exp(Q W) has a gamma(shape gamma) distribution; Q = 0 is the log-normal, Q = 1 the Weibull,
+//   Q = sigma the gamma distribution (Cox, Chu, Schneider & Munoz 2007, Stat Med 26:4352-4374).
+//   AFT only; the shape parameters are log(sigma) and Q.
 
 // PD_RP: Royston-Parmar model, log H(t | z) = s(log t) + z'b with a restricted cubic spline s
 //   (Royston & Parmar 2002, Stat Med 21:2175-2197): s(x) = gamma0 + gamma1 x + sum_j gamma_{j+1} v_j(x),
@@ -48,6 +54,7 @@ struct ParSpec {
   std::vector<double> knots;
   int nshape() const {
     if (dist == PD_EXPONENTIAL) return 0;
+    if (dist == PD_GENGAMMA) return 2;
     if (dist == PD_RP) return static_cast<int>(knots.size()) - 1;
     if (dist == PD_PWEXP) return static_cast<int>(knots.size());
     return 1;
@@ -66,6 +73,7 @@ struct ParSpec {
       if (dist == PD_PWEXP && !knots.empty() && !(knots[0] > 0.0)) return false;
       return true;
     }
+    if (dist == PD_GENGAMMA) return aft == 1;
     if (dist < 0 || dist > 4) return false;
     if (aft == 0) return dist == PD_EXPONENTIAL || dist == PD_WEIBULL || dist == PD_GOMPERTZ;
     return dist == PD_EXPONENTIAL || dist == PD_WEIBULL || dist == PD_LOGNORMAL || dist == PD_LOGLOGISTIC;
@@ -181,6 +189,142 @@ inline Loc par_local(const ParSpec& sp, double entry, double t, int d, double u,
   return o;
 }
 
+// ------------------------------------------------------------------------------------------------
+// numerical integration: Gauss-Legendre with 20 nodes on [0, 1] (nodes and weights to 16 digits)
+// ------------------------------------------------------------------------------------------------
+namespace par_detail {
+inline const double* gl20_nodes() {
+  static const double x[10] = {0.0765265211334973, 0.2277858511416451, 0.3737060887154195, 0.5108670019508271, 0.6360536807265150,
+                               0.7463319064601508, 0.8391169718222188, 0.9122344282513259, 0.9639719272779138, 0.9931285991850949};
+  return x;
+}
+inline const double* gl20_weights() {
+  static const double w[10] = {0.1527533871307258, 0.1491729864726037, 0.1420961093183820, 0.1316886384491766, 0.1181945319615184,
+                               0.1019301198172404, 0.0832767415767048, 0.0626720483341091, 0.0406014298003869, 0.0176140071391521};
+  return w;
+}
+// integral of f over [a, b] by 20-point Gauss-Legendre
+template <class F> double gl20(F&& f, double a, double b) {
+  const double* x = gl20_nodes(); const double* w = gl20_weights();
+  const double c = 0.5 * (a + b), h = 0.5 * (b - a);
+  double s = 0.0;
+  for (int i = 0; i < 10; ++i) s += w[i] * (f(c - h * x[i]) + f(c + h * x[i]));
+  return s * h;
+}
+// integral over [0, b] of a function with an integrable singularity u^(k-1), k > 0, at zero (a
+// Weibull hazard with shape below one): geometrically graded pieces [b 4^-(j+1), b 4^-j], j < 26,
+// and the substitution u = c v^3 on the last piece [0, c]
+template <class F> double gl20_origin(F&& f, double b) {
+  double s = 0.0, hi = b;
+  for (int j = 0; j < 26; ++j) { const double lo = hi * 0.25; s += gl20(f, lo, hi); hi = lo; }
+  const double c = hi;
+  s += gl20([&](double v) { const double u = c * v * v * v; return f(u) * 3.0 * c * v * v; }, 0.0, 1.0);
+  return s;
+}
+}  // namespace par_detail
+
+namespace par_detail {
+
+// Stirling remainder R(g) = lgamma(g) - [(g - 1/2) log g - g + log(2 pi)/2], accurate for every g > 0
+inline double stirling_rem(double g) {
+  if (g < 10.0) return std::lgamma(g) - ((g - 0.5) * std::log(g) - g + kLogSqrt2Pi);
+  const double r = 1.0 / g, r2 = r * r;
+  return r * (1.0 / 12.0 - r2 * (1.0 / 360.0 - r2 * (1.0 / 1260.0 - r2 / 1680.0)));
+}
+
+// (e^z - 1 - z) / z^2, series for small |z|
+inline double phi2(double z) {
+  if (std::fabs(z) < 1e-2) return 0.5 + z * (1.0 / 6.0 + z * (1.0 / 24.0 + z * (1.0 / 120.0 + z / 720.0)));
+  return (std::expm1(z) - z) / (z * z);
+}
+
+// log density of the standardised generalised gamma error W at v:
+//   log f = -log(2 pi)/2 - v^2 phi2(Q v) - R(1/Q^2),
+// an exact rearrangement of log|Q| + g log g - lgamma(g) + g (Q v - e^(Q v)), g = 1/Q^2, that is free of
+// cancellation when Q is near zero and equals the standard normal log density at Q = 0
+inline double gg_logf(double v, double Q) {
+  if (Q == 0.0) return -0.5 * v * v - kLogSqrt2Pi;
+  return -kLogSqrt2Pi - v * v * phi2(Q * v) - stirling_rem(1.0 / (Q * Q));
+}
+
+// log of the regularised incomplete gamma functions P(a, x) (lower) and Q(a, x) (upper): series for P
+// when x < a + 1, Lentz continued fraction for Q otherwise, the other one as log1p(-exp(.))
+// (Press et al. 2007, Numerical Recipes, 3rd ed., Section 6.2); used for a <= 1e4.
+inline void log_gamma_pq(double a, double x, double& lp, double& lq) {
+  if (!(x > 0.0)) { lp = -INFINITY; lq = 0.0; return; }
+  const double lpre = -x + a * std::log(x) - std::lgamma(a);
+  if (x < a + 1.0) {
+    double ap = a, sum = 1.0 / a, del = sum;
+    for (int n = 0; n < 20000; ++n) { ap += 1.0; del *= x / ap; sum += del; if (std::fabs(del) < std::fabs(sum) * 1e-17) break; }
+    lp = lpre + std::log(sum);
+    lq = lp < -1e-300 ? std::log(-std::expm1(lp)) : -INFINITY;
+  } else {
+    const double tiny = 1e-300;
+    double b = x + 1.0 - a, c = 1.0 / tiny, d = 1.0 / b, h = d;
+    for (int i = 1; i < 20000; ++i) {
+      const double an = -i * (i - a);
+      b += 2.0;
+      d = an * d + b; if (std::fabs(d) < tiny) d = tiny;
+      c = b + an / c; if (std::fabs(c) < tiny) c = tiny;
+      d = 1.0 / d;
+      const double del = d * c;
+      h *= del;
+      if (std::fabs(del - 1.0) < 1e-17) break;
+    }
+    lq = lpre + std::log(h);
+    lp = lq < -1e-300 ? std::log(-std::expm1(lq)) : -INFINITY;
+  }
+}
+
+// log of the tail integral int_0^inf exp(gg_logf(w + sgn u) - gg_logf(w)) du (sgn = +1: upper tail,
+// -1: lower tail), by 20-point Gauss-Legendre on panels that follow the decay of the integrand
+inline double gg_tail_scaled(double w, double Q, int sgn) {
+  const double g0 = gg_logf(w, Q);
+  const double rate = std::fmax(1.0, sgn * w);                 // the integrand decays at least like exp(-rate u)
+  const double* gx = gl20_nodes(); const double* gw = gl20_weights();
+  double total = 0.0, lo = 0.0, width = 0.25 / rate;
+  for (int panel = 0; panel < 200; ++panel) {
+    const double hi = lo + width, c = 0.5 * (lo + hi), h = 0.5 * (hi - lo);
+    double part = 0.0;
+    for (int i = 0; i < 10; ++i)
+      for (int sg = -1; sg <= 1; sg += 2) {
+        const double u = c + sg * h * gx[i];
+        part += gw[i] * std::exp(gg_logf(w + sgn * u, Q) - g0);
+      }
+    part *= h;
+    total += part;
+    if (part < 1e-18 * total) break;
+    lo = hi; width *= 1.5;
+  }
+  return std::log(total);
+}
+
+// log survivor function of W
+inline double gg_logS(double w, double Q) {
+  if (Q == 0.0) { double lS, m; normal_upper(w, lS, m); return lS; }
+  if (std::fabs(Q) >= 0.01) {
+    const double a = 1.0 / (Q * Q);
+    const double x = a * std::exp(Q * w);
+    double lp, lq; log_gamma_pq(a, x, lp, lq);
+    return Q > 0.0 ? lq : lp;
+  }
+  // |Q| < 0.01: the incomplete gamma function with shape above 1e4 is slow and inaccurate in double
+  // precision; integrate the (near-normal) density instead
+  if (w > 0.0) return gg_logf(w, Q) + gg_tail_scaled(w, Q, 1);
+  const double lF = gg_logf(w, Q) + gg_tail_scaled(w, Q, -1);
+  return std::log(-std::expm1(lF));
+}
+
+// contribution of one subject in (mu, log sigma, Q)
+inline double gg_local_value(double entry, double t, int d, double u, double s, double Q) {
+  const double sigma = std::exp(s), y = std::log(t), w = (y - u) / sigma;
+  double l = d ? gg_logf(w, Q) - s - y : gg_logS(w, Q);
+  if (entry > 0.0) l -= gg_logS((std::log(entry) - u) / sigma, Q);
+  return l;
+}
+
+}  // namespace par_detail
+
 namespace par_detail {
 
 // restricted cubic spline basis of the Royston-Parmar model at x: b[0] = x, b[j] = v_j(x); db the derivatives
@@ -259,6 +403,30 @@ inline void par_local_all(const ParSpec& sp, double entry, double t, int d, doub
       g[j] = (d && jt == j ? 1.0 : 0.0) - E * ea[j];
       H[j] = H[j * q] = -E * ea[j];
       H[j * q + j] = -E * ea[j];
+    }
+    return;
+  }
+  if (sp.dist == PD_GENGAMMA) {
+    // first and second derivatives in (mu, log sigma, Q) by central differences of the exact value
+    const double x0[3] = {u, sh[0], sh[1]};
+    const double hs[3] = {1e-4 * std::exp(sh[0]), 1e-4, 1e-4};
+    auto f = [&](double a, double b, double c) { return par_detail::gg_local_value(entry, t, d, a, b, c); };
+    auto at = [&](int i, double di, int j, double dj) {
+      double x[3] = {x0[0], x0[1], x0[2]};
+      x[i] += di; x[j] += dj;
+      return f(x[0], x[1], x[2]);
+    };
+    l = f(x0[0], x0[1], x0[2]);
+    if (!std::isfinite(l)) return;
+    for (int i = 0; i < 3; ++i) {
+      const double up = at(i, hs[i], i, 0.0), dn = at(i, -hs[i], i, 0.0);
+      g[i] = (up - dn) / (2.0 * hs[i]);
+      H[i * 3 + i] = (up - 2.0 * l + dn) / (hs[i] * hs[i]);
+      for (int j = 0; j < i; ++j) {
+        const double v = (at(i, hs[i], j, hs[j]) - at(i, hs[i], j, -hs[j]) - at(i, -hs[i], j, hs[j]) + at(i, -hs[i], j, -hs[j]))
+                         / (4.0 * hs[i] * hs[j]);
+        H[i * 3 + j] = H[j * 3 + i] = v;
+      }
     }
     return;
   }
@@ -384,6 +552,15 @@ struct ParQ { double H, logh; };           // cumulative hazard and log hazard
 inline ParQ par_hazard(const ParSpec& sp, const std::vector<double>& th, const double* xrow, double t) {
   using namespace par_detail;
   const double u = par_u(sp, xrow, th);
+  if (sp.dist == PD_GENGAMMA) {
+    const double* sh = th.data() + 1 + sp.p;
+    ParQ q;
+    if (!(t > 0.0)) { q.H = 0.0; q.logh = -INFINITY; return q; }
+    const double sigma = std::exp(sh[0]), y = std::log(t), w = (y - u) / sigma;
+    const double lS = gg_logS(w, sh[1]);
+    q.H = -lS; q.logh = gg_logf(w, sh[1]) - sh[0] - y - lS;
+    return q;
+  }
   if (sp.dist == PD_RP || sp.dist == PD_PWEXP) {
     const int ns = sp.nshape();
     const double* sh = th.data() + 1 + sp.p;
@@ -455,7 +632,7 @@ inline double qnorm_std(double p) {
 
 // time at which the survival function equals 1 - prob (Inf if never reached)
 inline double par_quantile(const ParSpec& sp, const std::vector<double>& th, const double* xrow, double prob) {
-  if (sp.dist == PD_RP || sp.dist == PD_PWEXP) {
+  if (sp.dist == PD_RP || sp.dist == PD_PWEXP || sp.dist == PD_GENGAMMA) {
     // H is increasing in t: bisection on log t for H(t) = -log(1 - prob)
     const double Hq = -std::log1p(-prob);
     double lo = -40.0, hi = 40.0;
@@ -486,39 +663,6 @@ inline double par_quantile(const ParSpec& sp, const std::vector<double>& th, con
   return std::exp(u + sigma * w);
 }
 
-// ------------------------------------------------------------------------------------------------
-// numerical integration: Gauss-Legendre with 20 nodes on [0, 1] (nodes and weights to 16 digits)
-// ------------------------------------------------------------------------------------------------
-namespace par_detail {
-inline const double* gl20_nodes() {
-  static const double x[10] = {0.0765265211334973, 0.2277858511416451, 0.3737060887154195, 0.5108670019508271, 0.6360536807265150,
-                               0.7463319064601508, 0.8391169718222188, 0.9122344282513259, 0.9639719272779138, 0.9931285991850949};
-  return x;
-}
-inline const double* gl20_weights() {
-  static const double w[10] = {0.1527533871307258, 0.1491729864726037, 0.1420961093183820, 0.1316886384491766, 0.1181945319615184,
-                               0.1019301198172404, 0.0832767415767048, 0.0626720483341091, 0.0406014298003869, 0.0176140071391521};
-  return w;
-}
-// integral of f over [a, b] by 20-point Gauss-Legendre
-template <class F> double gl20(F&& f, double a, double b) {
-  const double* x = gl20_nodes(); const double* w = gl20_weights();
-  const double c = 0.5 * (a + b), h = 0.5 * (b - a);
-  double s = 0.0;
-  for (int i = 0; i < 10; ++i) s += w[i] * (f(c - h * x[i]) + f(c + h * x[i]));
-  return s * h;
-}
-// integral over [0, b] of a function with an integrable singularity u^(k-1), k > 0, at zero (a
-// Weibull hazard with shape below one): geometrically graded pieces [b 4^-(j+1), b 4^-j], j < 26,
-// and the substitution u = c v^3 on the last piece [0, c]
-template <class F> double gl20_origin(F&& f, double b) {
-  double s = 0.0, hi = b;
-  for (int j = 0; j < 26; ++j) { const double lo = hi * 0.25; s += gl20(f, lo, hi); hi = lo; }
-  const double c = hi;
-  s += gl20([&](double v) { const double u = c * v * v * v; return f(u) * 3.0 * c * v * v; }, 0.0, 1.0);
-  return s;
-}
-}  // namespace par_detail
 
 // Cumulative incidence F_k(t) = int_0^t h_k(u) S(u) du, S(u) = exp(-sum_j H_j(u)), of every cause
 // at increasing times t_1 < ... < t_m for one covariate row (Prentice et al. 1978; Kalbfleisch &
@@ -529,6 +673,7 @@ template <class F> double gl20_origin(F&& f, double b) {
 inline bool par_singular_at_zero(const ParSpec& sp, const std::vector<double>& th) {
   if (!sp.has_shape()) return false;
   if (sp.dist == PD_RP) return th[1 + sp.p] < 1.0;
+  if (sp.dist == PD_GENGAMMA) return true;               // depends on sigma and Q: always grade the first piece
   if (sp.dist == PD_PWEXP) return false;
   const double s = th[sp.npar() - 1];
   if (sp.aft == 0) return sp.dist == PD_WEIBULL && s < 0.0;

@@ -25,6 +25,9 @@ a matrix of class \code{"Event"} with the columns \code{time}, \code{status} and
 \references{
 Klein JP, Moeschberger ML (2003) Survival Analysis: Techniques for Censored and Truncated Data,
   2nd ed. Springer, Section 3.4 (left truncation).
+
+Geskus RB (2011) Cause-specific cumulative incidence estimation and the Fine and Gray model under
+  both left truncation and right censoring. Biometrics 67:39-49.
 }
 \examples{
 Event(c(5, 8, 3), c(1, 0, 2))

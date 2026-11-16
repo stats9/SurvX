@@ -23,7 +23,8 @@ csc(formula, data, ties = c("efron", "breslow"), product_limit = TRUE, baseline 
   \pkg{riskRegression}; \code{FALSE}: \eqn{\exp\{-\sum_k \Lambda_k(t)\}} (Cox baseline only).}
 \item{baseline}{\code{"cox"}, or one of the distributions of \code{\link{parsurv}}
   (\code{"exponential"}, \code{"weibull"}, \code{"gompertz"}, \code{"lognormal"},
-  \code{"loglogistic"}, \code{"rp"}, \code{"pwexp"}); a vector gives one distribution per cause.}
+  \code{"loglogistic"}, \code{"gengamma"}, \code{"rp"}, \code{"pwexp"}); a vector gives one
+  distribution per cause.}
 \item{scale}{\code{"PH"} or \code{"AFT"} for parametric baselines, one value or one per cause;
   default as in \code{\link{parsurv}}.}
 \item{df,knots,cuts}{spline (\code{"rp"}) and piecewise exponential (\code{"pwexp"}) baselines, as

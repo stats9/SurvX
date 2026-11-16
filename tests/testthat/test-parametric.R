@@ -292,3 +292,31 @@ test_that("spline and piecewise exponential cause-specific models are coherent a
   expect_true(all(is.finite(cm@fit$aic[8:9])))
   expect_output(print(cm), "parametric Weibull cause-specific")
 })
+
+test_that("generalized gamma agrees with flexsurv and nests the Weibull and log-normal", {
+  skip_if_not_installed("flexsurv")
+  d <- sim_surv(entry = TRUE)
+  f <- parsurv(Event(time, status, entry = entry) ~ x + z, d, baseline = "gengamma")
+  r <- flexsurv::flexsurvreg(survival::Surv(entry, time, status) ~ x + z, data = d, dist = "gengamma")
+  expect_true(f@converged)
+  expect_equal(f@scale, "AFT")
+  expect_close(as.numeric(logLik(f)), r$loglik, 1e-5)
+  rc <- r$res.t[, "est"]                                # mu, sigma (log), Q, covariates
+  expect_close(coef(f), c(rc["mu"], rc["x"], rc["z"], rc["sigma"], rc["Q"]), 1e-3)
+  # the Weibull is Q = 1: the generalized gamma cannot fit worse
+  w <- parsurv(Event(time, status, entry = entry) ~ x + z, d, baseline = "weibull", scale = "AFT")
+  expect_gte(as.numeric(logLik(f)), as.numeric(logLik(w)) - 1e-6)
+  # survival curve and median agree with flexsurv
+  nd <- data.frame(x = 1, z = 0.3)
+  expect_close(predict(f, nd, times = c(1, 2.5), type = "survival"),
+               summary(r, newdata = nd, t = c(1, 2.5), type = "survival", tidy = TRUE)$est, 1e-4)
+  expect_output(print(f), "generalized gamma")
+})
+
+test_that("generalized gamma works as a cause-specific baseline", {
+  d <- sim_cr(400, 3)
+  f <- csc(Event(time, status) ~ x + z, d, baseline = "gengamma")
+  expect_true(all(vapply(f@models, function(m) m@converged, logical(1))))
+  p <- c(predict(f, data.frame(x = 0, z = 0), times = 1:2, cause = 1), predict(f, data.frame(x = 0, z = 0), times = 1:2, cause = 2))
+  expect_true(all(is.finite(p) & p > 0 & p < 1))
+})

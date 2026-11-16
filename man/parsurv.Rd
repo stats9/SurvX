@@ -3,7 +3,8 @@
 \title{Parametric survival regression}
 \description{
 Maximum likelihood regression for a single event time with an exponential, Weibull, Gompertz,
-log-normal, log-logistic, piecewise exponential or flexible spline (Royston-Parmar) distribution,
+log-normal, log-logistic, generalized gamma, piecewise exponential or flexible spline
+(Royston-Parmar) distribution,
 under right censoring and, optionally, delayed entry (left truncation). Covariates act on the hazard (proportional hazards, \code{scale = "PH"}) or on
 the time scale (accelerated failure time, \code{scale = "AFT"}).
 }
@@ -16,10 +17,11 @@ parsurv(formula, data, baseline = "weibull", scale = NULL, df = 3L, knots = NULL
   entry = )} for delayed entry.}
 \item{data}{a data frame.}
 \item{baseline}{\code{"weibull"} (default), \code{"exponential"}, \code{"gompertz"},
-  \code{"lognormal"}, \code{"loglogistic"}, \code{"rp"} (Royston-Parmar spline) or
-  \code{"pwexp"} (piecewise exponential).}
+  \code{"lognormal"}, \code{"loglogistic"}, \code{"gengamma"} (generalized gamma),
+  \code{"rp"} (Royston-Parmar spline) or \code{"pwexp"} (piecewise exponential).}
 \item{scale}{\code{"PH"} or \code{"AFT"}; default \code{"PH"} where it exists (exponential,
-  Weibull, Gompertz, spline, piecewise exponential), else \code{"AFT"} (log-normal, log-logistic).}
+  Weibull, Gompertz, spline, piecewise exponential), else \code{"AFT"} (log-normal, log-logistic,
+  generalized gamma).}
 \item{df}{spline baseline: degrees of freedom of the spline, the number of internal knots plus one;
   internal knots at equally spaced quantiles of the log event times.}
 \item{knots}{spline baseline: internal knots on the time scale, instead of \code{df}.}
@@ -41,6 +43,16 @@ Parametrisations, with \eqn{\eta = \beta_0 + z'\beta}:
     with \eqn{W} standard minimum extreme value (Weibull; exponential with \eqn{\sigma = 1}),
     standard normal (log-normal) or standard logistic (log-logistic). \eqn{e^{\beta_j}} is a time
     ratio (acceleration factor). These are the models of \code{survival::survreg}.}
+  \item{generalized gamma (\code{"gengamma"})}{AFT, \eqn{\log T = \eta + \sigma W} where, for
+    \eqn{Q \ne 0}, \eqn{Q^{-2} e^{Q W}} has a gamma distribution with shape \eqn{Q^{-2}} (the
+    parametrisation of Prentice 1974 and of \pkg{flexsurv}); coefficients \code{log(scale)}
+    \eqn{= \log\sigma} and \code{Q}. It contains the log-normal (\eqn{Q = 0}), Weibull
+    (\eqn{Q = 1}) and gamma (\eqn{Q = \sigma}) distributions, so a Wald or likelihood ratio test of
+    \eqn{Q} chooses between them (Cox et al. 2007). The log density is evaluated in a form that is
+    free of cancellation near \eqn{Q = 0}; the survivor function uses the incomplete gamma function
+    for \eqn{|Q| \ge 0.01} and numerical integration of the density for smaller \eqn{|Q|}, so the
+    likelihood is smooth across the log-normal limit. Derivatives in \eqn{(\mu, \log\sigma, Q)}
+    are central differences of the exact contribution of each subject.}
   \item{spline (\code{"rp"})}{\eqn{\log H(t \mid z) = s(\log t) + z'\beta} with a restricted
     cubic spline \eqn{s(x) = \gamma_0 + \gamma_1 x + \sum_j \gamma_{j+1} v_j(x)}, linear beyond
     the boundary knots at the smallest and largest log event time (Royston and Parmar 2002); the
@@ -85,6 +97,11 @@ Royston P, Parmar MKB (2002) Flexible parametric proportional-hazards and propor
 
 Friedman M (1982) Piecewise exponential models for survival data with covariates. Annals of
   Statistics 10:101-113.
+
+Prentice RL (1974) A log gamma model and its maximum likelihood estimation. Biometrika 61:539-544.
+
+Cox C, Chu H, Schneider MF, Munoz A (2007) Parametric survival analysis and taxonomy of hazard
+  functions for the generalized gamma distribution. Statistics in Medicine 26:4352-4374.
 }
 \seealso{
 \code{\link{csc}} with a parametric \code{baseline} for competing risks; \code{\link{hazard_plot}}
@@ -106,4 +123,6 @@ fs <- parsurv(Event(time, status) ~ x, d, baseline = "rp", df = 3)
 fs
 predict(fs, data.frame(x = 0:1), type = "quantile", p = 0.5)
 parsurv(Event(time, status) ~ x, d, baseline = "pwexp", cuts = c(2, 4))
+gg <- parsurv(Event(time, status) ~ x, d, baseline = "gengamma")
+summary(gg)    # Q near 1: the Weibull distribution fits
 }

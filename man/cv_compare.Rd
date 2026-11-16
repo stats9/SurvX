@@ -29,7 +29,14 @@ an S7 object of class \code{ModelComparison}: \code{x@table} has one row per mod
   one row per model. A model that fails in a fold has \code{NA} cross-validated measures.
 }
 \references{
-Gerds TA, Schumacher M (2007) Biometrics 63:1283-1287.
+Gerds TA, Schumacher M (2007) Efron-type measures of prediction error for survival analysis.
+  Biometrics 63:1283-1287.
+
+Hastie T, Tibshirani R, Friedman J (2009) The Elements of Statistical Learning, 2nd ed. Springer,
+  Section 7.10 (cross-validation).
+
+Akaike H (1974) A new look at the statistical model identification. IEEE Transactions on Automatic
+  Control 19:716-723.
 }
 \examples{
 set.seed(3)

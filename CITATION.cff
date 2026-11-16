@@ -5,9 +5,9 @@ type: software
 authors:
   - family-names: Ezzatabadipour
     given-names: Habib
-version: 0.5.3
+version: 0.7.0
 doi: 10.5281/zenodo.24255828
-date-released: 2026-11-15
+date-released: 2026-11-16
 license: GPL-3.0-only
 repository-code: "https://github.com/stats9/SurvX"
 keywords:
