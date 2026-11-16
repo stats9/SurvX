@@ -93,22 +93,60 @@ S7::method(predict, FineGrayFit) <- function(object, newdata = NULL, times, ...)
 #' predict(fw, data.frame(x = 0:1), times = c(1, 3), cause = 1)
 #' @export
 csc <- function(formula, data, ties = c("efron", "breslow"), product_limit = TRUE, baseline = "cox", scale = NULL,
-                df = 3L, knots = NULL, cuts = NULL, max_iter = 200L, tol = 1e-10) {
+                df = 3L, knots = NULL, cuts = NULL, max_iter = 200L, tol = 1e-10, robust = FALSE) {
   cl <- match.call(); ties <- match.arg(ties)
   parametric <- any(baseline != "cox")
   if (parametric && any(baseline == "cox")) stop("baseline: 'cox' cannot be mixed with parametric distributions", call. = FALSE)
-  f <- .sx_frame(formula, data, entry_ok = parametric, what = "csc() with a Cox baseline")
+  f <- .sx_frame(formula, data, entry_ok = TRUE, what = "csc() with a parametric baseline", specials_ok = !parametric)
   if (parametric) return(.pcsc(cl, f, baseline, scale, max_iter, tol, df, knots, cuts))
   K <- max(f$status)
   if (ncol(f$X) < 1L) stop("at least one covariate is needed", call. = FALSE)
-  models <- lapply(seq_len(K), function(k) .cox_fit(f$time, as.integer(f$status == k), f$X, NULL, ties))
+  robust <- isTRUE(robust) || !is.null(f$cluster)
+  models <- lapply(seq_len(K), function(k) {
+    st <- as.integer(f$status == k)
+    m <- .cox_fit(f$time, st, f$X, NULL, ties, 50L, tol, f$entry, f$strata)
+    m$vcov_model <- m$vcov
+    if (robust) m$vcov <- .cox_robust(m, f$time, st, f$X, NULL, ties, f$entry, f$strata, f$cluster)
+    m
+  })
   names(models) <- paste0("cause", seq_len(K))
   CSCFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts, models = models, K = as.integer(K),
-         ties = ties, product_limit = isTRUE(product_limit), n = length(f$time), time = f$time, status = f$status, X = f$X)
+         ties = ties, product_limit = isTRUE(product_limit), n = length(f$time), time = f$time, status = f$status, X = f$X,
+         entry = f$entry, strata = f$strata, strata_levels = f$strata_levels, strata_vars = f$strata_vars,
+         cluster = f$cluster, robust = robust)
+}
+
+# cumulative incidence from cause-specific Cox models with strata or (entry, time] data:
+# F_k(t) = sum_{u <= t} S(u-) dLambda_k(u | x), S from all causes (product-limit or exponential),
+# with the baseline hazards of the subject's stratum (Benichou & Gail 1990; Kalbfleisch & Prentice 2002, Sec. 8.2)
+.csc_cif_general <- function(object, Xn, sn, times, cause) {
+  K <- object@K
+  bh <- lapply(seq_len(K), function(k) .csc_baseline(object, k))
+  B <- lapply(object@models, function(m) m$coefficients)
+  out <- matrix(0, nrow(Xn), length(times), dimnames = list(NULL, paste0("t=", times)))
+  for (i in seq_len(nrow(Xn))) {
+    s <- if (is.null(sn)) 0L else sn[i]
+    inc <- lapply(seq_len(K), function(k) {
+      b <- bh[[k]][bh[[k]]$stratum == s, , drop = FALSE]
+      data.frame(time = b$time, dH = diff(c(0, b$cumhaz)) * exp(sum(Xn[i, ] * B[[k]])))
+    })
+    grid <- sort(unique(unlist(lapply(inc, `[[`, "time"))))
+    if (!length(grid)) next
+    dH <- vapply(inc, function(d) { v <- numeric(length(grid)); v[match(d$time, grid)] <- d$dH; v }, numeric(length(grid)))
+    dH <- matrix(dH, length(grid), K)
+    tot <- rowSums(dH)
+    Sstep <- if (object@product_limit) pmax(0, 1 - tot) else exp(-tot)
+    Sminus <- c(1, cumprod(Sstep))[seq_along(grid)]
+    F <- cumsum(Sminus * dH[, cause])
+    out[i, ] <- .step_at(grid, F, times, 0)
+  }
+  out
 }
 
 S7::method(predict, CSCFit) <- function(object, newdata = NULL, times, cause = 1L, ...) {
   Xn <- .sx_newX(object, newdata)
+  if (!is.null(object@strata) || !is.null(object@entry))
+    return(.csc_cif_general(object, Xn, .sx_newstrata(object, newdata), times, as.integer(cause)))
   n <- object@n; p <- ncol(object@X); K <- object@K; nn <- nrow(Xn)
   B <- do.call(rbind, lapply(object@models, function(m) m$coefficients))
   r <- .C("SX_csc_cif", as.integer(n), as.integer(p), object@time, object@status, .rm(object@X), as.integer(K),

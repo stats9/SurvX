@@ -187,12 +187,28 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
 # ----------------------------------------------------------------------------------------------
 # Cox, Fine-Gray, cause-specific Cox: text
 # ----------------------------------------------------------------------------------------------
+# lines describing strata, (entry, time] data and the robust variance of Cox-type fits
+.design_lines <- function(x) {
+  out <- character(0)
+  if (!is.null(x@strata))
+    out <- c(out, paste0("  Strata: ", paste(x@strata_vars, collapse = ", "), " (", length(x@strata_levels),
+                         " strata, each with its own baseline hazard)"))
+  if (!is.null(x@entry))
+    out <- c(out, "  Data: (entry, time] intervals (delayed entry or time-varying covariates; Andersen & Gill 1982)")
+  if (isTRUE(x@robust))
+    out <- c(out, if (!is.null(x@cluster))
+      paste0("  Standard errors: robust, clustered on ", length(unique(x@cluster)), " clusters (Lin & Wei 1989)")
+      else "  Standard errors: robust sandwich (Lin & Wei 1989)")
+  out
+}
+
 .render_cox <- function(x, level, detail) {
   e <- estimates(x, level = level)
   lr <- 2 * (x@loglik - x@loglik_null); df <- length(x@coefficients)
   pv <- .pval(stats::pchisq(lr, df, lower.tail = FALSE))
   out <- c(paste0("Cox proportional hazards regression (", x@ties, " method for ties)"),
-           paste0("  Subjects: ", x@n, "   events: ", x@nevent, "   censored: ", x@n - x@nevent),
+           paste0("  ", if (is.null(x@entry)) "Subjects" else "Rows", ": ", x@n, "   events: ", x@nevent, "   censored: ", x@n - x@nevent),
+           .design_lines(x),
            "",
            "Effect of covariates: hazard ratio (HR)",
            .effect_lines(e, "HR", level, x@xlevels),
@@ -232,7 +248,8 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
 .render_csc <- function(x, level, detail) {
   e <- estimates(x, level = level)
   out <- c(paste0("Cause-specific Cox regression (", x@ties, " method for ties)"),
-           paste0("  Subjects: ", x@n, "   censored: ", sum(x@status == 0L)))
+           paste0("  ", if (is.null(x@entry)) "Subjects" else "Rows", ": ", x@n, "   censored: ", sum(x@status == 0L)),
+           .design_lines(x))
   for (k in seq_len(x@K)) {
     m <- x@models[[k]]
     ek <- e[e$cause == k, , drop = FALSE]

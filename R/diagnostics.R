@@ -2,7 +2,8 @@
 
 # risk-set sums of a Cox model (Breslow): for every event row, the weighted mean x-bar(t) and covariance
 # V(t) of the covariates over the subjects still at risk
-.cox_risksets <- function(time, status, X, beta, w = NULL) {
+.cox_risksets <- function(time, status, X, beta, w = NULL, entry = NULL, strata = NULL) {
+  if (!is.null(entry) || !is.null(strata)) return(.cox_risksets_general(time, status, X, beta, w, entry, strata))
   n <- length(time); p <- ncol(X)
   if (is.null(w)) w <- rep(1, n)
   r <- w * exp(drop(X %*% beta))
@@ -25,15 +26,39 @@
   list(rows = ev, time = time[ev], xbar = xbar, V = S2, w = w[ev])
 }
 
-.resid_cox_core <- function(time, status, X, beta, vcov, ties, type, w = NULL, baseline = NULL) {
+# the same with (entry, time] intervals and strata: risk set of an event at t in stratum s is
+# {j in s: entry_j < t <= time_j}; O(n x events), used only when entry or strata are present
+.cox_risksets_general <- function(time, status, X, beta, w, entry, strata) {
+  n <- length(time); p <- ncol(X)
+  if (is.null(w)) w <- rep(1, n)
+  if (is.null(entry)) entry <- rep(-Inf, n)
+  if (is.null(strata)) strata <- integer(n)
+  r <- w * exp(drop(X %*% beta) - max(drop(X %*% beta)))
+  ev <- which(status == 1L)
+  ev <- ev[order(strata[ev], time[ev])]
+  xbar <- matrix(0, length(ev), p); V <- array(0, c(length(ev), p, p))
+  for (q in seq_along(ev)) {
+    k <- ev[q]; t <- time[k]
+    at <- which(strata == strata[k] & entry < t & time >= t)
+    ra <- r[at]; Xa <- X[at, , drop = FALSE]; s0 <- sum(ra)
+    m <- colSums(Xa * ra) / s0
+    xbar[q, ] <- m
+    V[q, , ] <- crossprod(Xa * sqrt(ra)) / s0 - tcrossprod(m)
+  }
+  list(rows = ev, time = time[ev], xbar = xbar, V = V, w = w[ev])
+}
+
+.resid_cox_core <- function(time, status, X, beta, vcov, ties, type, w = NULL, baseline = NULL, entry = NULL, strata = NULL) {
   if (type %in% c("martingale", "deviance", "coxsnell")) {
-    H <- .step_at(baseline$time, baseline$cumhaz, time, 0) * exp(drop(X %*% beta))
+    H <- .cumhaz_at(baseline, time, strata)
+    if (!is.null(entry)) H <- H - .cumhaz_at(baseline, entry, strata)
+    H <- H * exp(drop(X %*% beta))
     m <- status - H
     out <- switch(type, martingale = m, coxsnell = H,
                   deviance = sign(m) * sqrt(-2 * (m + ifelse(status == 1L, log(pmax(status - m, 1e-300)), 0))))
     return(out)
   }
-  rs <- .cox_risksets(time, status, X, beta, w)
+  rs <- .cox_risksets(time, status, X, beta, w, entry, strata)
   sch <- X[rs$rows, , drop = FALSE] - rs$xbar
   dimnames(sch) <- list(format(rs$time, trim = TRUE), colnames(X))
   if (type == "schoenfeld") return(structure(sch, time = rs$time))
@@ -89,27 +114,23 @@ NULL
 
 S7::method(residuals, CoxFit) <- function(object, type = c("martingale", "deviance", "coxsnell", "schoenfeld", "scaledsch"), ...) {
   type <- match.arg(type)
-  .resid_cox_core(object@time, object@status, object@X, object@coefficients, object@vcov, object@ties, type,
-                  object@weights, if (type %in% c("martingale", "deviance", "coxsnell")) .cox_baseline(object) else NULL)
+  .resid_cox_core(object@time, object@status, object@X, object@coefficients, object@vcov_model %||% object@vcov, object@ties, type,
+                  object@weights, if (type %in% c("martingale", "deviance", "coxsnell")) .cox_baseline(object) else NULL,
+                  object@entry, object@strata)
 }
 
 .csc_baseline <- function(object, k) {
-  m <- object@models[[k]]; st <- as.integer(object@status == k)
-  n <- object@n; p <- ncol(object@X)
-  r <- .C("SX_cox_baseline", as.integer(n), as.integer(p), object@time, st, .rm(object@X), 0L, double(n),
-          as.integer(object@ties == "efron"), as.double(m$coefficients), time = double(n), cumhaz = double(n),
-          m = integer(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
-  .sx_rc(r$rc, "baseline hazard")
-  k2 <- seq_len(r$m)
-  data.frame(time = r$time[k2], cumhaz = r$cumhaz[k2])
+  .cox_baseline_raw(object@models[[k]]$coefficients, object@time, as.integer(object@status == k), object@X, NULL,
+                    object@ties, object@entry, object@strata)
 }
 
 S7::method(residuals, CSCFit) <- function(object, type = c("martingale", "deviance", "coxsnell", "schoenfeld", "scaledsch"), ...) {
   type <- match.arg(type)
   out <- lapply(seq_len(object@K), function(k) {
     m <- object@models[[k]]
-    .resid_cox_core(object@time, as.integer(object@status == k), object@X, m$coefficients, m$vcov, object@ties, type, NULL,
-                    if (type %in% c("martingale", "deviance", "coxsnell")) .csc_baseline(object, k) else NULL)
+    .resid_cox_core(object@time, as.integer(object@status == k), object@X, m$coefficients, m$vcov_model %||% m$vcov,
+                    object@ties, type, NULL, if (type %in% c("martingale", "deviance", "coxsnell")) .csc_baseline(object, k) else NULL,
+                    object@entry, object@strata)
   })
   names(out) <- paste0("cause", seq_len(object@K))
   out
@@ -129,22 +150,22 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
 # ----------------------------------------------------------------------------------------------
 # test of proportional hazards
 # ----------------------------------------------------------------------------------------------
-.time_transform <- function(time, status, t_event, transform) {
+.time_transform <- function(time, status, t_event, transform, entry = NULL) {
   switch(transform,
          identity = t_event,
          log = log(t_event),
          rank = rank(t_event),
          km = {                                                # 1 - Kaplan-Meier just before each event time
-           inc <- .na_increments(time, status, 1L)
+           inc <- .na_increments(time, status, 1L, entry)
            S <- cumprod(1 - inc$d / inc$Y)
            1 - c(1, S)[match(t_event, inc$time)]
          })
 }
 
-.zph_core <- function(time, status, X, beta, vcov, transform, w = NULL) {
-  rs <- .cox_risksets(time, status, X, beta, w)
+.zph_core <- function(time, status, X, beta, vcov, transform, w = NULL, entry = NULL, strata = NULL) {
+  rs <- .cox_risksets(time, status, X, beta, w, entry, strata)
   sch <- X[rs$rows, , drop = FALSE] - rs$xbar
-  g <- .time_transform(time, status, rs$time, transform)
+  g <- .time_transform(time, status, rs$time, transform, entry)
   g <- g - mean(g)
   p <- ncol(X); nd <- length(rs$rows)
   U <- colSums(sch * g)
@@ -160,7 +181,7 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
                     row.names = c(colnames(X), "GLOBAL"))
   scaled <- sch %*% vcov * nd + matrix(beta, nd, p, byrow = TRUE)
   colnames(scaled) <- colnames(X)
-  list(table = tab, x = g + mean(.time_transform(time, status, rs$time, transform)), y = scaled, time = rs$time,
+  list(table = tab, x = g + mean(.time_transform(time, status, rs$time, transform, entry)), y = scaled, time = rs$time,
        transform = transform, beta = beta, vcov = vcov)
 }
 
@@ -202,14 +223,16 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
 ph_test <- function(fit, transform = c("km", "rank", "identity", "log")) {
   transform <- match.arg(transform)
   if (S7::S7_inherits(fit, CoxFit)) {
-    r <- .zph_core(fit@time, fit@status, fit@X, fit@coefficients, fit@vcov, transform, fit@weights)
+    r <- .zph_core(fit@time, fit@status, fit@X, fit@coefficients, fit@vcov_model %||% fit@vcov, transform, fit@weights,
+                   fit@entry, fit@strata)
     r$label <- "the event"
     return(.ph_object(list(r), transform))
   }
   if (S7::S7_inherits(fit, CSCFit)) {
     out <- lapply(seq_len(fit@K), function(k) {
       m <- fit@models[[k]]
-      r <- .zph_core(fit@time, as.integer(fit@status == k), fit@X, m$coefficients, m$vcov, transform)
+      r <- .zph_core(fit@time, as.integer(fit@status == k), fit@X, m$coefficients, m$vcov_model %||% m$vcov, transform,
+                     NULL, fit@entry, fit@strata)
       r$label <- paste("cause", k); r
     })
     return(.ph_object(out, transform))

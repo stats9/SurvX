@@ -9,6 +9,9 @@ void SX_na(int* n, double* time, int* status, double* out_time, double* out_cumh
 void SX_rmst(int* n, double* time, int* status, double* tau, double* mean, double* se, int* rc);
 void SX_aj(int* n, double* time, int* cause, int* K, double* out_time, double* out_surv, double* out_cif, double* out_se, int* m, int* rc);
 void SX_cox(int* n, int* p, double* time, int* status, double* X, int* has_w, double* weights, int* ties, int* max_iter, double* tol, double* beta, double* var, double* info_d, int* info_i, int* rc);
+void SX_cox2(int* n, int* p, int* has_entry, double* entry, double* time, int* status, int* has_strata, int* strata, double* X, int* has_w, double* weights, int* ties, int* max_iter, double* tol, double* beta, double* var, double* info_d, int* info_i, int* rc);
+void SX_cox2_baseline(int* n, int* p, int* has_entry, double* entry, double* time, int* status, int* has_strata, int* strata, double* X, int* has_w, double* weights, int* ties, double* beta, double* out_time, double* out_cumhaz, int* out_strata, int* m, int* rc);
+void SX_cox_score(int* n, int* p, int* has_entry, double* entry, double* time, int* status, int* has_strata, int* strata, double* X, int* has_w, double* weights, int* ties, double* beta, double* U, int* rc);
 void SX_cox_baseline(int* n, int* p, double* time, int* status, double* X, int* has_w, double* weights, int* ties, double* beta, double* out_time, double* out_cumhaz, int* m, int* rc);
 void SX_fg(int* n, int* p, double* time, int* cause, double* X, int* interest, int* max_iter, double* tol, double* beta, double* var_model, double* var_robust, double* info_d, int* info_i, int* rc);
 void SX_fg_baseline(int* n, int* p, double* time, int* cause, double* X, int* interest, double* beta, double* out_time, double* out_cumhaz, int* m, int* rc);

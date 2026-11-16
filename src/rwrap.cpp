@@ -30,6 +30,20 @@ void SX_cox(int* n, int* p, double* time, int* status, double* X, int* has_w, do
 void SX_cox_baseline(int* n, int* p, double* time, int* status, double* X, int* has_w, double* weights, int* ties, double* beta, double* out_time, double* out_cumhaz, int* m, int* rc) {
   *rc = sc_coxph_baseline(*n, *p, time, status, X, *has_w ? weights : nullptr, *ties, beta, nullptr, out_time, out_cumhaz, m);
 }
+void SX_cox2(int* n, int* p, int* has_entry, double* entry, double* time, int* status, int* has_strata, int* strata, double* X, int* has_w, double* weights, int* ties, int* max_iter, double* tol, double* beta, double* var, double* info_d, int* info_i, int* rc) {
+  sc_fit_info f = sc_fit_info();
+  *rc = sc_coxph_ext(*n, *p, *has_entry ? entry : nullptr, time, status, *has_strata ? strata : nullptr, X, *has_w ? weights : nullptr,
+                     *ties, *max_iter, *tol, beta, var, &f);
+  put(f, info_d, info_i);
+}
+void SX_cox2_baseline(int* n, int* p, int* has_entry, double* entry, double* time, int* status, int* has_strata, int* strata, double* X, int* has_w, double* weights, int* ties, double* beta, double* out_time, double* out_cumhaz, int* out_strata, int* m, int* rc) {
+  *rc = sc_coxph_ext_baseline(*n, *p, *has_entry ? entry : nullptr, time, status, *has_strata ? strata : nullptr, X, *has_w ? weights : nullptr,
+                              *ties, beta, nullptr, out_time, out_cumhaz, out_strata, m);
+}
+void SX_cox_score(int* n, int* p, int* has_entry, double* entry, double* time, int* status, int* has_strata, int* strata, double* X, int* has_w, double* weights, int* ties, double* beta, double* U, int* rc) {
+  *rc = sc_coxph_score(*n, *p, *has_entry ? entry : nullptr, time, status, *has_strata ? strata : nullptr, X, *has_w ? weights : nullptr,
+                       *ties, beta, U);
+}
 void SX_fg(int* n, int* p, double* time, int* cause, double* X, int* interest, int* max_iter, double* tol, double* beta, double* var_model, double* var_robust, double* info_d, int* info_i, int* rc) {
   sc_fit_info f = sc_fit_info();
   *rc = sc_finegray(*n, *p, time, cause, X, *interest, *max_iter, *tol, beta, var_model, var_robust, &f);

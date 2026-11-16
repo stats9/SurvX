@@ -1,3 +1,28 @@
+# SurvX 0.8.0
+
+* `cox()` and `csc()` (Cox baseline) gain the three extensions that make them cover the uses of
+  `survival::coxph`:
+  * **strata**: `strata(center)` in the formula gives every stratum its own baseline hazard with
+    common coefficients (Kalbfleisch & Prentice 2002, Sec. 4.4); `predict()` uses the stratum of
+    each row of `newdata`.
+  * **(start, stop] data**: `Event(stop, status, entry = start)` gives delayed entry and
+    time-varying covariates in the counting-process form of Andersen & Gill (1982).
+  * **robust variance**: `cluster(id)` in the formula, or `robust = TRUE`, gives the sandwich
+    variance of Lin & Wei (1989) from score residuals in the Efron or Breslow form; the model-based
+    variance stays in `x@vcov_model`.
+  All three are implemented in the C++ core (one scan of the risk sets per evaluation) and checked
+  against an independent brute-force implementation to 1e-12, and in the tests against
+  `survival::coxph` (coefficients, model-based and robust variances, log-likelihood, predicted
+  survival, martingale residuals) and `survival::cox.zph`.
+* `residuals()` and `ph_test()` handle strata and (start, stop] data.
+* The printed output states the strata, the interval form of the data and the kind of standard
+  errors, and the Methods line cites the corresponding sources.
+* `strata()` and `cluster()` are read by SurvX itself, so they need neither survival nor any other
+  package, and they are refused with a clear message by the functions that do not support them
+  (`fg()`, `directcif()`, parametric `csc()`).
+* `cif_plot()` and `cif_data()` are not yet available for `csc()` fits with strata or delayed
+  entry; `predict()` gives their cumulative incidence.
+
 # SurvX 0.7.0
 
 * `parsurv()` and `csc(baseline = )` gain `"gengamma"`, the generalized gamma distribution

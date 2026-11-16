@@ -12,12 +12,18 @@ coherent by construction: the incidences of all causes and the event-free probab
 }
 \usage{
 csc(formula, data, ties = c("efron", "breslow"), product_limit = TRUE, baseline = "cox",
-    scale = NULL, df = 3L, knots = NULL, cuts = NULL, max_iter = 200L, tol = 1e-10)
+    scale = NULL, df = 3L, knots = NULL, cuts = NULL, max_iter = 200L, tol = 1e-10,
+    robust = FALSE)
 }
 \arguments{
-\item{formula}{\code{Event(time, status) ~ covariates}; status 0 = censored, 1..K = cause. With a
-  parametric baseline, \code{Event(time, status, entry = )} allows delayed entry.}
+\item{formula}{\code{Event(time, status) ~ covariates}; status 0 = censored, 1..K = cause.
+  \code{Event(time, status, entry = )} allows delayed entry, and with a Cox baseline also
+  (start, stop] rows with time-varying covariates. With a Cox baseline the right-hand side may
+  contain \code{strata(...)} (a baseline hazard per stratum for every cause) and \code{cluster(id)}
+  (robust variance), as in \code{\link{cox}}.}
 \item{data}{a data frame.}
+\item{robust}{Cox baseline: robust (sandwich) variance of Lin and Wei (1989) for every cause;
+  always \code{TRUE} with \code{cluster()}.}
 \item{ties}{\code{"efron"} (default) or \code{"breslow"} (Cox baseline only).}
 \item{product_limit}{\code{TRUE} (default): overall survival as a product-limit, as in
   \pkg{riskRegression}; \code{FALSE}: \eqn{\exp\{-\sum_k \Lambda_k(t)\}} (Cox baseline only).}
@@ -31,6 +37,14 @@ csc(formula, data, ties = c("efron", "breslow"), product_limit = TRUE, baseline 
   in \code{\link{parsurv}}; default knots and cut points are chosen from the events of each cause.}
 \item{max_iter,tol}{iteration limit and convergence tolerance of the parametric fits.}
 }
+\details{
+With a Cox baseline, strata, (entry, time] data and clusters are handled for every cause exactly
+as in \code{\link{cox}}; each cause-specific model agrees with \code{survival::coxph} on
+\code{Surv(..., status == k)}. The cumulative incidence of cause \eqn{k} for a subject in stratum
+\eqn{s} is \eqn{\sum_{u \le t} \hat S_s(u-) \, d\hat\Lambda_{ks}(u) e^{x^\top\hat\beta_k}}, with the
+baseline hazards of that stratum (Benichou and Gail 1990). \code{predict()} gives it for such fits;
+curves with bootstrap bands (\code{cif_plot()}) are not yet available for them.
+}
 \value{
 With \code{baseline = "cox"}: an S7 object of class \code{CSCFit}; \code{x@models} holds the fit
   of each cause. With a parametric baseline: an S7 object of class \code{ParCSCFit};
@@ -42,6 +56,12 @@ With \code{baseline = "cox"}: an S7 object of class \code{CSCFit}; \code{x@model
   \code{\link{cv_compare}}.
 }
 \references{
+Andersen PK, Gill RD (1982) Cox's regression model for counting processes: a large sample study.
+  Annals of Statistics 10:1100-1120.
+
+Lin DY, Wei LJ (1989) The robust inference for the Cox proportional hazards model. Journal of the
+  American Statistical Association 84:1074-1078.
+
 Prentice RL, Kalbfleisch JD, Peterson AV, Flournoy N, Farewell VT, Breslow NE (1978) The analysis
   of failure times in the presence of competing risks. Biometrics 34:541-554.
 

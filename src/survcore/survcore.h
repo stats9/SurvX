@@ -30,6 +30,19 @@ int sc_aalen_johansen(int n, const double* time, const int* cause, int K,
 int sc_coxph(int n, int p, const double* time, const int* status, const double* X,
              const double* weights, int ties, int max_iter, double tol,
              double* beta, double* var, sc_fit_info* info);
+/* Extended Cox model: entry (null: none) gives (entry, time] intervals for delayed entry and
+ * time-varying covariates (Andersen & Gill 1982); strata (null: none) are codes 0, 1, ... with a
+ * separate baseline hazard per stratum. Baseline output is ordered by stratum, then time;
+ * out_strata receives the stratum of every entry. sc_coxph_score gives the n x p score residuals
+ * (row-major) for the robust variance of Lin & Wei (1989). */
+int sc_coxph_ext(int n, int p, const double* entry, const double* time, const int* status, const int* strata,
+                 const double* X, const double* weights, int ties, int max_iter, double tol,
+                 double* beta, double* var, sc_fit_info* info);
+int sc_coxph_ext_baseline(int n, int p, const double* entry, const double* time, const int* status, const int* strata,
+                          const double* X, const double* weights, int ties, const double* beta, const double* zref,
+                          double* out_time, double* out_cumhaz, int* out_strata, int* m);
+int sc_coxph_score(int n, int p, const double* entry, const double* time, const int* status, const int* strata,
+                   const double* X, const double* weights, int ties, const double* beta, double* U);
 int sc_coxph_eval(int n, int p, const double* time, const int* status, const double* X,
                   const double* weights, int ties, const double* beta,
                   double* loglik, double* grad, double* info_matrix);

@@ -185,7 +185,7 @@ test_that("printing, plotting and delayed entry guards", {
   expect_output(print(summary(f)), "Weibull shape")
   e <- estimates(f)
   expect_identical(sum(e$role == "beta"), 2L)
-  expect_error(cox(Event(time, status, entry = entry) ~ x, d), "delayed entry")
+  expect_s3_class(estimates(cox(Event(time, status, entry = entry) ~ x, d)), "data.frame")   # Cox: (entry, time] since 0.8.0
   expect_error(fg(Event(time, status, entry = entry) ~ x, d), "delayed entry")
   expect_error(parsurv(Event(time, status) ~ x, d, baseline = "lognormal", scale = "PH"), "AFT")
   expect_output(print(Event(c(2, 3), c(1, 0), entry = c(0, 1))), "\\(1")

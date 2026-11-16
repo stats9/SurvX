@@ -5,7 +5,7 @@ type: software
 authors:
   - family-names: Ezzatabadipour
     given-names: Habib
-version: 0.7.0
+version: 0.8.0
 doi: 10.5281/zenodo.24255828
 date-released: 2026-11-16
 license: GPL-3.0-only

@@ -121,7 +121,7 @@ patient, which keeps the plateau parameters interpretable and stabilises the fit
 | `logrank_test(time, status, group, strata, rho)` | K-sample log-rank test with the G-rho weight family; stratified |
 | `aj(formula, data, level)` | Aalen-Johansen cumulative incidence of every cause: standard errors, cloglog intervals, Gray's test between groups |
 | `gray_test(time, status, group, cause, strata, rho)` | Gray's K-sample test for equal cumulative incidence; stratified |
-| `cox(formula, data, ties, weights)` | Cox proportional hazards model: Efron or Breslow ties, case weights, baseline hazard, predicted survival |
+| `cox(formula, data, ties, weights, robust)` | Cox proportional hazards model: Efron or Breslow ties, `strata()`, (start, stop] data and delayed entry, `cluster()` robust variance, case weights, baseline hazard, predicted survival |
 | `csc(formula, data, ties, product_limit, baseline)` | cause-specific hazard models for all causes and the cumulative incidence they imply: Cox (default) or parametric (`baseline = "weibull"`, ...) |
 | `parsurv(formula, data, baseline, scale)` | parametric survival regression: exponential, Weibull, Gompertz, log-normal, log-logistic, generalized gamma, piecewise exponential, Royston-Parmar spline; PH or AFT; delayed entry |
 | `residuals(fit, type)` | martingale, deviance, Cox-Snell and (scaled) Schoenfeld residuals of Cox, cause-specific and parametric models |
@@ -424,7 +424,7 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 | `logrank_test()` | log-rank and G-rho family, stratified | Mantel (1966); Peto & Peto (1972); Harrington & Fleming (1982) |
 | `aj()` | Aalen-Johansen estimator of the CIF; cloglog intervals | Aalen & Johansen (1978); Kalbfleisch & Prentice (2002) |
 | `gray_test()` | K-sample test for CIFs; variance ported from the Fortran routine `crstm` of cmprsk | Gray (1988) |
-| `cox()` | partial likelihood; Efron and Breslow ties; Breslow baseline hazard | Cox (1972); Breslow (1974); Efron (1977) |
+| `cox()` | partial likelihood; Efron and Breslow ties; Breslow baseline hazard; strata; counting-process (start, stop] form; robust variance | Cox (1972); Breslow (1974); Efron (1977); Kalbfleisch & Prentice (2002); Andersen & Gill (1982); Lin & Wei (1989) |
 | `csc()` | cause-specific Cox models combined into CIFs | Prentice et al. (1978); Benichou & Gail (1990) |
 | `parsurv()` | parametric PH and AFT models by maximum likelihood with delayed entry; spline, piecewise exponential and generalized gamma baselines | Kalbfleisch & Prentice (2002); Lawless (2003); Klein & Moeschberger (2003); Royston & Parmar (2002); Friedman (1982); Prentice (1974); Cox et al. (2007) |
 | `residuals()` | martingale, deviance, Cox-Snell, Schoenfeld and scaled Schoenfeld residuals | Cox & Snell (1968); Schoenfeld (1982); Therneau, Grambsch & Fleming (1990) |

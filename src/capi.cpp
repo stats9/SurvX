@@ -116,17 +116,65 @@ int sc_aalen_johansen(int n, const double* time, const int* cause, int K,
   return 0;
 } catch (...) { return -9; }
 
-int sc_coxph(int n, int p, const double* time, const int* status, const double* X,
-             const double* weights, int ties, int max_iter, double tol,
-             double* beta, double* var, sc_fit_info* info) try {
+namespace {
+int check_ext(int n, const double* entry, const double* time, const int* strata, const double* weights) {
+  if (entry) {
+    if (!finite_all(entry, n)) return -2;
+    for (int i = 0; i < n; ++i) if (!(entry[i] < time[i])) return -6;
+  }
+  if (strata) for (int i = 0; i < n; ++i) if (strata[i] < 0) return -1;
+  if (weights) { if (!finite_all(weights, n)) return -2; for (int i = 0; i < n; ++i) if (weights[i] < 0) return -2; }
+  return 0;
+}
+}  // namespace
+
+int sc_coxph_ext(int n, int p, const double* entry, const double* time, const int* status, const int* strata,
+                 const double* X, const double* weights, int ties, int max_iter, double tol,
+                 double* beta, double* var, sc_fit_info* info) try {
   if (int rc = check_common(n, p, time, X)) return rc;
   if (!status || !beta || p == 0) return -1;
-  if (weights) { if (!finite_all(weights, n)) return -2; for (int i = 0; i < n; ++i) if (weights[i] < 0) return -2; }
-  CoxModel m(n, p, time, status, X, weights, ties == 1 ? EFRON : BRESLOW);
+  if (int rc = check_ext(n, entry, time, strata, weights)) return rc;
+  CoxModel m(n, p, time, status, X, weights, ties == 1 ? EFRON : BRESLOW, entry, strata);
   if (m.n_events() == 0) return -3;
   FitResult r = newton_fit(m, std::vector<double>(beta, beta + p), max_iter, tol);
   flag_monotone(r, n, p, X);
   export_fit(r, p, static_cast<int>(m.n_events()), beta, var, info);
+  return 0;
+} catch (...) { return -9; }
+
+int sc_coxph(int n, int p, const double* time, const int* status, const double* X,
+             const double* weights, int ties, int max_iter, double tol,
+             double* beta, double* var, sc_fit_info* info) {
+  return sc_coxph_ext(n, p, nullptr, time, status, nullptr, X, weights, ties, max_iter, tol, beta, var, info);
+}
+
+int sc_coxph_ext_baseline(int n, int p, const double* entry, const double* time, const int* status, const int* strata,
+                          const double* X, const double* weights, int ties, const double* beta, const double* zref,
+                          double* out_time, double* out_cumhaz, int* out_strata, int* m) try {
+  if (int rc = check_common(n, p, time, X)) return rc;
+  if (!status || !beta || !out_time || !out_cumhaz || !m) return -1;
+  if (int rc = check_ext(n, entry, time, strata, weights)) return rc;
+  CoxModel mod(n, p, time, status, X, weights, ties == 1 ? EFRON : BRESLOW, entry, strata);
+  std::vector<double> t, H;
+  std::vector<int> s;
+  mod.baseline(std::vector<double>(beta, beta + p), zref, t, H, &s);
+  *m = static_cast<int>(t.size());
+  for (std::size_t i = 0; i < t.size(); ++i) {
+    out_time[i] = t[i]; out_cumhaz[i] = H[i];
+    if (out_strata) out_strata[i] = s[i];
+  }
+  return 0;
+} catch (...) { return -9; }
+
+int sc_coxph_score(int n, int p, const double* entry, const double* time, const int* status, const int* strata,
+                   const double* X, const double* weights, int ties, const double* beta, double* U) try {
+  if (int rc = check_common(n, p, time, X)) return rc;
+  if (!status || !beta || !U || p == 0) return -1;
+  if (int rc = check_ext(n, entry, time, strata, weights)) return rc;
+  CoxModel mod(n, p, time, status, X, weights, ties == 1 ? EFRON : BRESLOW, entry, strata);
+  std::vector<double> u;
+  mod.score_residuals(std::vector<double>(beta, beta + p), u);
+  for (std::size_t i = 0; i < u.size(); ++i) U[i] = u[i];
   return 0;
 } catch (...) { return -9; }
 

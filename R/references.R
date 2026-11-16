@@ -24,6 +24,8 @@
   # Cox
   cox1972 = c("Cox (1972)", "Cox DR (1972). Regression models and life-tables. Journal of the Royal Statistical Society, Series B 34:187-220."),
   breslow1974 = c("Breslow (1974)", "Breslow NE (1974). Covariance analysis of censored survival data. Biometrics 30:89-99."),
+  andersen_gill1982 = c("Andersen & Gill (1982)", "Andersen PK, Gill RD (1982). Cox's regression model for counting processes: a large sample study. Annals of Statistics 10:1100-1120."),
+  lin_wei1989 = c("Lin & Wei (1989)", "Lin DY, Wei LJ (1989). The robust inference for the Cox proportional hazards model. Journal of the American Statistical Association 84:1074-1078."),
   efron1977 = c("Efron (1977)", "Efron B (1977). The efficiency of Cox's likelihood function for censored data. Journal of the American Statistical Association 72:557-565."),
   # competing risks
   prentice1978 = c("Prentice et al. (1978)", "Prentice RL, Kalbfleisch JD, Peterson AV, Flournoy N, Farewell VT, Breslow NE (1978). The analysis of failure times in the presence of competing risks. Biometrics 34:541-554."),
@@ -83,9 +85,9 @@
   gray_test = c("gray1988"),
   rmst = c("irwin1949", "royston_parmar2013"),
   hazard_np = c("nelson1972", "aalen1978", "ramlau1983", "muller_wang1994", "patil1993", "hall_marron1991"),
-  cox = c("cox1972", "breslow1974", "efron1977", "wilks1938", "akaike1974"),
+  cox = c("cox1972", "breslow1974", "efron1977", "andersen_gill1982", "lin_wei1989", "kalbfleisch2002", "wilks1938", "akaike1974"),
   fg = c("fine_gray1999", "geskus2011", "white1982"),
-  csc = c("prentice1978", "cox1972", "breslow1974", "efron1977", "benichou1990", "kalbfleisch2002"),
+  csc = c("prentice1978", "cox1972", "breslow1974", "efron1977", "benichou1990", "kalbfleisch2002", "andersen_gill1982", "lin_wei1989"),
   parsurv = c("kalbfleisch2002", "lawless2003", "klein2003", "casella2002", "akaike1974", "schwarz1978",
               "levenberg1944", "marquardt1963"),
   directcif = c("jeong_fine2006", "jeong_fine2007", "dabrowska1988", "casella2002", "akaike1974",
@@ -109,11 +111,11 @@
 # keys behind one fitted object: the method itself and the options that were used
 .method_keys <- function(x) {
   if (S7::S7_inherits(x, CoxFit))
-    return(c("cox1972", if (x@ties == "efron") "efron1977" else "breslow1974", "breslow1974"))
+    return(c("cox1972", if (x@ties == "efron") "efron1977" else "breslow1974", "breslow1974", .design_keys(x)))
   if (S7::S7_inherits(x, FineGrayFit))
     return(c("fine_gray1999", if (identical(x@variance, "robust")) "white1982"))
   if (S7::S7_inherits(x, CSCFit))
-    return(c("prentice1978", "cox1972", if (x@ties == "efron") "efron1977", "breslow1974", "benichou1990"))
+    return(c("prentice1978", "cox1972", if (x@ties == "efron") "efron1977", "breslow1974", "benichou1990", .design_keys(x)))
   if (S7::S7_inherits(x, ParSurvFit) || S7::S7_inherits(x, ParCSCFit)) {
     d <- unique(x@dist)
     k <- c(if (S7::S7_inherits(x, ParCSCFit)) c("prentice1978", "hinchliffe2013"), "kalbfleisch2002", "lawless2003",
@@ -139,6 +141,10 @@
   if (S7::S7_inherits(x, ModelComparison)) return(c("graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", if (x@folds >= 2L) "hastie2009"))
   if (S7::S7_inherits(x, PHTest)) return(c("grambsch1994", "therneau2000"))
   character(0)
+}
+
+.design_keys <- function(x) {
+  c(if (!is.null(x@strata)) "kalbfleisch2002", if (!is.null(x@entry)) "andersen_gill1982", if (isTRUE(x@robust)) "lin_wei1989")
 }
 
 # the line printed under every result

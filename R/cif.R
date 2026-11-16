@@ -312,6 +312,9 @@ cif_data <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
     is_par <- S7::S7_inherits(m, ParCSCFit)
     if (!is_direct && !is_par && !S7::S7_inherits(m, FineGrayFit) && !S7::S7_inherits(m, CSCFit))
       stop("cif_data() takes models fitted by directcif(), fg(), csc() or an aj() estimate", call. = FALSE)
+    if (S7::S7_inherits(m, CSCFit) && (!is.null(m@strata) || !is.null(m@entry)))
+      stop(nm, ": curves with bootstrap bands are not available yet for csc() with strata() or delayed entry; ",
+           "use predict(fit, newdata, times) for the cumulative incidence", call. = FALSE)
     tg <- if (!is.null(times)) times else if (is_direct || is_par) .grid_smooth(tmax) else .grid_step(m@time, m@status, tmax)
     rows <- NULL; adjust <- 1L; fit <- m
     if (type == "newdata") {

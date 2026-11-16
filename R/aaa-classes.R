@@ -24,7 +24,14 @@ CoxFit <- S7::new_class("CoxFit", parent = SurvXFit, package = "SurvX",
   properties = list(
     ties = S7::class_character,
     weights = S7::class_any,
-    loglik_null = S7::class_numeric
+    loglik_null = S7::class_numeric,
+    entry = S7::class_any,            # start of the (entry, time] interval, or NULL
+    strata = S7::class_any,           # 0-based stratum codes, or NULL
+    strata_levels = S7::class_any,
+    strata_vars = S7::class_any,
+    cluster = S7::class_any,          # cluster identifiers, or NULL
+    robust = S7::class_logical,       # vcov is the robust (sandwich) variance
+    vcov_model = S7::class_any        # inverse information
   ))
 
 FineGrayFit <- S7::new_class("FineGrayFit", parent = SurvXFit, package = "SurvX",
@@ -68,7 +75,13 @@ CSCFit <- S7::new_class("CSCFit", package = "SurvX",
     n = S7::class_integer,
     time = S7::class_numeric,
     status = S7::class_integer,
-    X = S7::class_any
+    X = S7::class_any,
+    entry = S7::class_any,
+    strata = S7::class_any,
+    strata_levels = S7::class_any,
+    strata_vars = S7::class_any,
+    cluster = S7::class_any,
+    robust = S7::class_logical
   ))
 
 KMFit <- S7::new_class("KMFit", package = "SurvX",
