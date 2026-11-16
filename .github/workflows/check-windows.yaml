@@ -9,6 +9,11 @@ name: Windows (R release)
 
 permissions: read-all
 
+# a new push cancels the runs of older pushes still waiting or running
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   R-CMD-check:
     runs-on: windows-latest
