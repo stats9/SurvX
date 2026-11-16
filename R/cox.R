@@ -14,7 +14,7 @@
 #' @export
 cox <- function(formula, data, ties = c("efron", "breslow"), weights = NULL, max_iter = 50L, tol = 1e-10) {
   cl <- match.call(); ties <- match.arg(ties)
-  f <- .sx_frame(formula, data)
+  f <- .sx_frame(formula, data, what = "cox()")
   if (any(f$status > 1L)) stop("cox() needs a 0/1 status; use csc() for cause-specific Cox models", call. = FALSE)
   n <- length(f$time); p <- ncol(f$X)
   if (p < 1L) stop("at least one covariate is needed", call. = FALSE)

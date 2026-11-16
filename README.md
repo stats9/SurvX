@@ -115,14 +115,17 @@ patient, which keeps the plateau parameters interpretable and stabilises the fit
 
 | Function | Purpose |
 | --- | --- |
-| `Event(time, status)` | response for all model formulas |
+| `Event(time, status, entry)` | response for all model formulas; `entry` for delayed entry (left truncation) |
 | `km(formula, data, level)` | Kaplan-Meier survival curves: Greenwood standard errors, log-scale intervals, median survival with its confidence limits, log-rank test between groups |
 | `rmst(time, status, tau)` | restricted mean survival time up to `tau` with its standard error |
 | `logrank_test(time, status, group, strata, rho)` | K-sample log-rank test with the G-rho weight family; stratified |
 | `aj(formula, data, level)` | Aalen-Johansen cumulative incidence of every cause: standard errors, cloglog intervals, Gray's test between groups |
 | `gray_test(time, status, group, cause, strata, rho)` | Gray's K-sample test for equal cumulative incidence; stratified |
 | `cox(formula, data, ties, weights)` | Cox proportional hazards model: Efron or Breslow ties, case weights, baseline hazard, predicted survival |
-| `csc(formula, data, ties, product_limit)` | cause-specific Cox models for all causes and the cumulative incidence they imply |
+| `csc(formula, data, ties, product_limit, baseline)` | cause-specific hazard models for all causes and the cumulative incidence they imply: Cox (default) or parametric (`baseline = "weibull"`, ...) |
+| `parsurv(formula, data, baseline, scale)` | parametric survival regression: exponential, Weibull, Gompertz, log-normal, log-logistic; PH or AFT; delayed entry |
+| `hazard_np(formula, data, smooth, bw)` | Nelson-Aalen cumulative hazard and kernel-smoothed hazard by group and cause |
+| `hazard_plot(fit, type)` | fitted hazard, cumulative hazard or survival of parametric models, with the non-parametric estimate as reference |
 | `fg(formula, data, cause, variance)` | Fine-Gray proportional subdistribution hazards model: robust or model-based variance, predicted CIF |
 | `directcif(formula, data, baseline, link, estimation, ...)` | direct parametric CIF regression; see [The direct models](#the-direct-models) |
 | `predict(fit, newdata, times, cause, se)` | absolute risks (CIF or survival) for new patients; delta-method standard errors for direct models |
@@ -404,6 +407,9 @@ Find the installed scripts with `system.file("simulations", package = "SurvX")`.
 | `gray_test()` | K-sample test for CIFs; variance ported from the Fortran routine `crstm` of cmprsk | Gray (1988) |
 | `cox()` | partial likelihood; Efron and Breslow ties; Breslow baseline hazard | Cox (1972); Breslow (1974); Efron (1977) |
 | `csc()` | cause-specific Cox models combined into CIFs | Prentice et al. (1978); Benichou & Gail (1990) |
+| `parsurv()` | parametric PH and AFT models by maximum likelihood with delayed entry | Kalbfleisch & Prentice (2002); Lawless (2003); Klein & Moeschberger (2003) |
+| `csc(baseline = )` | CIF from parametric cause-specific hazards by numerical integration | Prentice et al. (1978); Hinchliffe & Lambert (2013) |
+| `hazard_np()` | Nelson-Aalen estimator; kernel-smoothed hazard with boundary kernels; cross-validated bandwidth | Nelson (1972); Aalen (1978); Ramlau-Hansen (1983); Müller & Wang (1994); Patil (1993) |
 | `fg()` | proportional subdistribution hazards with IPCW risk sets; robust variance | Fine & Gray (1999) |
 | `directcif(estimation = "joint")` | direct parametric CIF models, joint likelihood | Jeong & Fine (2006, 2007) |
 | links PH / PO / GOR | generalized odds rate transformation | Dabrowska & Doksum (1988); Jeong & Fine (2007) |
@@ -421,6 +427,7 @@ Find the installed scripts with `system.file("simulations", package = "SurvX")`.
 
 ### References
 
+- Aalen, O. (1978). Nonparametric inference for a family of counting processes. *The Annals of Statistics*, 6, 701–726.
 - Aalen, O. O. and Johansen, S. (1978). An empirical transition matrix for non-homogeneous Markov chains based on censored observations. *Scandinavian Journal of Statistics*, 5, 141–150.
 - Benichou, J. and Gail, M. H. (1990). Estimates of absolute cause-specific risk in cohort studies. *Biometrics*, 46, 813–826.
 - Blanche, P., Dartigues, J.-F. and Jacqmin-Gadda, H. (2013). Estimating and comparing time-dependent areas under receiver operating characteristic curves for censored event times with competing risks. *Statistics in Medicine*, 32(30), 5381–5397. doi:10.1002/sim.5958
@@ -438,6 +445,7 @@ Find the installed scripts with `system.file("simulations", package = "SurvX")`.
 - Graf, E., Schmoor, C., Sauerbrei, W. and Schumacher, M. (1999). Assessment and comparison of prognostic classification schemes for survival data. *Statistics in Medicine*, 18, 2529–2545.
 - Gray, R. J. (1988). A class of K-sample tests for comparing the cumulative incidence of a competing risk. *The Annals of Statistics*, 16, 1141–1154.
 - Greenwood, M. (1926). The natural duration of cancer. *Reports on Public Health and Medical Subjects*, 33. HMSO.
+- Hinchliffe, S. R. and Lambert, P. C. (2013). Flexible parametric modelling of cause specific hazards to estimate cumulative incidence functions. *BMC Medical Research Methodology*, 13, 13.
 - Haile, S. R., Jeong, J.-H., Chen, X. and Cheng, Y. (2016). A 3-parameter Gompertz distribution for survival data with competing risks, with an application to breast cancer data. *Journal of Applied Statistics*, 43(12), 2239–2253.
 - Harrington, D. P. and Fleming, T. R. (1982). A class of rank test procedures for censored survival data. *Biometrika*, 69, 553–566.
 - Hastie, T., Tibshirani, R. and Friedman, J. (2009). *The Elements of Statistical Learning*, 2nd ed. Springer.
@@ -448,14 +456,20 @@ Find the installed scripts with `system.file("simulations", package = "SurvX")`.
 - Kaplan, E. L. and Meier, P. (1958). Nonparametric estimation from incomplete observations. *Journal of the American Statistical Association*, 53, 457–481.
 - Kattan, M. W. and Gerds, T. A. (2018). The index of prediction accuracy: an intuitive measure useful for evaluating risk prediction models. *Diagnostic and Prognostic Research*, 2, 7. doi:10.1186/s41512-018-0029-2
 - Lambert, P. C., Wilkes, S. R. and Crowther, M. J. (2017). Flexible parametric modelling of the cause-specific cumulative incidence function. *Statistics in Medicine*, 36(9), 1429–1446. doi:10.1002/sim.7208
+- Klein, J. P. and Moeschberger, M. L. (2003). *Survival Analysis: Techniques for Censored and Truncated Data*, 2nd ed. Springer.
+- Lawless, J. F. (2003). *Statistical Models and Methods for Lifetime Data*, 2nd ed. Wiley.
 - Larson, M. G. and Dinse, G. E. (1985). A mixture model for the regression analysis of competing risks data. *Journal of the Royal Statistical Society, Series C*, 34, 201–211.
 - Levenberg, K. (1944). A method for the solution of certain non-linear problems in least squares. *Quarterly of Applied Mathematics*, 2, 164–168.
 - Mantel, N. (1966). Evaluation of survival data and two new rank order statistics arising in its consideration. *Cancer Chemotherapy Reports*, 50, 163–170.
 - Marquardt, D. W. (1963). An algorithm for least-squares estimation of nonlinear parameters. *Journal of the Society for Industrial and Applied Mathematics*, 11, 431–441.
 - Mozumder, S. I., Rutherford, M. J. and Lambert, P. C. (2018). Direct likelihood inference on the cause-specific cumulative incidence function: a flexible parametric regression modelling approach. *Statistics in Medicine*, 37(1), 82–97. doi:10.1002/sim.7498
+- Müller, H.-G. and Wang, J.-L. (1994). Hazard rate estimation under random censoring with varying kernels and bandwidths. *Biometrics*, 50, 61–76.
+- Nelson, W. (1972). Theory and applications of hazard plotting for censored failure data. *Technometrics*, 14, 945–966.
 - Okabe, M. and Ito, K. (2008). Color universal design (CUD): how to make figures and presentations that are friendly to colorblind people. <https://jfly.uni-koeln.de/color/>
+- Patil, P. N. (1993). On the least squares cross-validation bandwidth in hazard rate estimation. *The Annals of Statistics*, 21, 1792–1810.
 - Peto, R. and Peto, J. (1972). Asymptotically efficient rank invariant test procedures. *Journal of the Royal Statistical Society, Series A*, 135, 185–207.
 - Prentice, R. L., Kalbfleisch, J. D., Peterson, A. V., Flournoy, N., Farewell, V. T. and Breslow, N. E. (1978). The analysis of failure times in the presence of competing risks. *Biometrics*, 34, 541–554.
+- Ramlau-Hansen, H. (1983). Smoothing counting process intensities by means of kernel functions. *The Annals of Statistics*, 11, 453–466.
 - Royston, P. and Parmar, M. K. B. (2002). Flexible parametric proportional-hazards and proportional-odds models for censored survival data, with application to prognostic modelling and estimation of treatment effects. *Statistics in Medicine*, 21, 2175–2197.
 - Royston, P. and Parmar, M. K. B. (2013). Restricted mean survival time: an alternative to the hazard ratio for the design and analysis of randomized trials with a time-to-event outcome. *BMC Medical Research Methodology*, 13, 152.
 - Shi, H., Cheng, Y. and Jeong, J.-H. (2013). Constrained parametric model for simultaneous inference of two cumulative incidence functions. *Biometrical Journal*, 55(1), 82–96.

@@ -67,7 +67,7 @@ gray_test <- function(time, status, group, cause = 1L, strata = NULL, rho = 0) {
 #' @export
 km <- function(formula, data, level = 0.95) {
   cl <- match.call()
-  f <- .sx_groups(formula, data)
+  f <- .sx_groups(formula, data, what = "this estimator")
   if (any(f$status > 1L)) stop("km() needs a 0/1 status; use aj() for competing risks", call. = FALSE)
   zq <- stats::qnorm(1 - (1 - level) / 2)
   curves <- list(); counts <- NULL
@@ -107,7 +107,7 @@ km <- function(formula, data, level = 0.95) {
 #' @export
 aj <- function(formula, data, level = 0.95) {
   cl <- match.call()
-  f <- .sx_groups(formula, data)
+  f <- .sx_groups(formula, data, what = "this estimator")
   K <- max(f$status)
   if (K < 1L) stop("no events", call. = FALSE)
   zq <- stats::qnorm(1 - (1 - level) / 2)

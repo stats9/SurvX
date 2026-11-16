@@ -1,3 +1,26 @@
+# SurvX 0.6.0
+
+* New `parsurv()`: parametric survival regression with exponential, Weibull, Gompertz, log-normal and
+  log-logistic distributions, as proportional hazards (PH) or accelerated failure time (AFT) models,
+  with delayed entry. Exact (analytic) gradient and Hessian in C++; validated against
+  `survival::survreg` and `flexsurv::flexsurvreg`. `predict()` gives survival, hazard, cumulative
+  hazard, quantiles (e.g. the median) and restricted mean survival time, with delta-method standard
+  errors and limits, for given covariate values or averaged over the sample.
+* `csc()` gains `baseline`: with a parametric distribution every cause gets a parametric hazard model
+  and the cumulative incidence is computed from the hazards by numerical integration, with
+  delta-method bands; coherent by construction. Works in `cif_plot()`, `cif_data()`, `cv_compare()`,
+  `AIC()` and the new `hazard_plot()`.
+* New `hazard_np()`: Nelson-Aalen cumulative hazard and kernel-smoothed hazard (Epanechnikov kernel
+  with the boundary kernels of Mueller and Wang, bandwidth by the least-squares cross-validation of
+  Patil), by group and cause, with delayed entry.
+* New `hazard_plot()`: fitted hazard, cumulative hazard or survival of parametric models with
+  confidence bands and the non-parametric estimate as reference, to check the chosen distribution.
+* `Event()` gains `entry` for delayed entry (left truncation). Functions that do not support it yet
+  stop with a clear message.
+* Output of the new models: effects on the ratio scale, a plain-language reading of every effect with
+  p < 0.05 ("x (per one-unit increase): 12% lower rate of the event (HR 0.88, 95% CI ...)"), the
+  baseline distribution on its natural scale in `summary()`, AIC, BIC and the likelihood ratio test.
+
 # SurvX 0.5.4
 
 * Test suite with testthat (`tests/testthat/`), replacing `tests/smoke.R`. It checks the estimators

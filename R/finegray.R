@@ -15,7 +15,7 @@
 #' @export
 fg <- function(formula, data, cause = 1L, variance = c("robust", "model"), max_iter = 50L, tol = 1e-10) {
   cl <- match.call(); variance <- match.arg(variance)
-  f <- .sx_frame(formula, data)
+  f <- .sx_frame(formula, data, what = "fg()")
   n <- length(f$time); p <- ncol(f$X)
   if (p < 1L) stop("at least one covariate is needed", call. = FALSE)
   r <- .C("SX_fg", as.integer(n), as.integer(p), f$time, f$status, .rm(f$X), as.integer(cause),
@@ -46,25 +46,57 @@ S7::method(predict, FineGrayFit) <- function(object, newdata = NULL, times, ...)
   out
 }
 
-#' Cause-specific Cox models
+#' Cause-specific hazard models: Cox or parametric
 #'
-#' One Cox model per cause, with the other causes treated as censoring, combined into
-#' cumulative incidence functions.
+#' One hazard model per cause, with the other causes treated as censoring, combined into
+#' cumulative incidence functions. With \code{baseline = "cox"} (default) every cause gets a Cox
+#' model with an unspecified baseline hazard; with a parametric \code{baseline} every cause gets a
+#' parametric hazard model fitted by \code{\link{parsurv}}, and the cumulative incidence
+#' \eqn{F_k(t) = \int_0^t h_k(u) S(u)\,du} is computed by numerical integration with delta-method
+#' standard errors. Both are coherent by construction: the incidences of all causes and the
+#' event-free probability add up to one.
 #'
 #' @param formula \code{Event(time, status) ~ covariates}; status 0 = censored, 1..K = cause.
+#'   With a parametric baseline, \code{Event(time, status, entry = )} allows delayed entry.
 #' @param data a data frame.
-#' @param ties \code{"efron"} (default) or \code{"breslow"}.
+#' @param ties \code{"efron"} (default) or \code{"breslow"} (Cox baseline only).
 #' @param product_limit \code{TRUE} (default): overall survival as a product-limit, as in
-#'   \pkg{riskRegression}; \code{FALSE}: \eqn{\exp\{-\sum_k \Lambda_k(t)\}}.
-#' @return an S7 object of class \code{CSCFit}; \code{x@models} holds the fit of each cause.
-#'   \code{predict(fit, newdata, times, cause)} gives the cumulative incidence.
-#' @references Prentice RL et al. (1978) Biometrics 34:541-554.
+#'   \pkg{riskRegression}; \code{FALSE}: \eqn{\exp\{-\sum_k \Lambda_k(t)\}} (Cox baseline only).
+#' @param baseline \code{"cox"}, or one of the distributions of \code{\link{parsurv}}
+#'   (\code{"exponential"}, \code{"weibull"}, \code{"gompertz"}, \code{"lognormal"},
+#'   \code{"loglogistic"}); a vector gives one distribution per cause.
+#' @param scale \code{"PH"} or \code{"AFT"} for parametric baselines, one value or one per cause;
+#'   default as in \code{\link{parsurv}}.
+#' @param max_iter,tol iteration limit and convergence tolerance of the parametric fits.
+#' @return \code{baseline = "cox"}: an S7 object of class \code{CSCFit}; \code{x@models} holds the
+#'   fit of each cause. Parametric: an S7 object of class \code{ParCSCFit}; \code{x@models} holds
+#'   the \code{\link{parsurv}} fit of each cause. \code{predict(fit, newdata, times, cause)} gives
+#'   the cumulative incidence.
+#' @references Prentice RL, Kalbfleisch JD, Peterson AV, Flournoy N, Farewell VT, Breslow NE (1978)
+#'   The analysis of failure times in the presence of competing risks. Biometrics 34:541-554.
 #'   Benichou J, Gail MH (1990) Biometrics 46:813-826.
 #'   Ozenne B et al. (2017) R Journal 9(2):440-460.
+#'   Hinchliffe SR, Lambert PC (2013) Flexible parametric modelling of cause specific hazards to
+#'   estimate cumulative incidence functions. BMC Med Res Methodol 13:13.
+#' @examples
+#' set.seed(2)
+#' n <- 300
+#' x <- rbinom(n, 1, 0.5)
+#' t1 <- rweibull(n, 1.3, 3 * exp(-0.4 * x)); t2 <- rweibull(n, 0.9, 5); cens <- runif(n, 0, 6)
+#' d <- data.frame(time = pmin(t1, t2, cens), x = x)
+#' d$status <- ifelse(d$time == cens, 0, ifelse(t1 < t2, 1, 2))
+#' csc(Event(time, status) ~ x, d)
+#' fw <- csc(Event(time, status) ~ x, d, baseline = "weibull")
+#' fw
+#' predict(fw, data.frame(x = 0:1), times = c(1, 3), cause = 1)
 #' @export
-csc <- function(formula, data, ties = c("efron", "breslow"), product_limit = TRUE) {
+csc <- function(formula, data, ties = c("efron", "breslow"), product_limit = TRUE, baseline = "cox", scale = NULL,
+                max_iter = 200L, tol = 1e-10) {
   cl <- match.call(); ties <- match.arg(ties)
-  f <- .sx_frame(formula, data)
+  parametric <- any(baseline != "cox")
+  if (parametric && any(baseline == "cox")) stop("baseline: 'cox' cannot be mixed with parametric distributions", call. = FALSE)
+  f <- .sx_frame(formula, data, entry_ok = parametric, what = "csc() with a Cox baseline")
+  if (parametric) return(.pcsc(cl, f, baseline, scale, max_iter, tol))
   K <- max(f$status)
   if (ncol(f$X) < 1L) stop("at least one covariate is needed", call. = FALSE)
   models <- lapply(seq_len(K), function(k) .cox_fit(f$time, as.integer(f$status == k), f$X, NULL, ties))

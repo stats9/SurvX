@@ -148,7 +148,7 @@ directcif <- function(formula, data, baseline = "gompertz", link = "PH",
                       constraint = FALSE, censoring_grid = 0L, init = NULL, max_iter = 500L, tol = 1e-10) {
   cl <- match.call()
   estimation <- match.arg(estimation); cond <- match.arg(cond)
-  f <- .sx_frame(formula, data)
+  f <- .sx_frame(formula, data, what = "directcif()")
   .directcif_core(cl, f, baseline, link, estimation, as.integer(cause), cond, df, knots, constraint, censoring_grid, init, max_iter, tol)
 }
 

@@ -24,7 +24,7 @@ cif_plot(x, newdata = NULL, cause = NULL,
     engine = c("base", "ggplot2"), ...)
 }
 \arguments{
-\item{x}{a model fitted by \code{\link{directcif}}, \code{\link{fg}} or \code{\link{csc}}, an
+\item{x}{a model fitted by \code{\link{directcif}}, \code{\link{fg}} or \code{\link{csc}} (Cox or parametric baseline), an
   \code{\link{aj}} estimate, or a named list of these for a comparison.}
 \item{newdata}{data frame of covariate values, one curve per row.}
 \item{cause}{causes to show; default all.}
@@ -68,7 +68,7 @@ cif_plot(x, newdata = NULL, cause = NULL,
 Curves of all causes are computed: a Fine-Gray model is refitted for every other cause and a
 weighted direct model is refitted for every other cause, with the same covariates.
 
-Pointwise confidence intervals: delta method for direct models and the Aalen-Johansen estimator,
+Pointwise confidence intervals: delta method for direct models, parametric cause-specific models and the Aalen-Johansen estimator,
 nonparametric bootstrap of the subjects for Fine-Gray and cause-specific Cox models (Efron and
 Tibshirani 1993); both on the complementary log-log scale, \eqn{F^{\exp(\pm z\,se/(F \log F))}},
 so that the limits stay in [0, 1]. \code{interval = "percentile"} gives bootstrap percentile limits instead.

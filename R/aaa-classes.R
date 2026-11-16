@@ -113,3 +113,47 @@ ModelComparison <- S7::new_class("ModelComparison", package = "SurvX",
     folds = S7::class_integer,
     cause = S7::class_integer
   ))
+
+# parametric survival regression: coefficients = (Intercept), covariates, shape parameter
+ParSurvFit <- S7::new_class("ParSurvFit", parent = SurvXFit, package = "SurvX",
+  properties = list(
+    dist = S7::class_character,
+    scale = S7::class_character,
+    dist_code = S7::class_integer,
+    aft = S7::class_integer,
+    entry = S7::class_any,
+    loglik_null = S7::class_numeric,
+    event_label = S7::class_character
+  ))
+
+# parametric cause-specific hazards: one ParSurvFit per cause
+ParCSCFit <- S7::new_class("ParCSCFit", package = "SurvX",
+  properties = list(
+    call = S7::class_any,
+    terms = S7::class_any,
+    xlevels = S7::class_any,
+    contrasts = S7::class_any,
+    models = S7::class_list,
+    K = S7::class_integer,
+    dist = S7::class_character,
+    scale = S7::class_character,
+    n = S7::class_integer,
+    time = S7::class_numeric,
+    status = S7::class_integer,
+    entry = S7::class_any,
+    X = S7::class_any
+  ))
+
+# non-parametric hazard: Nelson-Aalen cumulative hazard and kernel-smoothed hazard by group and cause
+HazardFit <- S7::new_class("HazardFit", package = "SurvX",
+  properties = list(
+    call = S7::class_any,
+    cumhaz = S7::class_list,
+    hazard = S7::class_list,
+    bandwidth = S7::class_any,
+    K = S7::class_integer,
+    level = S7::class_numeric,
+    time = S7::class_numeric,
+    status = S7::class_integer,
+    group = S7::class_any
+  ))

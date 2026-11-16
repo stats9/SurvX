@@ -180,6 +180,33 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
   do.call(rbind, out)
 }
 
+# parametric cause-specific hazards: delta-method bands from the C++ core
+.curves_parcsc <- function(fit, name, causes, rows, times, conf.int, level) {
+  out <- list()
+  for (k in causes) {
+    if (k > fit@K) next
+    if (is.null(rows)) {
+      pr <- .parcsc_predict_X(fit, fit@X, times, k, conf.int, level, average = TRUE)
+      est <- if (conf.int) pr$est else pr
+      se <- if (conf.int) drop(pr$se) else rep(NA_real_, length(times))
+      out[[length(out) + 1L]] <- .curve_frame(name, k, "average over the sample", times, drop(est), se,
+                                              .cif_interval(drop(est), se, .zq(level)), FALSE, "delta method")
+    } else for (i in seq_len(nrow(rows$X))) {
+      pr <- .parcsc_predict_X(fit, rows$X[i, , drop = FALSE], times, k, conf.int, level)
+      est <- drop(if (conf.int) pr$est else pr)
+      se <- if (conf.int) drop(pr$se) else rep(NA_real_, length(times))
+      out[[length(out) + 1L]] <- .curve_frame(name, k, rows$labels[i], times, est, se, .cif_interval(est, se, .zq(level)), FALSE, "delta method")
+    }
+  }
+  do.call(rbind, out)
+}
+
+.refit_parcsc <- function(fit) {
+  f <- list(time = fit@time, status = fit@status, X = matrix(0, fit@n, 0L), terms = stats::terms(stats::as.formula("~ 1")),
+            xlevels = list(), contrasts = NULL, entry = fit@entry)
+  .pcsc(fit@call, f, fit@dist, fit@scale, 200L, 1e-10)
+}
+
 .aj_frame <- function(time, status, level) {
   n <- length(time); K <- max(status)
   r <- .C("SX_aj", as.integer(n), as.double(time), as.integer(status), as.integer(K), time = double(n), surv = double(n),
@@ -229,7 +256,7 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
 #' Tibshirani 1993); both on the complementary log-log scale, \eqn{F^{\exp(\pm z\,se/(F \log F))}},
 #' so that the limits stay in [0, 1]. \code{interval = "percentile"} gives bootstrap percentile limits instead.
 #'
-#' @param x a model fitted by \code{\link{directcif}}, \code{\link{fg}} or \code{\link{csc}}, an
+#' @param x a model fitted by \code{\link{directcif}}, \code{\link{fg}} or \code{\link{csc}} (Cox or parametric baseline), an
 #'   \code{\link{aj}} estimate, or a named list of these for a comparison.
 #' @param newdata data frame of covariate values, one curve per row.
 #' @param cause causes to show; default all.
@@ -282,23 +309,26 @@ cif_data <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
       next
     }
     is_direct <- S7::S7_inherits(m, DirectCIFFit)
-    if (!is_direct && !S7::S7_inherits(m, FineGrayFit) && !S7::S7_inherits(m, CSCFit))
+    is_par <- S7::S7_inherits(m, ParCSCFit)
+    if (!is_direct && !is_par && !S7::S7_inherits(m, FineGrayFit) && !S7::S7_inherits(m, CSCFit))
       stop("cif_data() takes models fitted by directcif(), fg(), csc() or an aj() estimate", call. = FALSE)
-    tg <- if (!is.null(times)) times else if (is_direct) .grid_smooth(tmax) else .grid_step(m@time, m@status, tmax)
+    tg <- if (!is.null(times)) times else if (is_direct || is_par) .grid_smooth(tmax) else .grid_step(m@time, m@status, tmax)
     rows <- NULL; adjust <- 1L; fit <- m
     if (type == "newdata") {
       rows <- list(X = .sx_newX(m, newdata), labels = .newdata_labels(m, newdata))
     } else if (type == "profile") {
       pf <- .profile(m); rows <- list(X = pf$X, labels = "typical covariate values"); desc[nm] <- pf$label
     } else if (type == "unadjusted") {
-      if (is_direct) {
-        fit <- tryCatch(.refit_direct(m, TRUE), error = function(e) stop(nm, ": the model could not be fitted without covariates: ", conditionMessage(e), call. = FALSE))
+      if (is_direct || is_par) {
+        fit <- tryCatch(if (is_par) .refit_parcsc(m) else .refit_direct(m, TRUE),
+                        error = function(e) stop(nm, ": the model could not be fitted without covariates: ", conditionMessage(e), call. = FALSE))
         rows <- list(X = matrix(0, 1L, 0L), labels = "without covariates")
       } else {
         rows <- list(X = matrix(0, 1L, ncol(m@X)), labels = "without covariates"); adjust <- 0L
       }
     }
-    out[[nm]] <- if (is_direct) .curves_direct(fit, nm, causes, rows, tg, conf.int, level)
+    out[[nm]] <- if (is_par) .curves_parcsc(fit, nm, causes, rows, tg, conf.int, level)
+                 else if (is_direct) .curves_direct(fit, nm, causes, rows, tg, conf.int, level)
                  else .curves_boot(fit, nm, causes, rows, tg, conf.int, level, B, seed, interval, adjust)
   }
   d <- do.call(rbind, out)
@@ -319,6 +349,7 @@ cif_data <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
   if (S7::S7_inherits(m, AJFit)) return("Aalen-Johansen")
   if (S7::S7_inherits(m, FineGrayFit)) return("Fine-Gray")
   if (S7::S7_inherits(m, CSCFit)) return("cause-specific Cox")
+  if (S7::S7_inherits(m, ParCSCFit)) return(.par_name(m))
   if (S7::S7_inherits(m, DirectCIFFit)) return(paste0("direct ", m@baseline[1L], " ", m@link[1L], if (m@estimation != "joint") paste0(", ", m@estimation)))
   "model"
 }

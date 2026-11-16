@@ -376,6 +376,7 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
 # ----------------------------------------------------------------------------------------------
 .render <- function(x, level, detail) {
   if (S7::S7_inherits(x, DirectCIFFit)) return(.render_direct(x, level, detail))
+  if (S7::S7_inherits(x, ParSurvFit)) return(list(text = .render_par(x, level, detail), tables = list()))
   text <- if (S7::S7_inherits(x, CoxFit)) .render_cox(x, level, detail)
           else if (S7::S7_inherits(x, FineGrayFit)) .render_fg(x, level, detail)
           else .render_csc(x, level, detail)

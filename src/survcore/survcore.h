@@ -201,6 +201,26 @@ int sc_cif_bootstrap(int model, int n, int p, const double* time, const int* cau
                      const double* times, int B, unsigned long long seed, double level,
                      double* out_est, double* out_se, double* out_lower, double* out_upper, int* n_ok);
 
+/* Parametric regression (survcore/parametric.hpp). dist: 0 exponential, 1 Weibull, 2 Gompertz,
+ * 3 lognormal, 4 loglogistic; aft: 0 proportional hazards, 1 accelerated failure time. entry may be
+ * null (no delayed entry); times must be positive and entry < time. theta: 1 + p (+1 shape)
+ * parameters; init may be null. */
+int sc_par_fit(int n, int p, int dist, int aft, const double* entry, const double* time, const int* status,
+               const double* X, const double* init, int max_iter, double tol, double* theta, double* var,
+               sc_fit_info* info);
+/* type: 0 survival, 1 hazard, 2 cumulative hazard, 3 quantile (times = probabilities), 4 restricted
+ * mean (times = tau). average = 1: mean over the rows of Xnew (nt outputs), else n_new x nt row-major.
+ * out_se by the delta method; null var gives NaN. */
+int sc_par_predict(int dist, int aft, int p, const double* theta, const double* var, int n_new, const double* Xnew,
+                   int nt, const double* times, int type, int average, double* out, double* out_se);
+/* CIF of cause k (1..K) or overall survival (k = 0) from K parametric cause-specific hazards. */
+int sc_parcsc_predict(int K, const int* dist, const int* aft, int p, const double* theta, const double* var, int k,
+                      int n_new, const double* Xnew, int nt, const double* times, double tmax, int average,
+                      double* out, double* out_se);
+/* Kernel-smoothed hazard (survcore/hazard.hpp); bw <= 0: least-squares cross-validation. */
+int sc_kernel_hazard(int m, const double* et, const double* d, const double* Y, double bw, int boundary,
+                     int nx, const double* x, double* out_h, double* out_se, double* bw_used);
+
 #ifdef __cplusplus
 }
 #endif

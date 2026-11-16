@@ -135,6 +135,29 @@ cif_plot(f_dir, type = "marginal", reference = TRUE)
 The numbers behind any plot are available with `cif_data()`, and `cif_plot(..., engine = "ggplot2")`
 returns a ggplot object.
 
+## Parametric hazard models
+
+Giving `csc()` a parametric `baseline` fits a parametric model to the hazard of every cause
+(Weibull, Gompertz, exponential, log-normal or log-logistic). The cumulative incidences are computed
+from the fitted hazards, so they are coherent by construction, and they come with delta-method
+confidence bands.
+
+```{r}
+f_wei <- csc(Event(time, status) ~ x + z, d, baseline = "weibull")
+f_wei
+AIC(f_wei, csc(Event(time, status) ~ x + z, d, baseline = "lognormal"))
+```
+
+`hazard_plot()` draws the fitted cause-specific hazards with the kernel-smoothed non-parametric
+hazard (`hazard_np()`) as a reference, the visual check of the chosen distribution:
+
+```{r hazard-plot, fig.height = 4}
+hazard_plot(f_wei)
+```
+
+For a single event, `parsurv()` fits the same distributions as proportional hazards or
+accelerated failure time models, with delayed entry if needed (`Event(time, status, entry = )`).
+
 ## Comparing the models
 
 `compare_models()` fits a default set of direct models together with Fine–Gray and cause-specific

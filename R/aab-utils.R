@@ -23,11 +23,19 @@
 # row-major copy of a matrix
 .rm <- function(X) as.double(t(X))
 
-.sx_frame <- function(formula, data) {
+# delayed entry is supported by the parametric models only; everything else stops with a clear message
+.no_entry <- function(y, what) {
+  if (ncol(unclass(y)) >= 3L)
+    stop(what, " does not support delayed entry (left truncation) yet; use parsurv() or csc() with a ",
+         "parametric baseline, or remove 'entry' from Event()", call. = FALSE)
+}
+
+.sx_frame <- function(formula, data, entry_ok = FALSE, what = "this function") {
   if (missing(data) || is.null(data)) data <- environment(formula)
   mf <- stats::model.frame(formula, data = data, na.action = stats::na.omit)
   y <- mf[[1L]]
   if (!inherits(y, "Event")) stop("the left-hand side of the formula must be Event(time, status)", call. = FALSE)
+  if (!entry_ok) .no_entry(y, what)
   tt <- attr(mf, "terms")
   X <- stats::model.matrix(tt, mf)
   ctr <- attr(X, "contrasts")
@@ -37,7 +45,8 @@
   attr(X, "assign") <- asg[keep]                      # term of every column, used for covariate profiles
   y <- unclass(y)
   list(time = as.double(y[, 1L]), status = as.integer(round(y[, 2L])), X = X, terms = tt,
-       xlevels = stats::.getXlevels(tt, mf), contrasts = ctr, mf = mf)
+       xlevels = stats::.getXlevels(tt, mf), contrasts = ctr, mf = mf,
+       entry = if (ncol(y) >= 3L) as.double(y[, 3L]) else NULL)
 }
 
 .sx_newX <- function(object, newdata) {
@@ -49,14 +58,16 @@
 }
 
 # one grouping factor from the right-hand side of a formula such as Event(time, status) ~ arm
-.sx_groups <- function(formula, data) {
+.sx_groups <- function(formula, data, what = "this function", entry_ok = FALSE) {
   if (missing(data) || is.null(data)) data <- environment(formula)
   mf <- stats::model.frame(formula, data = data, na.action = stats::na.omit)
   y <- mf[[1L]]
   if (!inherits(y, "Event")) stop("the left-hand side of the formula must be Event(time, status)", call. = FALSE)
+  if (!entry_ok) .no_entry(y, what)
   y <- unclass(y)
   g <- if (ncol(mf) > 1L) interaction(mf[-1L], drop = TRUE, sep = ", ") else factor(rep("All patients", nrow(mf)))
-  list(time = as.double(y[, 1L]), status = as.integer(round(y[, 2L])), group = droplevels(as.factor(g)))
+  list(time = as.double(y[, 1L]), status = as.integer(round(y[, 2L])), group = droplevels(as.factor(g)),
+       entry = if (ncol(y) >= 3L) as.double(y[, 3L]) else NULL)
 }
 
 .matrix_rm <- function(v, nrow, ncol, dn = NULL) {

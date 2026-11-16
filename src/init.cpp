@@ -31,6 +31,10 @@ static const R_CMethodDef c_methods[] = {
   {"SX_direct_predict_mean", (DL_FUNC) &SX_direct_predict_mean, 18, NULL},
   {"SX_constrained_predict_mean", (DL_FUNC) &SX_constrained_predict_mean, 16, NULL},
   {"SX_cif_bootstrap", (DL_FUNC) &SX_cif_bootstrap, 25, NULL},
+  {"SX_par_fit", (DL_FUNC) &SX_par_fit, 18, NULL},
+  {"SX_par_predict", (DL_FUNC) &SX_par_predict, 15, NULL},
+  {"SX_parcsc_predict", (DL_FUNC) &SX_parcsc_predict, 17, NULL},
+  {"SX_kernel_hazard", (DL_FUNC) &SX_kernel_hazard, 12, NULL},
   {NULL, NULL, 0, NULL}
 };
 
