@@ -333,5 +333,12 @@ summarise_simulation <- function(raw) {
                 ifelse(is.na(sm$coverage_pct), "reported",
                 ifelse(abs(sm$coverage_pct - 95) <= band & sm$converged_pct >= 99 &
                          (is.na(sm$se_ratio) | abs(sm$se_ratio - 1) <= sm$se_ratio_band), "OK", "CHECK"))))
+  # a test whose rejection rate equals that of survival::cox.zph on the same data sets reflects the
+  # test itself in this design, not the code
+  for (k in which(sm$verdict == "CHECK" & grepl("^ph_test \\((.*)\\): size, global$", sm$method))) {
+    tr <- sub("^ph_test \\((.*)\\): size, global$", "\\1", sm$method[k])
+    j <- which(sm$method == paste0("survival::cox.zph (", tr, "), same data: size, global") & sm$n == sm$n[k])
+    if (length(j) == 1L && isTRUE(all.equal(sm$rate_pct[j], sm$rate_pct[k]))) sm$verdict[k] <- "as cox.zph"
+  }
   sm[order(sm$scenario, sm$method, sm$parameter, sm$n), ]
 }
