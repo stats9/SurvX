@@ -204,7 +204,7 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
 .refit_parcsc <- function(fit) {
   f <- list(time = fit@time, status = fit@status, X = matrix(0, fit@n, 0L), terms = stats::terms(stats::as.formula("~ 1")),
             xlevels = list(), contrasts = NULL, entry = fit@entry)
-  .pcsc(fit@call, f, fit@dist, fit@scale, 200L, 1e-10)
+  .pcsc(fit@call, f, fit@dist, fit@scale, 200L, 1e-10, kn_list = lapply(fit@models, function(m) m@knots))
 }
 
 .aj_frame <- function(time, status, level) {

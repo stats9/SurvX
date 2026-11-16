@@ -197,3 +197,94 @@ test_that("printing, plotting and delayed entry guards", {
   a <- AIC(f, fl$lognormal)
   expect_identical(nrow(a), 2L)
 })
+
+# ---- spline (Royston-Parmar) and piecewise exponential baselines ----------------------------------
+rp_basis_R <- function(x, k) {
+  kmin <- k[1]; kmax <- k[length(k)]
+  B <- cbind(x)
+  for (kj in k[-c(1, length(k))]) {
+    l <- (kmax - kj) / (kmax - kmin)
+    B <- cbind(B, pmax(x - kj, 0)^3 - l * pmax(x - kmin, 0)^3 - (1 - l) * pmax(x - kmax, 0)^3)
+  }
+  B
+}
+rp_dbasis_R <- function(x, k) {
+  kmin <- k[1]; kmax <- k[length(k)]
+  B <- cbind(rep(1, length(x)))
+  for (kj in k[-c(1, length(k))]) {
+    l <- (kmax - kj) / (kmax - kmin)
+    B <- cbind(B, 3 * (pmax(x - kj, 0)^2 - l * pmax(x - kmin, 0)^2 - (1 - l) * pmax(x - kmax, 0)^2))
+  }
+  B
+}
+
+test_that("the Royston-Parmar model maximises its likelihood, also with delayed entry", {
+  for (entry in c(FALSE, TRUE)) {
+    d <- sim_surv(entry = entry)
+    fm <- if (entry) Event(time, status, entry = entry) ~ x + z else Event(time, status) ~ x + z
+    f <- parsurv(fm, d, baseline = "rp", df = 3)
+    expect_true(f@converged)
+    k <- f@knots; X <- as.matrix(d[, c("x", "z")])
+    expect_length(k, 4L)
+    expect_close(k[c(1, 4)], range(log(d$time[d$status == 1])), 1e-12)
+    ll <- function(th) {
+      u <- drop(th[1] + X %*% th[2:3]); g <- th[4:6]
+      s <- u + drop(rp_basis_R(log(d$time), k) %*% g); sd <- drop(rp_dbasis_R(log(d$time), k) %*% g)
+      if (any(sd[d$status == 1] <= 0)) return(-Inf)
+      e <- if (entry) d$entry else rep(0, nrow(d))
+      se <- ifelse(e > 0, u + drop(rp_basis_R(log(pmax(e, 1e-300)), k) %*% g), -Inf)
+      sum(d$status * (s + log(pmax(sd, 1e-300)) - log(d$time)) - exp(s) + ifelse(e > 0, exp(se), 0))
+    }
+    expect_close(as.numeric(logLik(f)), ll(coef(f)), 1e-8)
+    o <- stats::optim(coef(f), function(p) -ll(p), method = "BFGS", control = list(reltol = 1e-14, maxit = 500))
+    expect_lte(-o$value - as.numeric(logLik(f)), 1e-6)
+  }
+  d <- sim_surv()
+  w <- parsurv(Event(time, status) ~ x + z, d, baseline = "weibull")
+  r1 <- parsurv(Event(time, status) ~ x + z, d, baseline = "rp", df = 1)
+  expect_close(as.numeric(logLik(r1)), as.numeric(logLik(w)), 1e-8)       # df = 1 is the Weibull model
+  expect_close(coef(r1)[4], exp(coef(w)[4]), 1e-5)
+})
+
+test_that("the Royston-Parmar model agrees with flexsurv::flexsurvspline", {
+  skip_if_not_installed("flexsurv")
+  d <- sim_surv()
+  f <- parsurv(Event(time, status) ~ x + z, d, baseline = "rp", df = 3)
+  r <- flexsurv::flexsurvspline(survival::Surv(time, status) ~ x + z, data = d, k = 2, scale = "hazard")
+  expect_close(as.numeric(logLik(f)), as.numeric(logLik(r)), 1e-5)
+  expect_close(unname(coef(f)[c(1, 4, 5, 6, 2, 3)]), unname(coef(r)), 1e-4)
+})
+
+test_that("the piecewise exponential model equals a Poisson GLM on split data", {
+  skip_if_not_installed("survival")
+  d <- sim_surv(); d$id <- seq_len(nrow(d))
+  cuts <- c(1, 2.5, 4)
+  f <- parsurv(Event(time, status) ~ x + z, d, baseline = "pwexp", cuts = cuts)
+  sp <- survival::survSplit(survival::Surv(time, status) ~ x + z + id, data = d, cut = cuts, episode = "interval")
+  sp$expo <- sp$time - sp$tstart
+  g <- stats::glm(status ~ factor(interval) + x + z + offset(log(expo)), family = stats::poisson(), data = sp)
+  cg <- coef(g)
+  expect_close(coef(f)[c("(Intercept)", "x", "z")], cg[c("(Intercept)", "x", "z")], 1e-6)
+  expect_close(unname(coef(f)[4:6]), unname(cg[grep("interval", names(cg))]), 1e-6)
+  expect_output(print(summary(f)), "rate ratio against the first interval")
+})
+
+test_that("spline and piecewise exponential cause-specific models are coherent and comparable", {
+  d <- sim_cr(400); fm <- Event(time, status) ~ x + z
+  for (b in list("rp", "pwexp", c("rp", "weibull"))) {
+    fp <- csc(fm, d, baseline = b)
+    tt <- c(0.3, 1, 2.5)
+    s <- predict(fp, d[1:4, ], times = tt, cause = 1) + predict(fp, d[1:4, ], times = tt, cause = 2) +
+         predict(fp, d[1:4, ], times = tt, type = "survival")
+    expect_close(s, matrix(1, 4, 3), 1e-7)
+  }
+  fq <- parsurv(Event(time, status) ~ x, sim_surv(), baseline = "rp")
+  q <- predict(fq, data.frame(x = 0), type = "quantile", p = 0.5)
+  expect_close(predict(fq, data.frame(x = 0), times = q), 0.5, 1e-8)
+  skip_on_cran()
+  cm <- compare_models(fm, d, times = c(1, 2), folds = 3, hazard = list("weibull", c("rp", 2)))
+  expect_identical(nrow(cm@table), 2L * 9L)
+  expect_true(all(is.finite(cm@table$brier_cv)))
+  expect_true(all(is.finite(cm@fit$aic[8:9])))
+  expect_output(print(cm), "parametric Weibull cause-specific")
+})

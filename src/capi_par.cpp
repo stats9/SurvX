@@ -1,6 +1,7 @@
 // survcore C API: parametric survival models, cumulative incidence from parametric cause-specific
 // hazards, and the kernel-smoothed hazard. See survcore/parametric.hpp and survcore/hazard.hpp.
 #include <algorithm>
+#include <cstdint>
 #include <cmath>
 #include <limits>
 #include <numeric>
@@ -14,8 +15,9 @@ using namespace survcore;
 namespace {
 const double kNaN = std::numeric_limits<double>::quiet_NaN();
 
-bool spec_of(int dist, int aft, int p, ParSpec& sp) {
+bool spec_of(int dist, int aft, int p, int nk, const double* knots, ParSpec& sp) {
   sp.dist = dist; sp.aft = aft; sp.p = p;
+  sp.knots.assign(knots && nk > 0 ? knots : nullptr, knots && nk > 0 ? knots + nk : nullptr);
   return sp.valid();
 }
 
@@ -34,11 +36,11 @@ double par_quantity(const ParSpec& sp, const std::vector<double>& th, const doub
 
 extern "C" {
 
-int sc_par_fit(int n, int p, int dist, int aft, const double* entry, const double* time, const int* status,
-               const double* X, const double* init, int max_iter, double tol, double* theta, double* var,
-               sc_fit_info* info) try {
+int sc_par_fit(int n, int p, int dist, int aft, int nk, const double* knots, const double* entry, const double* time,
+               const int* status, const double* X, const double* init, int max_iter, double tol, double* theta,
+               double* var, sc_fit_info* info) try {
   ParSpec sp;
-  if (n <= 0 || p < 0 || !time || !status || (p > 0 && !X) || !spec_of(dist, aft, p, sp)) return -1;
+  if (n <= 0 || p < 0 || !time || !status || (p > 0 && !X) || !spec_of(dist, aft, p, nk, knots, sp)) return -1;
   int events = 0;
   for (int i = 0; i < n; ++i) {
     if (!std::isfinite(time[i]) || !(time[i] > 0.0)) return -2;
@@ -61,10 +63,11 @@ int sc_par_fit(int n, int p, int dist, int aft, const double* entry, const doubl
   return 0;
 } catch (...) { return -9; }
 
-int sc_par_predict(int dist, int aft, int p, const double* theta, const double* var, int n_new, const double* Xnew,
-                   int nt, const double* times, int type, int average, double* out, double* out_se) try {
+int sc_par_predict(int dist, int aft, int nk, const double* knots, int p, const double* theta, const double* var,
+                   int n_new, const double* Xnew, int nt, const double* times, int type, int average,
+                   double* out, double* out_se) try {
   ParSpec sp;
-  if (!spec_of(dist, aft, p, sp) || n_new <= 0 || nt < 0 || type < 0 || type > 4) return -1;
+  if (!spec_of(dist, aft, p, nk, knots, sp) || n_new <= 0 || nt < 0 || type < 0 || type > 4) return -1;
   const std::size_t P = sp.npar();
   std::vector<double> th(theta, theta + P), V;
   if (var) V.assign(var, var + P * P);
@@ -85,18 +88,24 @@ int sc_par_predict(int dist, int aft, int p, const double* theta, const double* 
   return 0;
 } catch (...) { return -9; }
 
-// K parametric cause-specific hazard models with the same covariates. dist, aft: K codes; theta: the
+// K parametric cause-specific hazard models with the same covariates. dist, aft, nk: K codes and numbers of
+// knots (cut points); knots: those of cause 1, then cause 2, ...; theta: the
 // parameters of cause 1, then cause 2, ...; var: the K covariance matrices one after another (the
 // models are fitted separately, so the joint covariance is block diagonal). k = 1..K: CIF of cause k;
 // k = 0: overall survival. times must be increasing. out (and out_se): n_new x nt, or nt with average.
-int sc_parcsc_predict(int K, const int* dist, const int* aft, int p, const double* theta, const double* var, int k,
-                      int n_new, const double* Xnew, int nt, const double* times, double tmax, int average,
-                      double* out, double* out_se) try {
+int sc_parcsc_predict(int K, const int* dist, const int* aft, const int* nk, const double* knots, int p,
+                      const double* theta, const double* var, int k, int n_new, const double* Xnew, int nt,
+                      const double* times, double tmax, int average, double* out, double* out_se) try {
   if (K < 1 || k < 0 || k > K || n_new <= 0 || nt <= 0) return -1;
   for (int j = 1; j < nt; ++j) if (!(times[j] >= times[j - 1])) return -1;
   std::vector<ParSpec> sp(K);
   std::vector<std::size_t> off(K + 1, 0);
-  for (int c = 0; c < K; ++c) { if (!spec_of(dist[c], aft[c], p, sp[c])) return -1; off[c + 1] = off[c] + sp[c].npar(); }
+  std::size_t koff = 0;
+  for (int c = 0; c < K; ++c) {
+    if (!spec_of(dist[c], aft[c], p, nk[c], knots ? knots + koff : nullptr, sp[c])) return -1;
+    koff += nk[c] > 0 ? nk[c] : 0;
+    off[c + 1] = off[c] + sp[c].npar();
+  }
   const std::size_t Pt = off[K];
   std::vector<double> all(theta, theta + Pt);
   std::vector<double> tm(times, times + nt);

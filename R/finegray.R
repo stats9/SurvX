@@ -64,9 +64,11 @@ S7::method(predict, FineGrayFit) <- function(object, newdata = NULL, times, ...)
 #'   \pkg{riskRegression}; \code{FALSE}: \eqn{\exp\{-\sum_k \Lambda_k(t)\}} (Cox baseline only).
 #' @param baseline \code{"cox"}, or one of the distributions of \code{\link{parsurv}}
 #'   (\code{"exponential"}, \code{"weibull"}, \code{"gompertz"}, \code{"lognormal"},
-#'   \code{"loglogistic"}); a vector gives one distribution per cause.
+#'   \code{"loglogistic"}, \code{"rp"}, \code{"pwexp"}); a vector gives one distribution per cause.
 #' @param scale \code{"PH"} or \code{"AFT"} for parametric baselines, one value or one per cause;
 #'   default as in \code{\link{parsurv}}.
+#' @param df,knots,cuts spline and piecewise exponential baselines, as in \code{\link{parsurv}};
+#'   knots and cuts are chosen from the events of each cause.
 #' @param max_iter,tol iteration limit and convergence tolerance of the parametric fits.
 #' @return \code{baseline = "cox"}: an S7 object of class \code{CSCFit}; \code{x@models} holds the
 #'   fit of each cause. Parametric: an S7 object of class \code{ParCSCFit}; \code{x@models} holds
@@ -91,12 +93,12 @@ S7::method(predict, FineGrayFit) <- function(object, newdata = NULL, times, ...)
 #' predict(fw, data.frame(x = 0:1), times = c(1, 3), cause = 1)
 #' @export
 csc <- function(formula, data, ties = c("efron", "breslow"), product_limit = TRUE, baseline = "cox", scale = NULL,
-                max_iter = 200L, tol = 1e-10) {
+                df = 3L, knots = NULL, cuts = NULL, max_iter = 200L, tol = 1e-10) {
   cl <- match.call(); ties <- match.arg(ties)
   parametric <- any(baseline != "cox")
   if (parametric && any(baseline == "cox")) stop("baseline: 'cox' cannot be mixed with parametric distributions", call. = FALSE)
   f <- .sx_frame(formula, data, entry_ok = parametric, what = "csc() with a Cox baseline")
-  if (parametric) return(.pcsc(cl, f, baseline, scale, max_iter, tol))
+  if (parametric) return(.pcsc(cl, f, baseline, scale, max_iter, tol, df, knots, cuts))
   K <- max(f$status)
   if (ncol(f$X) < 1L) stop("at least one covariate is needed", call. = FALSE)
   models <- lapply(seq_len(K), function(k) .cox_fit(f$time, as.integer(f$status == k), f$X, NULL, ties))

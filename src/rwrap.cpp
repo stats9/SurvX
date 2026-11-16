@@ -106,16 +106,19 @@ void SX_cif_bootstrap(int* model, int* n, int* p, double* time, int* cause, doub
   *rc = sc_cif_bootstrap(*model, *n, *p, time, cause, X, *K, *interest, *ties, *product_limit, *adjust, *n_new, Xnew, *average, *nt, times, *B,
                          static_cast<unsigned long long>(*seed < 0 ? -*seed : *seed), *level, out_est, out_se, out_lower, out_upper, n_ok);
 }
-void SX_par_fit(int* n, int* p, int* dist, int* aft, int* has_entry, double* entry, double* time, int* status, double* X, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc) {
+void SX_par_fit(int* n, int* p, int* dist, int* aft, int* nk, double* knots, int* has_entry, double* entry, double* time, int* status, double* X, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc) {
   sc_fit_info f = sc_fit_info();
-  *rc = sc_par_fit(*n, *p, *dist, *aft, *has_entry ? entry : nullptr, time, status, X, *has_init ? init : nullptr, *max_iter, *tol, theta, var, &f);
+  *rc = sc_par_fit(*n, *p, *dist, *aft, *nk, knots, *has_entry ? entry : nullptr, time, status, X, *has_init ? init : nullptr, *max_iter, *tol, theta, var, &f);
   put(f, info_d, info_i);
 }
-void SX_par_predict(int* dist, int* aft, int* p, double* theta, int* has_var, double* var, int* n_new, double* Xnew, int* nt, double* times, int* type, int* average, double* out, double* out_se, int* rc) {
-  *rc = sc_par_predict(*dist, *aft, *p, theta, *has_var ? var : nullptr, *n_new, Xnew, *nt, times, *type, *average, out, *has_var ? out_se : nullptr);
+void SX_par_predict(int* dist, int* aft, int* nk, double* knots, int* p, double* theta, int* has_var, double* var, int* n_new, double* Xnew, int* nt, double* times, int* type, int* average, double* out, double* out_se, int* rc) {
+  *rc = sc_par_predict(*dist, *aft, *nk, knots, *p, theta, *has_var ? var : nullptr, *n_new, Xnew, *nt, times, *type, *average, out, *has_var ? out_se : nullptr);
 }
-void SX_parcsc_predict(int* K, int* dist, int* aft, int* p, double* theta, int* has_var, double* var, int* k, int* n_new, double* Xnew, int* nt, double* times, double* tmax, int* average, double* out, double* out_se, int* rc) {
-  *rc = sc_parcsc_predict(*K, dist, aft, *p, theta, *has_var ? var : nullptr, *k, *n_new, Xnew, *nt, times, *tmax, *average, out, *has_var ? out_se : nullptr);
+void SX_parcsc_predict(int* K, int* dist, int* aft, int* nk, double* knots, int* p, double* theta, int* has_var, double* var, int* k, int* n_new, double* Xnew, int* nt, double* times, double* tmax, int* average, double* out, double* out_se, int* rc) {
+  *rc = sc_parcsc_predict(*K, dist, aft, nk, knots, *p, theta, *has_var ? var : nullptr, *k, *n_new, Xnew, *nt, times, *tmax, *average, out, *has_var ? out_se : nullptr);
+}
+void SX_cv_folds(int* n, int* folds, int* seed, int* out, int* rc) {
+  *rc = sc_cv_folds(*n, *folds, static_cast<unsigned long long>(*seed < 0 ? -*seed : *seed), out);
 }
 void SX_kernel_hazard(int* m, double* et, double* d, double* Y, double* bw, int* boundary, int* nx, double* x, double* out_h, double* out_se, double* bw_used, int* rc) {
   *rc = sc_kernel_hazard(*m, et, d, Y, *bw, *boundary, *nx, x, out_h, out_se, bw_used);

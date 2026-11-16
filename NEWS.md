@@ -1,3 +1,21 @@
+# SurvX 0.6.1
+
+* `parsurv()` and `csc(baseline = )` gain two baselines: `"rp"`, the flexible parametric model of
+  Royston and Parmar (restricted cubic spline on the log cumulative hazard, the basis of
+  `flexsurv::flexsurvspline`; `df` or `knots`), and `"pwexp"`, the piecewise exponential model
+  (`cuts`). Analytic gradient and Hessian; validated against independent code of the likelihoods and,
+  in the tests, against `flexsurv::flexsurvspline` and a Poisson GLM on split data. The cumulative
+  incidence of a piecewise exponential cause is integrated exactly up to its cut points.
+* `compare_models()` gains `hazard`: parametric cause-specific hazard models, e.g.
+  `hazard = list("weibull", "lognormal", c("rp", 4))`, are cross-validated with the same folds as the
+  direct, Fine-Gray and Cox models, and their AIC is shown beside that of the joint and constrained
+  direct models (all are full likelihoods of the same data).
+* `cv_compare()` reports log-likelihood and AIC for parametric fits; internally `compare_models()` and
+  `cv_compare()` share one cross-validation routine.
+* The generalized gamma distribution is postponed: it needs an incomplete gamma function that is
+  accurate for very large shape parameters (near the log-normal limit), which the C++ core does not
+  have yet.
+
 # SurvX 0.6.0
 
 * New `parsurv()`: parametric survival regression with exponential, Weibull, Gompertz, log-normal and

@@ -544,7 +544,8 @@ S7::method(print, ModelComparison) <- function(x, ...) {
            "IPA: gain over a prediction that ignores the covariates, in percent (larger is better; 0 = no gain).",
            "AUC: probability that a subject with the event by that time has the higher predicted risk.",
            "Calibration error: mean absolute difference between predicted and observed risk in risk groups.",
-           "AIC is shown for direct models fitted by a full likelihood (joint, constrained); compare it among those only.")
+           "AIC is shown for models fitted by a full likelihood of the data: joint and constrained direct models and",
+           "parametric cause-specific hazards; it can be compared among these models only.")
   cat(out, sep = "\n")
   invisible(x)
 }

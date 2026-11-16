@@ -123,7 +123,8 @@ ParSurvFit <- S7::new_class("ParSurvFit", parent = SurvXFit, package = "SurvX",
     aft = S7::class_integer,
     entry = S7::class_any,
     loglik_null = S7::class_numeric,
-    event_label = S7::class_character
+    event_label = S7::class_character,
+    knots = S7::class_numeric
   ))
 
 # parametric cause-specific hazards: one ParSurvFit per cause

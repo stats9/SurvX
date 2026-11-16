@@ -30,16 +30,43 @@
 
 namespace survcore {
 
-enum ParDist : int { PD_EXPONENTIAL = 0, PD_WEIBULL = 1, PD_GOMPERTZ = 2, PD_LOGNORMAL = 3, PD_LOGLOGISTIC = 4 };
+enum ParDist : int { PD_EXPONENTIAL = 0, PD_WEIBULL = 1, PD_GOMPERTZ = 2, PD_LOGNORMAL = 3, PD_LOGLOGISTIC = 4,
+                     PD_RP = 6, PD_PWEXP = 7 };
 
+// PD_RP: Royston-Parmar model, log H(t | z) = s(log t) + z'b with a restricted cubic spline s
+//   (Royston & Parmar 2002, Stat Med 21:2175-2197): s(x) = gamma0 + gamma1 x + sum_j gamma_{j+1} v_j(x),
+//   v_j(x) = (x - k_j)+^3 - l_j (x - k_min)+^3 - (1 - l_j)(x - k_max)+^3, l_j = (k_max - k_j)/(k_max - k_min),
+//   the basis of flexsurv::flexsurvspline; knots = (k_min, internal knots, k_max) on the log-time scale.
+//   gamma0 is the intercept; the shape parameters are gamma1, gamma2, ...
+// PD_PWEXP: piecewise exponential (Friedman 1982, Ann Stat 10:101-113), hazard exp(eta + a_j) on
+//   (c_{j-1}, c_j], c_0 = 0, c_J = Inf, a_1 = 0; knots = the cut points c_1 < ... < c_{J-1};
+//   the shape parameters are the log rate ratios a_2, ..., a_J against the first interval.
 struct ParSpec {
   int dist = PD_WEIBULL;
   int aft = 0;            // 0: PH, 1: AFT
   int p = 0;              // number of covariates (without the intercept)
-  bool has_shape() const { return dist != PD_EXPONENTIAL; }
-  int npar() const { return 1 + p + (has_shape() ? 1 : 0); }
+  std::vector<double> knots;
+  int nshape() const {
+    if (dist == PD_EXPONENTIAL) return 0;
+    if (dist == PD_RP) return static_cast<int>(knots.size()) - 1;
+    if (dist == PD_PWEXP) return static_cast<int>(knots.size());
+    return 1;
+  }
+  bool has_shape() const { return nshape() > 0; }
+  int npar() const { return 1 + p + nshape(); }
   bool valid() const {
-    if (dist < 0 || dist > 4 || p < 0) return false;
+    if (p < 0) return false;
+    if (dist == PD_RP || dist == PD_PWEXP) {
+      if (aft != 0) return false;
+      if (dist == PD_RP && knots.size() < 2) return false;
+      for (std::size_t j = 0; j < knots.size(); ++j) {
+        if (!std::isfinite(knots[j])) return false;
+        if (j && !(knots[j] > knots[j - 1])) return false;
+      }
+      if (dist == PD_PWEXP && !knots.empty() && !(knots[0] > 0.0)) return false;
+      return true;
+    }
+    if (dist < 0 || dist > 4) return false;
     if (aft == 0) return dist == PD_EXPONENTIAL || dist == PD_WEIBULL || dist == PD_GOMPERTZ;
     return dist == PD_EXPONENTIAL || dist == PD_WEIBULL || dist == PD_LOGNORMAL || dist == PD_LOGLOGISTIC;
   }
@@ -154,6 +181,92 @@ inline Loc par_local(const ParSpec& sp, double entry, double t, int d, double u,
   return o;
 }
 
+namespace par_detail {
+
+// restricted cubic spline basis of the Royston-Parmar model at x: b[0] = x, b[j] = v_j(x); db the derivatives
+inline void rp_basis(const std::vector<double>& k, double x, double* b, double* db) {
+  const int nk = static_cast<int>(k.size());
+  const double kmin = k[0], kmax = k[nk - 1];
+  b[0] = x; db[0] = 1.0;
+  auto cube = [](double z) { return z > 0.0 ? z * z * z : 0.0; };
+  auto sq = [](double z) { return z > 0.0 ? z * z : 0.0; };
+  for (int j = 1; j < nk - 1; ++j) {
+    const double l = (kmax - k[j]) / (kmax - kmin);
+    b[j] = cube(x - k[j]) - l * cube(x - kmin) - (1.0 - l) * cube(x - kmax);
+    db[j] = 3.0 * (sq(x - k[j]) - l * sq(x - kmin) - (1.0 - l) * sq(x - kmax));
+  }
+}
+
+// exposure of [0, t] in each interval of the piecewise exponential model, and the interval of t
+inline int pw_exposure(const std::vector<double>& c, double t, double* tau) {
+  const int J = static_cast<int>(c.size()) + 1;
+  int jt = 0;
+  for (int j = 0; j < J; ++j) {
+    const double lo = j ? c[j - 1] : 0.0, hi = j < J - 1 ? c[j] : INFINITY;
+    tau[j] = t > lo ? std::fmin(t, hi) - lo : 0.0;
+    if (t > lo) jt = j;
+  }
+  return jt;
+}
+
+}  // namespace par_detail
+
+// Contribution of one subject with local variables (u, shape_1..shape_ns): value l, gradient g
+// (length 1 + ns) and Hessian H (row-major, (1 + ns)^2).
+inline void par_local_all(const ParSpec& sp, double entry, double t, int d, double u, const double* sh,
+                          double& l, double* g, double* H) {
+  const int ns = sp.nshape(), q = 1 + ns;
+  for (int a = 0; a < q; ++a) { g[a] = 0.0; for (int b = 0; b < q; ++b) H[a * q + b] = 0.0; }
+  if (sp.dist == PD_RP) {
+    std::vector<double> b(ns), db(ns), be(ns, 0.0), dbe(ns);
+    par_detail::rp_basis(sp.knots, std::log(t), b.data(), db.data());
+    double s = u, sd = 0.0;
+    for (int j = 0; j < ns; ++j) { s += sh[j] * b[j]; sd += sh[j] * db[j]; }
+    const double E = std::exp(s);
+    double Ee = 0.0;
+    if (entry > 0.0) {
+      par_detail::rp_basis(sp.knots, std::log(entry), be.data(), dbe.data());
+      double se = u; for (int j = 0; j < ns; ++j) se += sh[j] * be[j];
+      Ee = std::exp(se);
+    }
+    if (d && !(sd > 0.0)) { l = -INFINITY; return; }
+    l = -E + Ee + (d ? s + std::log(sd) - std::log(t) : 0.0);
+    g[0] = (d ? 1.0 : 0.0) - E + Ee;
+    H[0] = -E + Ee;
+    for (int j = 0; j < ns; ++j) {
+      g[1 + j] = (d ? b[j] + db[j] / sd : 0.0) - E * b[j] + Ee * be[j];
+      H[1 + j] = H[(1 + j) * q] = -E * b[j] + Ee * be[j];
+      for (int k = 0; k <= j; ++k) {
+        const double v = (d ? -db[j] * db[k] / (sd * sd) : 0.0) - E * b[j] * b[k] + Ee * be[j] * be[k];
+        H[(1 + j) * q + 1 + k] = H[(1 + k) * q + 1 + j] = v;
+      }
+    }
+    return;
+  }
+  if (sp.dist == PD_PWEXP) {
+    const int J = ns + 1;
+    std::vector<double> tau(J), taue(J, 0.0);
+    const int jt = par_detail::pw_exposure(sp.knots, t, tau.data());
+    if (entry > 0.0) par_detail::pw_exposure(sp.knots, entry, taue.data());
+    const double E = std::exp(u);
+    double A = 0.0;
+    std::vector<double> ea(J);
+    for (int j = 0; j < J; ++j) { ea[j] = std::exp(j ? sh[j - 1] : 0.0) * (tau[j] - taue[j]); A += ea[j]; }
+    l = (d ? u + (jt ? sh[jt - 1] : 0.0) : 0.0) - E * A;
+    g[0] = (d ? 1.0 : 0.0) - E * A;
+    H[0] = -E * A;
+    for (int j = 1; j < J; ++j) {
+      g[j] = (d && jt == j ? 1.0 : 0.0) - E * ea[j];
+      H[j] = H[j * q] = -E * ea[j];
+      H[j * q + j] = -E * ea[j];
+    }
+    return;
+  }
+  const Loc o = par_local(sp, entry, t, d, u, ns ? sh[0] : 0.0);
+  l = o.l; g[0] = o.lu; H[0] = o.luu;
+  if (ns) { g[1] = o.ls; H[1] = H[q] = o.lus; H[q + 1] = o.lss; }
+}
+
 // the data of one fit; X row-major n x p, entry may be null
 struct ParData {
   int n = 0;
@@ -173,26 +286,28 @@ struct ParModel {
   ParSpec sp;
   ParData dat;
   void eval(const std::vector<double>& th, Eval& ev, bool hess) const {
-    const int P = sp.npar(), p = sp.p;
-    const int is = sp.has_shape() ? P - 1 : -1;
-    const double s = is >= 0 ? th[is] : 0.0;
+    const int P = sp.npar(), p = sp.p, ns = sp.nshape(), q = 1 + ns;
+    const double* sh = th.data() + 1 + p;
     ev.ll = 0.0; ev.g.assign(P, 0.0);
     if (hess) { ev.H = Mat(P); }
-    std::vector<double> x(p + 1);
+    std::vector<double> x(p + 1), g(q), H(q * q);
+    double l;
+    // index in theta of local variable a = 1..ns (the shape parameters)
     for (int i = 0; i < dat.n; ++i) {
       const double* xr = dat.X + static_cast<std::size_t>(i) * p;
       x[0] = 1.0; for (int j = 0; j < p; ++j) x[j + 1] = xr[j];
       const double u = par_u(sp, xr, th);
-      const Loc o = par_local(sp, dat.entry ? dat.entry[i] : 0.0, dat.time[i], dat.status[i], u, s);
-      ev.ll += o.l;
-      for (int a = 0; a <= p; ++a) ev.g[a] += o.lu * x[a];
-      if (is >= 0) ev.g[is] += o.ls;
+      par_local_all(sp, dat.entry ? dat.entry[i] : 0.0, dat.time[i], dat.status[i], u, sh, l, g.data(), H.data());
+      ev.ll += l;
+      if (!std::isfinite(l)) continue;
+      for (int a = 0; a <= p; ++a) ev.g[a] += g[0] * x[a];
+      for (int a = 1; a < q; ++a) ev.g[p + a] += g[a];
       if (hess) {
         for (int a = 0; a <= p; ++a) {
-          for (int b = 0; b <= a; ++b) ev.H(a, b) -= o.luu * x[a] * x[b];
-          if (is >= 0) ev.H(is, a) -= o.lus * x[a];
+          for (int b = 0; b <= a; ++b) ev.H(a, b) -= H[0] * x[a] * x[b];
+          for (int c = 1; c < q; ++c) ev.H(p + c, a) -= H[c] * x[a];
         }
-        if (is >= 0) ev.H(is, is) -= o.lss;
+        for (int c = 1; c < q; ++c) for (int e = 1; e <= c; ++e) ev.H(p + c, p + e) -= H[c * q + e];
       }
     }
     if (!std::isfinite(ev.ll)) ev.ll = -std::numeric_limits<double>::infinity();
@@ -208,6 +323,7 @@ inline std::vector<double> par_start(const ParSpec& sp, const ParData& dat) {
   for (int i = 0; i < dat.n; ++i) { D += dat.status[i] ? 1.0 : 0.0; T += dat.time[i] - (dat.entry ? dat.entry[i] : 0.0); }
   const double rate = std::max(D, 0.5) / std::max(T, 1e-300);
   std::vector<double> th(sp.npar(), 0.0);
+  if (sp.dist == PD_RP) th[1 + sp.p] = 1.0;               // gamma1 = 1: the exponential model
   if (sp.aft == 0) th[0] = std::log(rate);
   else if (sp.dist == PD_EXPONENTIAL || sp.dist == PD_WEIBULL) th[0] = -std::log(rate);
   else th[0] = -std::log(rate) + std::log(std::log(2.0));     // median of the exponential
@@ -268,6 +384,32 @@ struct ParQ { double H, logh; };           // cumulative hazard and log hazard
 inline ParQ par_hazard(const ParSpec& sp, const std::vector<double>& th, const double* xrow, double t) {
   using namespace par_detail;
   const double u = par_u(sp, xrow, th);
+  if (sp.dist == PD_RP || sp.dist == PD_PWEXP) {
+    const int ns = sp.nshape();
+    const double* sh = th.data() + 1 + sp.p;
+    ParQ q;
+    if (sp.dist == PD_PWEXP) {
+      std::vector<double> tau(ns + 1);
+      const int jt = pw_exposure(sp.knots, std::fmax(t, 0.0), tau.data());
+      double A = 0.0;
+      for (int j = 0; j <= ns; ++j) A += std::exp(j ? sh[j - 1] : 0.0) * tau[j];
+      q.H = std::exp(u) * A;
+      q.logh = u + (t > 0.0 && jt ? sh[jt - 1] : 0.0);
+      return q;
+    }
+    if (!(t > 0.0)) {                     // linear in log t below the first knot: H = exp(u) t^gamma1
+      q.H = 0.0;
+      q.logh = sh[0] < 1.0 ? INFINITY : (sh[0] > 1.0 ? -INFINITY : u + std::log(sh[0]));
+      return q;
+    }
+    std::vector<double> b(ns), db(ns);
+    rp_basis(sp.knots, std::log(t), b.data(), db.data());
+    double sv = u, sd = 0.0;
+    for (int j = 0; j < ns; ++j) { sv += sh[j] * b[j]; sd += sh[j] * db[j]; }
+    q.H = std::exp(sv);
+    q.logh = sd > 0.0 ? sv + std::log(sd) - std::log(t) : -INFINITY;
+    return q;
+  }
   const double s = sp.has_shape() ? th[sp.npar() - 1] : 0.0;
   ParQ q;
   if (!(t > 0.0)) {                       // at time zero: H = 0, and the hazard is its limit as t -> 0
@@ -313,6 +455,18 @@ inline double qnorm_std(double p) {
 
 // time at which the survival function equals 1 - prob (Inf if never reached)
 inline double par_quantile(const ParSpec& sp, const std::vector<double>& th, const double* xrow, double prob) {
+  if (sp.dist == PD_RP || sp.dist == PD_PWEXP) {
+    // H is increasing in t: bisection on log t for H(t) = -log(1 - prob)
+    const double Hq = -std::log1p(-prob);
+    double lo = -40.0, hi = 40.0;
+    if (par_hazard(sp, th, xrow, std::exp(hi)).H < Hq) return INFINITY;
+    if (par_hazard(sp, th, xrow, std::exp(lo)).H > Hq) return 0.0;
+    for (int it = 0; it < 200 && hi - lo > 1e-14; ++it) {
+      const double mid = 0.5 * (lo + hi);
+      if (par_hazard(sp, th, xrow, std::exp(mid)).H < Hq) lo = mid; else hi = mid;
+    }
+    return std::exp(0.5 * (lo + hi));
+  }
   const double u = par_u(sp, xrow, th);
   const double s = sp.has_shape() ? th[sp.npar() - 1] : 0.0;
   const double Hq = -std::log1p(-prob);
@@ -374,6 +528,8 @@ template <class F> double gl20_origin(F&& f, double b) {
 // towards zero. out: m x K row-major; surv: m.
 inline bool par_singular_at_zero(const ParSpec& sp, const std::vector<double>& th) {
   if (!sp.has_shape()) return false;
+  if (sp.dist == PD_RP) return th[1 + sp.p] < 1.0;
+  if (sp.dist == PD_PWEXP) return false;
   const double s = th[sp.npar() - 1];
   if (sp.aft == 0) return sp.dist == PD_WEIBULL && s < 0.0;
   return (sp.dist == PD_WEIBULL || sp.dist == PD_LOGLOGISTIC) && s > 0.0;
@@ -408,16 +564,25 @@ inline void par_cif(int K, const ParSpec* sp, const std::vector<double>* th, con
   };
   auto Ssum = [&](double u) { double H = 0; for (int j = 0; j < K; ++j) H += par_hazard(sp[j], th[j], xrow[j], u).H; return std::exp(-H); };
   const double plen = tmax > 0 ? tmax / 50.0 : 1.0;
+  // the hazard of a piecewise exponential model jumps at its cut points: integrate up to them exactly
+  std::vector<double> breaks;
+  for (int k = 0; k < K; ++k) if (sp[k].dist == PD_PWEXP) breaks.insert(breaks.end(), sp[k].knots.begin(), sp[k].knots.end());
+  std::sort(breaks.begin(), breaks.end());
+  auto segment = [&](double a0, double b0) {
+    const int np = std::max(1, static_cast<int>(std::ceil((b0 - a0) / plen)));
+    const double len = (b0 - a0) / np;
+    for (int q = 0; q < np; ++q) {
+      const double a = a0 + q * len, b = q == np - 1 ? b0 : a + len;
+      if (a == 0.0 && singular) origin(b); else piece(a, b);
+    }
+  };
   double prev = 0.0;
   for (int i = 0; i < m; ++i) {
     const double t = times[i];
     if (t > prev) {
-      const int np = std::max(1, static_cast<int>(std::ceil((t - prev) / plen)));
-      const double len = (t - prev) / np;
-      for (int q = 0; q < np; ++q) {
-        const double a = prev + q * len, b = a + len;
-        if (a == 0.0 && singular) origin(b); else piece(a, b);
-      }
+      double a0 = prev;
+      for (double c : breaks) if (c > a0 && c < t) { segment(a0, c); a0 = c; }
+      segment(a0, t);
       prev = t;
     }
     for (int k = 0; k < K; ++k) out[static_cast<std::size_t>(i) * K + k] = acc[k];

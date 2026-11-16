@@ -123,7 +123,7 @@ patient, which keeps the plateau parameters interpretable and stabilises the fit
 | `gray_test(time, status, group, cause, strata, rho)` | Gray's K-sample test for equal cumulative incidence; stratified |
 | `cox(formula, data, ties, weights)` | Cox proportional hazards model: Efron or Breslow ties, case weights, baseline hazard, predicted survival |
 | `csc(formula, data, ties, product_limit, baseline)` | cause-specific hazard models for all causes and the cumulative incidence they imply: Cox (default) or parametric (`baseline = "weibull"`, ...) |
-| `parsurv(formula, data, baseline, scale)` | parametric survival regression: exponential, Weibull, Gompertz, log-normal, log-logistic; PH or AFT; delayed entry |
+| `parsurv(formula, data, baseline, scale)` | parametric survival regression: exponential, Weibull, Gompertz, log-normal, log-logistic, piecewise exponential, Royston-Parmar spline; PH or AFT; delayed entry |
 | `hazard_np(formula, data, smooth, bw)` | Nelson-Aalen cumulative hazard and kernel-smoothed hazard by group and cause |
 | `hazard_plot(fit, type)` | fitted hazard, cumulative hazard or survival of parametric models, with the non-parametric estimate as reference |
 | `fg(formula, data, cause, variance)` | Fine-Gray proportional subdistribution hazards model: robust or model-based variance, predicted CIF |
@@ -407,7 +407,7 @@ Find the installed scripts with `system.file("simulations", package = "SurvX")`.
 | `gray_test()` | K-sample test for CIFs; variance ported from the Fortran routine `crstm` of cmprsk | Gray (1988) |
 | `cox()` | partial likelihood; Efron and Breslow ties; Breslow baseline hazard | Cox (1972); Breslow (1974); Efron (1977) |
 | `csc()` | cause-specific Cox models combined into CIFs | Prentice et al. (1978); Benichou & Gail (1990) |
-| `parsurv()` | parametric PH and AFT models by maximum likelihood with delayed entry | Kalbfleisch & Prentice (2002); Lawless (2003); Klein & Moeschberger (2003) |
+| `parsurv()` | parametric PH and AFT models by maximum likelihood with delayed entry; spline and piecewise exponential baselines | Kalbfleisch & Prentice (2002); Lawless (2003); Klein & Moeschberger (2003); Royston & Parmar (2002); Friedman (1982) |
 | `csc(baseline = )` | CIF from parametric cause-specific hazards by numerical integration | Prentice et al. (1978); Hinchliffe & Lambert (2013) |
 | `hazard_np()` | Nelson-Aalen estimator; kernel-smoothed hazard with boundary kernels; cross-validated bandwidth | Nelson (1972); Aalen (1978); Ramlau-Hansen (1983); Müller & Wang (1994); Patil (1993); Hall & Marron (1991) |
 | `fg()` | proportional subdistribution hazards with IPCW risk sets; robust variance | Fine & Gray (1999) |
@@ -440,6 +440,7 @@ Find the installed scripts with `system.file("simulations", package = "SurvX")`.
 - Efron, B. (1977). The efficiency of Cox's likelihood function for censored data. *Journal of the American Statistical Association*, 72, 557–565.
 - Efron, B. and Tibshirani, R. J. (1993). *An Introduction to the Bootstrap*. Chapman & Hall.
 - Fine, J. P. and Gray, R. J. (1999). A proportional hazards model for the subdistribution of a competing risk. *Journal of the American Statistical Association*, 94, 496–509.
+- Friedman, M. (1982). Piecewise exponential models for survival data with covariates. *The Annals of Statistics*, 10, 101–113.
 - Gerds, T. A. and Schumacher, M. (2006). Consistent estimation of the expected Brier score in general survival models with right-censored event times. *Biometrical Journal*, 48(6), 1029–1040. doi:10.1002/bimj.200610301
 - Geskus, R. B. (2011). Cause-specific cumulative incidence estimation and the Fine and Gray model under both left truncation and right censoring. *Biometrics*, 67, 39–49.
 - Graf, E., Schmoor, C., Sauerbrei, W. and Schumacher, M. (1999). Assessment and comparison of prognostic classification schemes for survival data. *Statistics in Medicine*, 18, 2529–2545.

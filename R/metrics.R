@@ -69,6 +69,10 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L) {
 #' @param folds number of cross-validation folds (less than 2: apparent performance only).
 #' @param seed seed of the fold assignment.
 #' @param df degrees of freedom of spline baselines.
+#' @param hazard optional list of parametric cause-specific hazard models fitted by
+#'   \code{\link{csc}} with a parametric \code{baseline}, each a distribution name or
+#'   \code{c("rp", df)}, e.g. \code{list("weibull", "lognormal", c("rp", 4))}. They are cross-validated
+#'   with the same folds as the other models.
 #' @return an S7 object of class \code{ModelComparison}; \code{x@table} has one row per model and
 #'   time, \code{x@fit} one row per model. AIC is reported for the joint and constrained direct models
 #'   (full likelihoods of the same data, comparable with each other); the weighted direct model,
@@ -77,7 +81,7 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L) {
 #'   Gerds TA, Schumacher M (2007) Biometrics 63:1283-1287.
 #' @seealso \code{\link{cv_compare}} for models that are not in this list.
 #' @export
-compare_models <- function(formula, data, times, direct = NULL, cause = 1L, folds = 5L, seed = 1L, df = 3L) {
+compare_models <- function(formula, data, times, direct = NULL, cause = 1L, folds = 5L, seed = 1L, df = 3L, hazard = NULL) {
   cl <- match.call()
   f <- .sx_frame(formula, data)
   n <- length(f$time); p <- ncol(f$X); K <- max(f$status); nt <- length(times)
@@ -112,6 +116,30 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
   ft <- .matrix_rm(r$fit, M, 5L)
   fit <- data.frame(model = names_m, loglik = ft[, 1L], npar = ft[, 2L], aic = ft[, 3L], flags = ft[, 4L], folds_not_converged = ft[, 5L])
   fit$aic[!is.finite(fit$aic)] <- NA_real_
+  if (!is.null(hazard)) {
+    hz <- .hazard_specs(hazard)
+    vars <- intersect(all.vars(formula), names(data))
+    dd <- data[stats::complete.cases(data[, vars, drop = FALSE]), , drop = FALSE]
+    if (nrow(dd) != n) stop("compare_models: could not align the data for the parametric hazard models", call. = FALSE)
+    fold <- rep(1L, n)
+    if (folds >= 2L) {                      # the folds of the C++ comparison above
+      rf <- .C("SX_cv_folds", as.integer(n), as.integer(folds), as.integer(seed), out = integer(n), rc = integer(1), PACKAGE = "SurvX")
+      .sx_rc(rf$rc, "compare_models")
+      fold <- rf$out + 1L
+    }
+    funs <- lapply(hz, function(h) { force(h); function(fm, d) csc(fm, d, baseline = h$baseline, df = h$df) })
+    names(funs) <- vapply(hz, `[[`, "", "name")
+    res <- .cv_run(formula, dd, f, funs, times, cause, folds, fold, 10L)
+    tab <- rbind(tab, res$table)
+    for (m in seq_along(funs)) {
+      ft <- res$fits[[m]]
+      ll <- if (is.null(ft)) NA_real_ else as.numeric(logLik(ft))
+      np <- if (is.null(ft)) NA_real_ else attr(logLik(ft), "df")
+      ok <- !is.null(ft) && all(vapply(ft@models, function(x) isTRUE(x@converged), logical(1)))
+      fit <- rbind(fit, data.frame(model = names(funs)[m], loglik = ll, npar = np, aic = -2 * ll + 2 * np,
+                                   flags = if (ok) 0 else 1, folds_not_converged = res$failed[m]))
+    }
+  }
   ModelComparison(call = cl, table = tab, fit = fit, folds = as.integer(folds), cause = as.integer(cause))
 }
 
@@ -156,6 +184,38 @@ cv_compare <- function(formula, data, models, times, cause = 1L, folds = 5L, see
   f <- .sx_frame(formula, data)
   n <- length(f$time); nt <- length(times); M <- length(models)
   if (n != nrow(data)) stop("could not align the response with the data", call. = FALSE)
+  fold <- rep(1L, n)
+  if (folds >= 2L) {
+    had <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+    old <- if (had) get(".Random.seed", envir = globalenv()) else NULL
+    set.seed(seed)
+    fold <- sample(rep_len(seq_len(folds), n))
+    if (had) assign(".Random.seed", old, envir = globalenv()) else rm(".Random.seed", envir = globalenv())
+  }
+  res <- .cv_run(formula, data, f, models, times, cause, folds, fold, groups)
+  tab <- res$table; fit <- NULL
+  for (m in seq_len(M)) {
+    ft <- res$fits[[m]]
+    is_direct <- !is.null(ft) && S7::S7_inherits(ft, DirectCIFFit)
+    is_par <- !is.null(ft) && (S7::S7_inherits(ft, ParCSCFit) || S7::S7_inherits(ft, ParSurvFit))
+    ll <- if (is_direct) ft@loglik else if (is_par) as.numeric(logLik(ft)) else NA_real_
+    np <- if (is_direct) length(ft@coefficients) else if (is_par) attr(logLik(ft), "df") else NA_integer_
+    fit <- rbind(fit, data.frame(
+      model = names(models)[m],
+      loglik = ll,
+      npar = np,
+      aic = if ((is_direct && ft@estimation != "weighted") || is_par) -2 * ll + 2 * np else NA_real_,
+      converged = if (is_direct) ft@converged else if (S7::S7_inherits(ft, ParCSCFit)) all(vapply(ft@models, function(x) isTRUE(x@converged), logical(1)))
+                  else if (is_par) ft@converged else NA,
+      folds_failed = res$failed[m]))
+  }
+  ModelComparison(call = cl, table = tab, fit = fit, folds = as.integer(folds), cause = as.integer(cause))
+}
+
+# Apparent and K-fold cross-validated measures of a named list of fitting functions; fold: the fold of
+# every row of data (1..folds). Returns the table, the full-data fits and the number of failed folds.
+.cv_run <- function(formula, data, f, models, times, cause, folds, fold, groups = 10L) {
+  n <- length(f$time); nt <- length(times); M <- length(models)
   risk_of <- function(fun, train, test) {
     fit <- tryCatch(fun(formula, train), error = function(e) NULL)
     if (is.null(fit)) return(NULL)
@@ -174,40 +234,36 @@ cv_compare <- function(formula, data, models, times, cause = 1L, folds = 5L, see
     }
     out
   }
-  fold <- rep(1L, n)
-  if (folds >= 2L) {
-    had <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
-    old <- if (had) get(".Random.seed", envir = globalenv()) else NULL
-    set.seed(seed)
-    fold <- sample(rep_len(seq_len(folds), n))
-    if (had) assign(".Random.seed", old, envir = globalenv()) else rm(".Random.seed", envir = globalenv())
-  }
-  tab <- NULL; fit <- NULL
+  tab <- NULL; fits <- vector("list", M); failed <- integer(M)
   for (m in seq_len(M)) {
     full <- risk_of(models[[m]], data, data)
     app <- measures(if (is.null(full)) NULL else full$risk)
-    cvm <- matrix(NA_real_, nt, 4L); failed <- 0L
+    cvm <- matrix(NA_real_, nt, 4L)
     if (folds >= 2L) {
       pooled <- matrix(NA_real_, n, nt)
       for (k in seq_len(folds)) {
         te <- fold == k
         r <- risk_of(models[[m]], data[!te, , drop = FALSE], data[te, , drop = FALSE])
-        if (is.null(r)) failed <- failed + 1L else pooled[te, ] <- r$risk
+        if (is.null(r)) failed[m] <- failed[m] + 1L else pooled[te, ] <- r$risk
       }
-      if (failed == 0L) cvm <- measures(pooled)
+      if (failed[m] == 0L) cvm <- measures(pooled)
     }
     tab <- rbind(tab, data.frame(model = names(models)[m], time = times,
                                  brier = app[, 1L], brier_cv = cvm[, 1L], ipa = app[, 2L], ipa_cv = cvm[, 2L],
                                  auc = app[, 3L], auc_cv = cvm[, 3L], calib_error = app[, 4L], calib_error_cv = cvm[, 4L]))
-    ft <- if (is.null(full)) NULL else full$fit
-    is_direct <- !is.null(ft) && S7::S7_inherits(ft, DirectCIFFit)
-    fit <- rbind(fit, data.frame(
-      model = names(models)[m],
-      loglik = if (is_direct) ft@loglik else NA_real_,
-      npar = if (is_direct) length(ft@coefficients) else NA_integer_,
-      aic = if (is_direct && ft@estimation != "weighted") -2 * ft@loglik + 2 * length(ft@coefficients) else NA_real_,
-      converged = if (is_direct) ft@converged else NA,
-      folds_failed = failed))
+    if (!is.null(full)) fits[[m]] <- full$fit
   }
-  ModelComparison(call = cl, table = tab, fit = fit, folds = as.integer(folds), cause = as.integer(cause))
+  list(table = tab, fits = fits, failed = failed)
+}
+
+# hazard = list("weibull", "lognormal", c("rp", 4), "pwexp"): one parametric cause-specific model each
+.hazard_specs <- function(hazard) {
+  if (is.character(hazard)) hazard <- as.list(hazard)
+  lapply(hazard, function(h) {
+    h <- as.character(h)
+    b <- .par_dist(h[1L])
+    dfv <- if (length(h) >= 2L) as.integer(h[2L]) else 3L
+    list(baseline = b, df = dfv,
+         name = paste0("parametric ", .par_label[[b]], if (b == "rp") paste0(" (df ", dfv, ")") else "", " cause-specific"))
+  })
 }

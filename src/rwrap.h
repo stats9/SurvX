@@ -30,9 +30,10 @@ void SX_constrained_predict(int* p, int* alpha_free, double* alpha_value, int* b
 void SX_direct_predict_mean(int* p, int* K, int* alpha_free, double* alpha_value, int* baseline, int* n_knots, double* knots, double* theta, int* has_var, double* var, int* k, int* n_new, double* Xnew, int* nt, double* times, double* out_cif, double* out_se, int* rc);
 void SX_constrained_predict_mean(int* p, int* alpha_free, double* alpha_value, int* baseline, int* family, double* theta, int* has_var, double* var, int* k, int* n_new, double* Xnew, int* nt, double* times, double* out_cif, double* out_se, int* rc);
 void SX_cif_bootstrap(int* model, int* n, int* p, double* time, int* cause, double* X, int* K, int* interest, int* ties, int* product_limit, int* adjust, int* n_new, double* Xnew, int* average, int* nt, double* times, int* B, int* seed, double* level, double* out_est, double* out_se, double* out_lower, double* out_upper, int* n_ok, int* rc);
-void SX_par_fit(int* n, int* p, int* dist, int* aft, int* has_entry, double* entry, double* time, int* status, double* X, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc);
-void SX_par_predict(int* dist, int* aft, int* p, double* theta, int* has_var, double* var, int* n_new, double* Xnew, int* nt, double* times, int* type, int* average, double* out, double* out_se, int* rc);
-void SX_parcsc_predict(int* K, int* dist, int* aft, int* p, double* theta, int* has_var, double* var, int* k, int* n_new, double* Xnew, int* nt, double* times, double* tmax, int* average, double* out, double* out_se, int* rc);
+void SX_par_fit(int* n, int* p, int* dist, int* aft, int* nk, double* knots, int* has_entry, double* entry, double* time, int* status, double* X, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc);
+void SX_par_predict(int* dist, int* aft, int* nk, double* knots, int* p, double* theta, int* has_var, double* var, int* n_new, double* Xnew, int* nt, double* times, int* type, int* average, double* out, double* out_se, int* rc);
+void SX_parcsc_predict(int* K, int* dist, int* aft, int* nk, double* knots, int* p, double* theta, int* has_var, double* var, int* k, int* n_new, double* Xnew, int* nt, double* times, double* tmax, int* average, double* out, double* out_se, int* rc);
+void SX_cv_folds(int* n, int* folds, int* seed, int* out, int* rc);
 void SX_kernel_hazard(int* m, double* et, double* d, double* Y, double* bw, int* boundary, int* nx, double* x, double* out_h, double* out_se, double* bw_used, int* rc);
 #ifdef __cplusplus
 }

@@ -9,7 +9,7 @@ times. Fitting, cross-validation and scoring are done in the C++ core.
 }
 \usage{
 compare_models(formula, data, times, direct = NULL, cause = 1L, folds = 5L,
-    seed = 1L, df = 3L)
+    seed = 1L, df = 3L, hazard = NULL)
 }
 \arguments{
 \item{formula}{\code{Event(time, status) ~ covariates}.}
@@ -24,6 +24,11 @@ compare_models(formula, data, times, direct = NULL, cause = 1L, folds = 5L,
 \item{folds}{number of cross-validation folds (less than 2: apparent performance only).}
 \item{seed}{seed of the fold assignment.}
 \item{df}{degrees of freedom of spline baselines.}
+\item{hazard}{optional list of parametric cause-specific hazard models, fitted by \code{\link{csc}}
+  with a parametric \code{baseline}: each a distribution name or \code{c("rp", df)}, e.g.
+  \code{list("weibull", "lognormal", c("rp", 4))}. They are cross-validated with the same folds as
+  the other models, and their AIC (full likelihood of the data) is comparable with that of the joint
+  and constrained direct models.}
 }
 \value{
 an S7 object of class \code{ModelComparison}; \code{x@table} has one row per model and

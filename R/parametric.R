@@ -2,15 +2,16 @@
 # The likelihoods, fits, predictions and numerical integration are in the C++ core
 # (src/survcore/parametric.hpp, src/survcore/hazard.hpp); this file only prepares data and output.
 
-.par_dists <- c(exponential = 0L, weibull = 1L, gompertz = 2L, lognormal = 3L, loglogistic = 4L)
+.par_dists <- c(exponential = 0L, weibull = 1L, gompertz = 2L, lognormal = 3L, loglogistic = 4L, rp = 6L, pwexp = 7L)
 .par_label <- c(exponential = "exponential", weibull = "Weibull", gompertz = "Gompertz",
-                lognormal = "log-normal", loglogistic = "log-logistic")
+                lognormal = "log-normal", loglogistic = "log-logistic", rp = "Royston-Parmar spline",
+                pwexp = "piecewise exponential")
 .par_types <- c(survival = 0L, hazard = 1L, cumhaz = 2L, quantile = 3L, rmst = 4L)
 
 # the covariate scale of a distribution: PH or AFT, checked against what the distribution supports
 .par_scale <- function(dist, scale) {
   allowed <- switch(dist, exponential = c("PH", "AFT"), weibull = c("PH", "AFT"), gompertz = "PH",
-                    lognormal = "AFT", loglogistic = "AFT")
+                    lognormal = "AFT", loglogistic = "AFT", rp = "PH", pwexp = "PH")
   if (is.null(scale) || is.na(scale)) return(allowed[1L])
   sc <- toupper(scale)
   if (!sc %in% c("PH", "AFT")) stop("scale must be \"PH\" or \"AFT\"", call. = FALSE)
@@ -27,38 +28,79 @@
   b
 }
 
-.shape_name <- function(dist, scale) {
+.shape_name <- function(dist, scale, knots = numeric(0)) {
+  if (dist == "rp") return(paste0("gamma", seq_len(length(knots) - 1L)))
+  if (dist == "pwexp") {
+    if (!length(knots)) return(character(0))
+    lo <- signif(knots, 4L); hi <- c(signif(knots[-1L], 4L), Inf)
+    return(paste0("log rate ratio (", lo, ", ", hi, "]"))
+  }
   if (dist == "exponential") character(0) else if (scale == "AFT") "log(scale)" else if (dist == "gompertz") "shape" else "log(shape)"
 }
 
+.nshape <- function(dist, knots) {
+  switch(dist, exponential = 0L, rp = length(knots) - 1L, pwexp = length(knots), 1L)
+}
+
+# knots of the spline model (log time, boundary knots at the smallest and largest log event time, internal
+# knots at equally spaced quantiles of the log event times, as in flexsurv::flexsurvspline) and cut points of
+# the piecewise exponential model (default: quartiles of the event times)
+.par_knots <- function(dist, time, status01, df, knots, cuts) {
+  if (dist == "rp") {
+    lt <- log(time[status01 == 1L])
+    if (length(unique(lt)) < 2L) stop("the spline model needs at least two distinct event times", call. = FALSE)
+    if (!is.null(knots)) inner <- sort(log(knots))
+    else {
+      df <- as.integer(df)
+      if (is.na(df) || df < 1L) stop("df must be a whole number of at least 1", call. = FALSE)
+      inner <- if (df > 1L) stats::quantile(lt, seq(0, 1, length.out = df + 1L)[-c(1L, df + 1L)], names = FALSE) else numeric(0)
+    }
+    b <- range(lt)
+    if (any(inner <= b[1L] | inner >= b[2L]))
+      stop("internal knots must lie strictly between the smallest and the largest event time", call. = FALSE)
+    return(c(b[1L], inner, b[2L]))
+  }
+  if (dist == "pwexp") {
+    if (!is.null(cuts)) {
+      cs <- sort(unique(as.double(cuts)))
+      if (any(!is.finite(cs) | cs <= 0)) stop("cuts must be positive and finite", call. = FALSE)
+      return(cs)
+    }
+    return(unique(stats::quantile(time[status01 == 1L], c(0.25, 0.5, 0.75), names = FALSE)))
+  }
+  numeric(0)
+}
+
 # one fit in the C++ core; status01 is 0/1
-.par_fit <- function(time, status01, entry, X, dist, scale, init = NULL, max_iter = 200L, tol = 1e-10) {
+.par_fit <- function(time, status01, entry, X, dist, scale, init = NULL, max_iter = 200L, tol = 1e-10, knots = numeric(0)) {
   n <- length(time); p <- ncol(X)
-  P <- 1L + p + as.integer(dist != "exponential")
+  P <- 1L + p + .nshape(dist, knots)
   r <- .C("SX_par_fit", as.integer(n), as.integer(p), .par_dists[[dist]], as.integer(scale == "AFT"),
+          as.integer(length(knots)), if (length(knots)) as.double(knots) else double(1),
           as.integer(!is.null(entry)), if (is.null(entry)) double(1) else as.double(entry),
           as.double(time), as.integer(status01), .rm(X), as.integer(!is.null(init)),
           if (is.null(init)) double(P) else as.double(init), as.integer(max_iter), as.double(tol),
           theta = double(P), var = double(P * P), info_d = double(3), info_i = integer(4), rc = integer(1),
           NAOK = TRUE, PACKAGE = "SurvX")
   .sx_rc(r$rc, "parametric fit")
-  nm <- c("(Intercept)", colnames(X), .shape_name(dist, scale))
+  nm <- c("(Intercept)", colnames(X), .shape_name(dist, scale, knots))
   list(theta = stats::setNames(r$theta, nm), var = matrix(r$var, P, P, byrow = TRUE, dimnames = list(nm, nm)),
        loglik = r$info_d[2L], iterations = r$info_i[1L], converged = as.logical(r$info_i[2L]),
        flags = r$info_i[3L], nevent = r$info_i[4L])
 }
 
-.parsurv_core <- function(cl, f, status01, dist, scale, init, max_iter, tol, label) {
+.parsurv_core <- function(cl, f, status01, dist, scale, init, max_iter, tol, label, df = 3L, knots = NULL, cuts = NULL, kn = NULL) {
   if (any(f$time <= 0)) stop("times must be positive for parametric models", call. = FALSE)
-  r <- .par_fit(f$time, status01, f$entry, f$X, dist, scale, init, max_iter, tol)
-  ln <- if (ncol(f$X)) tryCatch(.par_fit(f$time, status01, f$entry, f$X[, 0L, drop = FALSE], dist, scale, NULL, max_iter, tol)$loglik,
+  if (is.null(kn)) kn <- .par_knots(dist, f$time, status01, df, knots, cuts)
+  r <- .par_fit(f$time, status01, f$entry, f$X, dist, scale, init, max_iter, tol, kn)
+  ln <- if (ncol(f$X)) tryCatch(.par_fit(f$time, status01, f$entry, f$X[, 0L, drop = FALSE], dist, scale, NULL, max_iter, tol, kn)$loglik,
                                 error = function(e) NA_real_) else r$loglik
   ParSurvFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
              coefficients = r$theta, vcov = r$var, loglik = r$loglik, n = length(f$time),
              nevent = as.integer(r$nevent), iterations = as.integer(r$iterations), converged = isTRUE(r$converged),
              flags = as.integer(r$flags), time = f$time, status = as.integer(status01), X = f$X,
              dist = dist, scale = scale, dist_code = .par_dists[[dist]], aft = as.integer(scale == "AFT"),
-             entry = f$entry, loglik_null = ln, event_label = label)
+             entry = f$entry, loglik_null = ln, event_label = label, knots = kn)
 }
 
 #' Parametric survival regression
@@ -90,7 +132,11 @@
 #'   entry = )} for delayed entry.
 #' @param data a data frame.
 #' @param baseline \code{"weibull"} (default), \code{"exponential"}, \code{"gompertz"},
-#'   \code{"lognormal"} or \code{"loglogistic"}.
+#'   \code{"lognormal"}, \code{"loglogistic"}, \code{"rp"} (Royston-Parmar spline) or
+#'   \code{"pwexp"} (piecewise exponential).
+#' @param df,knots spline baseline: degrees of freedom (internal knots plus one) or internal knots on
+#'   the time scale.
+#' @param cuts piecewise exponential baseline: cut points; default the quartiles of the event times.
 #' @param scale \code{"PH"} or \code{"AFT"}; default \code{"PH"} where it exists (exponential,
 #'   Weibull, Gompertz), else \code{"AFT"} (log-normal, log-logistic).
 #' @param init optional starting values (intercept, covariates, shape).
@@ -122,24 +168,26 @@
 #' predict(fit, data.frame(x = 0:1), type = "quantile", p = 0.5)
 #' AIC(fit, update(fit, baseline = "lognormal"))
 #' @export
-parsurv <- function(formula, data, baseline = "weibull", scale = NULL, init = NULL, max_iter = 200L, tol = 1e-10) {
+parsurv <- function(formula, data, baseline = "weibull", scale = NULL, df = 3L, knots = NULL, cuts = NULL,
+                    init = NULL, max_iter = 200L, tol = 1e-10) {
   cl <- match.call()
   dist <- .par_dist(baseline)
   scale <- .par_scale(dist, scale)
   f <- .sx_frame(formula, data, entry_ok = TRUE)
   if (any(f$status > 1L))
     stop("parsurv() is for one event (status 0/1); for competing risks use csc(..., baseline = \"", dist, "\")", call. = FALSE)
-  .parsurv_core(cl, f, f$status, dist, scale, init, max_iter, tol, "the event")
+  .parsurv_core(cl, f, f$status, dist, scale, init, max_iter, tol, "the event", df, knots, cuts)
 }
 
-.pcsc <- function(cl, f, baseline, scale, max_iter, tol) {
+.pcsc <- function(cl, f, baseline, scale, max_iter, tol, df = 3L, knots = NULL, cuts = NULL, kn_list = NULL) {
   K <- max(f$status)
   if (K < 1L) stop("no events", call. = FALSE)
   dist <- rep_len(vapply(baseline, .par_dist, character(1)), K)
   sc <- rep_len(if (is.null(scale)) NA_character_ else scale, K)
   sc <- vapply(seq_len(K), function(k) .par_scale(dist[k], sc[k]), character(1))
   models <- lapply(seq_len(K), function(k)
-    tryCatch(.parsurv_core(cl, f, as.integer(f$status == k), dist[k], sc[k], NULL, max_iter, tol, paste("cause", k)),
+    tryCatch(.parsurv_core(cl, f, as.integer(f$status == k), dist[k], sc[k], NULL, max_iter, tol, paste("cause", k),
+                           df, knots, cuts, if (is.null(kn_list)) NULL else kn_list[[k]]),
              error = function(e) stop("cause ", k, ": ", conditionMessage(e), call. = FALSE)))
   names(models) <- paste0("cause", seq_len(K))
   ParCSCFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts, models = models,
@@ -170,7 +218,9 @@ parsurv <- function(formula, data, baseline = "weibull", scale = NULL, init = NU
   nn <- nrow(Xn); nt <- length(at)
   usevar <- isTRUE(se) && all(is.finite(object@vcov))
   cells <- if (average) nt else nn * nt
-  r <- .C("SX_par_predict", object@dist_code, object@aft, as.integer(ncol(Xn)), as.double(object@coefficients),
+  kn <- object@knots
+  r <- .C("SX_par_predict", object@dist_code, object@aft, as.integer(length(kn)), if (length(kn)) as.double(kn) else double(1),
+          as.integer(ncol(Xn)), as.double(object@coefficients),
           as.integer(usevar), if (usevar) as.double(object@vcov) else double(1), as.integer(nn), .rm(Xn),
           as.integer(nt), as.double(at), .par_types[[type]], as.integer(average),
           out = double(cells), se = double(cells), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
@@ -210,8 +260,10 @@ S7::method(predict, ParSurvFit) <- function(object, newdata = NULL, times = NULL
   V <- unlist(lapply(object@models, function(m) as.double(t(m@vcov))))
   usevar <- isTRUE(se) && all(is.finite(V))
   cells <- if (average) nt else nn * nt
+  kn <- lapply(object@models, function(m) m@knots)
   r <- .C("SX_parcsc_predict", as.integer(K), vapply(object@models, function(m) m@dist_code, integer(1)),
-          vapply(object@models, function(m) m@aft, integer(1)), as.integer(ncol(Xn)), as.double(th),
+          vapply(object@models, function(m) m@aft, integer(1)), vapply(kn, length, integer(1)),
+          if (length(unlist(kn))) as.double(unlist(kn)) else double(1), as.integer(ncol(Xn)), as.double(th),
           as.integer(usevar), if (usevar) as.double(V) else double(1), as.integer(k), as.integer(nn), .rm(Xn),
           as.integer(nt), ts, as.double(max(object@time, ts)), as.integer(average),
           out = double(cells), se = double(cells), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
@@ -265,9 +317,13 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
   rows <- lapply(seq_len(nrow(e)), function(i) {
     r <- e[i, ]
     if (r$role == "baseline") {
-      if (m@scale == "AFT") list("time scale exp(intercept), all covariates 0", exp(r$estimate), exp(r$lower), exp(r$upper))
+      if (m@dist == "rp") list("gamma0 (intercept of the spline), all covariates 0", r$estimate, r$lower, r$upper)
+      else if (m@dist == "pwexp") list("rate in the first interval exp(intercept), all covariates 0", exp(r$estimate), exp(r$lower), exp(r$upper))
+      else if (m@scale == "AFT") list("time scale exp(intercept), all covariates 0", exp(r$estimate), exp(r$lower), exp(r$upper))
       else list("baseline rate exp(intercept), all covariates 0", exp(r$estimate), exp(r$lower), exp(r$upper))
-    } else if (r$term == "shape") list("Gompertz shape a (a < 0: a fraction never fails)", r$estimate, r$lower, r$upper)
+    } else if (m@dist == "rp") list(paste0(r$term, " (spline coefficient)"), r$estimate, r$lower, r$upper)
+    else if (m@dist == "pwexp") list(sub("log rate ratio", "rate ratio against the first interval,", r$term), exp(r$estimate), exp(r$lower), exp(r$upper))
+    else if (r$term == "shape") list("Gompertz shape a (a < 0: a fraction never fails)", r$estimate, r$lower, r$upper)
     else if (r$term == "log(shape)") list("Weibull shape (1: constant hazard, > 1 rising, < 1 falling)", exp(r$estimate), exp(r$lower), exp(r$upper))
     else list(paste0("scale sigma of log time", if (m@dist == "weibull") " (Weibull shape = 1/sigma)" else ""), exp(r$estimate), exp(r$lower), exp(r$upper))
   })
