@@ -29,6 +29,14 @@
   The new `sx_references(fit)` prints the full references behind a fitted object, and
   `sx_references("brier_score")` those of a function. Every help page has a References section;
   `predict()`, `estimates()` and the generic methods (AIC, BIC, confint) gained theirs.
+* `ph_test()` returns an S7 object (`PHTest`, with `print`, `plot` and `as.data.frame`; all tests
+  in `x@table`), like every other result of the package.
+* `plot()` now works for parametric fits: survival curves for `parsurv()`, cumulative incidence
+  curves for `csc(baseline = )`; `logLik()`, `AIC()` and `BIC()` work for cause-specific Cox models
+  (the sum of the log partial likelihoods of the causes).
+* New test file of all generic functions (print, summary, plot, coef, vcov, confint, logLik, AIC,
+  BIC, nobs, formula, getCall, terms, model.matrix, update, predict, residuals, as.data.frame) on
+  every class, run on all platforms including R-devel.
 * `splines` (base R) is now imported, for the smooth of `plot(ph_test())`.
 
 # SurvX 0.6.1

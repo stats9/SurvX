@@ -36,13 +36,13 @@ test_that("ph_test() agrees with survival::cox.zph", {
   f <- cox(Event(time, status) ~ x + z, d, ties = "breslow")
   r <- survival::coxph(survival::Surv(time, status) ~ x + z, d, ties = "breslow")
   for (tr in c("identity", "log")) {
-    ours <- ph_test(f, transform = tr)[[1]]$table
+    ours <- ph_test(f, transform = tr)@tests[[1]]$table
     ref <- survival::cox.zph(r, transform = tr, terms = FALSE)$table
     expect_close(ours$chisq, ref[, "chisq"], 1e-5)
     expect_close(ours$p, ref[, "p"], 1e-5)
   }
   pt <- ph_test(f)
-  expect_lt(pt[[1]]$table["x", "p"], 0.05)        # x has non-proportional hazards
+  expect_lt(pt@tests[[1]]$table["x", "p"], 0.05)        # x has non-proportional hazards
   expect_output(print(pt), "Reading: the effect of x")
   with_null_device(expect_silent(plot(pt)))
 })
@@ -54,8 +54,9 @@ test_that("cause-specific residuals and tests use the cause-specific events", {
   r <- survival::coxph(survival::Surv(time, status == 2) ~ x + z, d, ties = "breslow")
   expect_close(residuals(f)$cause2, residuals(r, "martingale"), 1e-6)
   pt <- ph_test(f, transform = "identity")
-  expect_length(pt, 2L)
-  expect_close(pt[[2]]$table$chisq, survival::cox.zph(r, transform = "identity", terms = FALSE)$table[, "chisq"], 1e-5)
+  expect_length(pt@tests, 2L)
+  expect_identical(nrow(pt@table), 6L)
+  expect_close(pt@tests[[2]]$table$chisq, survival::cox.zph(r, transform = "identity", terms = FALSE)$table[, "chisq"], 1e-5)
   expect_error(ph_test(csc(Event(time, status) ~ x, d, baseline = "weibull")), "Cox baseline")
 })
 

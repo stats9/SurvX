@@ -1,7 +1,5 @@
 \name{ph_test}
 \alias{ph_test}
-\alias{print.ph_test}
-\alias{plot.ph_test}
 \title{Test of proportional hazards}
 \description{
 Score test of the proportional hazards assumption of a Cox model, or of every cause of a
@@ -10,25 +8,26 @@ residuals against time.
 }
 \usage{
 ph_test(fit, transform = c("km", "rank", "identity", "log"))
-
-\method{print}{ph_test}(x, ...)
-
-\method{plot}{ph_test}(x, var = NULL, cause = 1L, df = 4L, level = 0.95, col = "#0072B2",
-     xlab = NULL, ylab = NULL, main = NULL, cex = 0.85, ...)
 }
 \arguments{
 \item{fit}{a model fitted by \code{\link{cox}} or by \code{\link{csc}} with a Cox baseline.}
 \item{transform}{the function \eqn{g(t)} of time: \code{"km"} (default, one minus the Kaplan-Meier
   estimate just before \eqn{t}), \code{"rank"}, \code{"identity"} or \code{"log"}.}
-\item{x}{the result of \code{ph_test()}.}
-\item{var}{covariates to plot; default all.}
-\item{cause}{the cause to plot for cause-specific models.}
-\item{df}{degrees of freedom of the natural spline that smooths the scaled residuals.}
-\item{level}{confidence level of the pointwise band of the smooth.}
-\item{col}{colour of the smooth.}
-\item{xlab,ylab,main}{axis labels and title.}
-\item{cex}{character expansion.}
-\item{...}{passed to \code{plot.default}; not used by \code{print}.}
+}
+\section{Plot}{
+\code{plot(x, var = NULL, cause = 1, df = 4, level = 0.95, col = "#0072B2", xlab = NULL,
+ylab = NULL, main = NULL, cex = 0.85, ...)}, with:
+\describe{
+\item{\code{x}}{the result of \code{ph_test()}.}
+\item{\code{var}}{covariates to plot; default all.}
+\item{\code{cause}}{the cause to plot for cause-specific models.}
+\item{\code{df}}{degrees of freedom of the natural spline that smooths the scaled residuals.}
+\item{\code{level}}{confidence level of the pointwise band of the smooth.}
+\item{\code{col}}{colour of the smooth.}
+\item{\code{xlab, ylab, main}}{axis labels and title.}
+\item{\code{cex}}{character expansion.}
+\item{\code{...}}{passed to \code{plot.default}.}
+}
 }
 \details{
 For each covariate the test adds a term \eqn{\gamma_j x_j g(t)} to the model and tests
@@ -44,9 +43,10 @@ its pointwise confidence band. The smooth estimates the time-varying effect \eqn
 line at \eqn{\hat\beta_j} (dashed) supports proportional hazards.
 }
 \value{
-an object of class \code{"ph_test"}: a list with one element per cause (one for a Cox model), each
-  with \code{table} (chi-square, df and p of every covariate and \code{GLOBAL}) and the residuals
-  used by the plot.
+an S7 object of class \code{PHTest} with \code{print} and \code{plot} methods. \code{x@table}
+  is a data frame of all tests (cause, term, chi-square, df, p; term \code{GLOBAL} for the global
+  test); \code{x@tests} is a list with one element per cause (one for a Cox model) holding the
+  table and the scaled Schoenfeld residuals used by the plot.
 }
 \references{
 Grambsch PM, Therneau TM (1994) Proportional hazards tests and diagnostics based on weighted

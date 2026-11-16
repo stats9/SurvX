@@ -137,7 +137,7 @@
   if (S7::S7_inherits(x, AJFit)) return(c("aalen_johansen1978", "andersen1993", "kalbfleisch2002", if (!is.null(x@tests)) "gray1988"))
   if (S7::S7_inherits(x, HazardFit)) return(c("nelson1972", "aalen1978", if (!is.null(x@bandwidth)) c("ramlau1983", "muller_wang1994", "patil1993", "hall_marron1991")))
   if (S7::S7_inherits(x, ModelComparison)) return(c("graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", if (x@folds >= 2L) "hastie2009"))
-  if (inherits(x, "ph_test")) return(c("grambsch1994", "therneau2000"))
+  if (S7::S7_inherits(x, PHTest)) return(c("grambsch1994", "therneau2000"))
   character(0)
 }
 

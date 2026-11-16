@@ -204,7 +204,7 @@ ph_test <- function(fit, transform = c("km", "rank", "identity", "log")) {
   if (S7::S7_inherits(fit, CoxFit)) {
     r <- .zph_core(fit@time, fit@status, fit@X, fit@coefficients, fit@vcov, transform, fit@weights)
     r$label <- "the event"
-    return(structure(list(r), class = "ph_test"))
+    return(.ph_object(list(r), transform))
   }
   if (S7::S7_inherits(fit, CSCFit)) {
     out <- lapply(seq_len(fit@K), function(k) {
@@ -212,19 +212,28 @@ ph_test <- function(fit, transform = c("km", "rank", "identity", "log")) {
       r <- .zph_core(fit@time, as.integer(fit@status == k), fit@X, m$coefficients, m$vcov, transform)
       r$label <- paste("cause", k); r
     })
-    return(structure(out, class = "ph_test"))
+    return(.ph_object(out, transform))
   }
   stop("ph_test() takes a model fitted by cox() or csc() with a Cox baseline", call. = FALSE)
 }
 
-#' @export
-print.ph_test <- function(x, ...) {
-  cat("Test of proportional hazards (score test of Grambsch and Therneau; time scale: ", x[[1L]]$transform, ")\n", sep = "")
-  for (r in x) {
+.ph_object <- function(tests, transform) {
+  tab <- do.call(rbind, lapply(seq_along(tests), function(k) {
+    t <- tests[[k]]$table
+    data.frame(cause = if (length(tests) > 1L) k else NA_integer_, term = rownames(t), chisq = t$chisq, df = t$df, p = t$p,
+               stringsAsFactors = FALSE)
+  }))
+  rownames(tab) <- NULL
+  PHTest(tests = tests, transform = transform, table = tab)
+}
+
+S7::method(print, PHTest) <- function(x, ...) {
+  cat("Test of proportional hazards (score test of Grambsch and Therneau; time scale: ", x@transform, ")\n", sep = "")
+  for (r in x@tests) {
     tab <- r$table
     df <- data.frame(term = rownames(tab), chisq = .num(tab$chisq, 2L), df = tab$df, p = .pval(tab$p), stringsAsFactors = FALSE)
     names(df) <- c("", "chi-square", "df", "p")
-    cat("\n", if (length(x) > 1L) paste0("Cause ", sub("cause ", "", r$label), "\n") else "", sep = "")
+    cat("\n", if (length(x@tests) > 1L) paste0("Cause ", sub("cause ", "", r$label), "\n") else "", sep = "")
     cat(.table_lines(df), sep = "\n")
     bad <- rownames(tab)[-nrow(tab)][tab$p[-nrow(tab)] < 0.05]
     cat(if (length(bad)) paste0("Reading: the effect of ", paste(bad, collapse = ", "),
@@ -237,10 +246,9 @@ print.ph_test <- function(x, ...) {
   invisible(x)
 }
 
-#' @export
-plot.ph_test <- function(x, var = NULL, cause = 1L, df = 4L, level = 0.95, col = "#0072B2", xlab = NULL, ylab = NULL,
+S7::method(plot, PHTest) <- function(x, var = NULL, cause = 1L, df = 4L, level = 0.95, col = "#0072B2", xlab = NULL, ylab = NULL,
                          main = NULL, cex = 0.85, ...) {
-  r <- x[[min(cause, length(x))]]
+  r <- x@tests[[min(cause, length(x@tests))]]
   vars <- if (is.null(var)) colnames(r$y) else var
   op <- graphics::par(mfrow = c(1L, length(vars)), cex = cex, mar = c(4.5, 4.5, 3, 1)); on.exit(graphics::par(op))
   for (v in vars) {
@@ -249,7 +257,7 @@ plot.ph_test <- function(x, var = NULL, cause = 1L, df = 4L, level = 0.95, col =
     graphics::plot(xx[ok], y[ok], pch = 16, cex = 0.5, col = grDevices::adjustcolor("grey30", 0.5),
                    xlab = if (is.null(xlab)) paste0("Time (", r$transform, " scale)") else xlab,
                    ylab = if (is.null(ylab)) paste0("Beta(t) for ", v) else ylab,
-                   main = if (is.null(main)) (if (length(x) > 1L) r$label else "") else main, ...)
+                   main = if (is.null(main)) (if (length(x@tests) > 1L) r$label else "") else main, ...)
     # natural spline regression of the scaled residuals on g(t), with pointwise limits
     k <- min(as.integer(df), length(unique(xx[ok])) - 1L)
     if (k >= 1L) {

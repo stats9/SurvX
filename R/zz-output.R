@@ -695,6 +695,13 @@ S7::method(terms, CSCFit) <- function(x, ...) x@terms
 S7::method(model.matrix, SurvXFit) <- function(object, ...) object@X
 S7::method(model.matrix, CSCFit) <- function(object, ...) object@X
 
+# the partial likelihood of cause-specific Cox models factorises over causes (Prentice et al. 1978),
+# so the log partial likelihood of the whole model is the sum over causes
+S7::method(logLik, CSCFit) <- function(object, ...) {
+  structure(sum(vapply(object@models, function(m) m$loglik, numeric(1))),
+            df = sum(vapply(object@models, function(m) length(m$coefficients), integer(1))), nobs = object@n, class = "logLik")
+}
+
 #' Methods for fitted models
 #'
 #' Every model of SurvX is an S7 object: its parts are read with \code{@} (\code{fit@coefficients},

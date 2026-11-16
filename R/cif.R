@@ -639,6 +639,7 @@ S7::method(plot, DirectCIFFit) <- function(x, ...) cif_plot(x, ...)
 S7::method(plot, FineGrayFit) <- function(x, ...) cif_plot(x, ...)
 S7::method(plot, CSCFit) <- function(x, ...) cif_plot(x, ...)
 S7::method(plot, AJFit) <- function(x, ...) cif_plot(x, ...)
+S7::method(plot, ParCSCFit) <- function(x, ...) cif_plot(x, ...)
 
 # ggplot2::autoplot(), registered when ggplot2 is loaded
 autoplot <- S7::new_external_generic("ggplot2", "autoplot", "object")
@@ -646,3 +647,4 @@ S7::method(autoplot, DirectCIFFit) <- function(object, ...) cif_plot(object, ...
 S7::method(autoplot, FineGrayFit) <- function(object, ...) cif_plot(object, ..., engine = "ggplot2")
 S7::method(autoplot, CSCFit) <- function(object, ...) cif_plot(object, ..., engine = "ggplot2")
 S7::method(autoplot, AJFit) <- function(object, ...) cif_plot(object, ..., engine = "ggplot2")
+S7::method(autoplot, ParCSCFit) <- function(object, ...) cif_plot(object, ..., engine = "ggplot2")

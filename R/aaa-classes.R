@@ -158,3 +158,11 @@ HazardFit <- S7::new_class("HazardFit", package = "SurvX",
     status = S7::class_integer,
     group = S7::class_any
   ))
+
+# result of ph_test(): one element of `tests` per cause (one for a Cox model)
+PHTest <- S7::new_class("PHTest", package = "SurvX",
+  properties = list(
+    tests = S7::class_list,
+    transform = S7::class_character,
+    table = S7::class_any
+  ))

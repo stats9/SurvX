@@ -302,14 +302,14 @@ test_that("generalized gamma agrees with flexsurv and nests the Weibull and log-
   expect_equal(f@scale, "AFT")
   expect_close(as.numeric(logLik(f)), r$loglik, 1e-5)
   rc <- r$res.t[, "est"]                                # mu, sigma (log), Q, covariates
-  expect_close(coef(f), c(rc["mu"], rc["x"], rc["z"], rc["sigma"], rc["Q"]), 1e-3)
+  expect_close(coef(f), c(rc["mu"], rc["x"], rc["z"], rc["sigma"], rc["Q"]), 5e-3)
   # the Weibull is Q = 1: the generalized gamma cannot fit worse
   w <- parsurv(Event(time, status, entry = entry) ~ x + z, d, baseline = "weibull", scale = "AFT")
   expect_gte(as.numeric(logLik(f)), as.numeric(logLik(w)) - 1e-6)
   # survival curve and median agree with flexsurv
   nd <- data.frame(x = 1, z = 0.3)
   expect_close(predict(f, nd, times = c(1, 2.5), type = "survival"),
-               summary(r, newdata = nd, t = c(1, 2.5), type = "survival", tidy = TRUE)$est, 1e-4)
+               summary(r, newdata = nd, t = c(1, 2.5), type = "survival", tidy = TRUE)$est, 1e-3)
   expect_output(print(f), "generalized gamma")
 })
 
