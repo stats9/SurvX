@@ -116,11 +116,13 @@ predict(f_csc, nd, times = c(1, 2, 4), cause = 1)
 ```
 
 `cif_plot()` draws the predicted CIFs of one or several models with confidence bands and a
-risk table. Here the three models are compared for the two covariate profiles:
+risk table. Here the three models are compared for the two covariate profiles (`x = 0` and
+`x = 1`, with `z = 0`). The legend names each curve by model and profile; `labels` can replace these
+names, with one label per curve (here 3 models x 2 profiles = 6):
 
 ```{r cif-plot, fig.height = 5}
 cif_plot(list("direct PH" = f_dir, "Fine-Gray" = f_fg, "cause-specific Cox" = f_csc),
-         newdata = nd, labels = c("x = 0", "x = 1"), cause = 1, B = 50)
+         newdata = nd, cause = 1, B = 50)
 ```
 
 The average predicted curve over the sample can be checked against the Aalen–Johansen estimate,
