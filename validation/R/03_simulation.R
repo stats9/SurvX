@@ -261,8 +261,14 @@ sim_one <- function(rep, n, seed) {
   gt <- attempt(gray_test(dc$time, dc$status, dc$g)$p.value)
   if (!failed(gt)) add(val_rows("tests", "gray_test: size", "rejection rate", 0.05, rej(gt)))
   dw <- sim_weibull(n)
-  pt <- attempt(ph_test(cox(Event(time, status) ~ x1 + x2, dw))@table)
-  if (!failed(pt)) add(val_rows("tests", "ph_test (km): size, global", "rejection rate", 0.05, rej(pt$p[pt$term == "GLOBAL"])))
+  fw <- attempt(cox(Event(time, status) ~ x1 + x2, dw))
+  for (tr in c("km", "identity")) {
+    pt <- attempt(ph_test(fw, transform = tr)@table)
+    if (!failed(pt)) {
+      add(val_rows("tests", paste0("ph_test (", tr, "): size, global"), "rejection rate", 0.05, rej(pt$p[pt$term == "GLOBAL"])))
+      add(val_rows("tests", paste0("ph_test (", tr, "): size, x1"), "rejection rate", 0.05, rej(pt$p[pt$term == "x1"])))
+    }
+  }
   x <- rbinom(n, 1, 0.5); tn <- rweibull(n, ifelse(x == 1, 0.7, 1.6), 2); cc <- runif(n, 0, 5)
   dnph <- data.frame(time = pmin(tn, cc), status = as.integer(tn <= cc), x = x)
   pt <- attempt(ph_test(cox(Event(time, status) ~ x, dnph))@table)
@@ -315,9 +321,12 @@ summarise_simulation <- function(raw) {
   })
   sm <- do.call(rbind, out)
   band <- sm$mc_band
+  # SE/SD is judged against its own Monte Carlo error, sqrt(1 / (2 (R - 1))), plus 5% for small-sample bias
+  sm$se_ratio_band <- 1.959964 * sqrt(1 / (2 * (sm$R - 1))) + 0.05
   sm$verdict <- ifelse(!sm$judged, "reported",
                 ifelse(!is.na(sm$rate_pct), ifelse(abs(sm$rate_pct - 5) <= 100 * 1.959964 * sqrt(0.05 * 0.95 / sm$R), "OK", "CHECK"),
                 ifelse(is.na(sm$coverage_pct), "reported",
-                ifelse(abs(sm$coverage_pct - 95) <= band & sm$converged_pct >= 99 & abs(sm$se_ratio - 1) <= 0.1, "OK", "CHECK"))))
+                ifelse(abs(sm$coverage_pct - 95) <= band & sm$converged_pct >= 99 &
+                         (is.na(sm$se_ratio) | abs(sm$se_ratio - 1) <= sm$se_ratio_band), "OK", "CHECK"))))
   sm[order(sm$scenario, sm$method, sm$parameter, sm$n), ]
 }

@@ -24,6 +24,7 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 #include <vector>
 #include "newton.hpp"
@@ -146,7 +147,12 @@ class CoxModel {
   // Score residuals U_i (n x p, row-major): the contribution of row i to the score at beta,
   // U_i = sum over event times t in (entry_i, time_i] of (x_i - xbar(t)) dM_i(t), in the Efron or
   // Breslow form (Therneau & Grambsch 2000, Sec. 7.2). Their sum over all rows is the score.
-  void score_residuals(const std::vector<double>& beta, std::vector<double>& U) const {
+  // Also, when the pointers are given: martingale residuals d_i - exp(eta_i) dLambda_i in the same
+  // Efron or Breslow form (unweighted, as in survival), and for every row with an event the
+  // risk-set mean of the covariates used in its Schoenfeld residual (n x p, row-major; NaN for
+  // rows without an event); with Efron ties the mean is averaged over the d terms.
+  void score_residuals(const std::vector<double>& beta, std::vector<double>& U,
+                       std::vector<double>* mart = nullptr, std::vector<double>* xbar = nullptr) const {
     const std::size_t p = p_;
     std::vector<double> eta;
     const double c = linear_predictor(beta, nullptr, eta);
@@ -190,6 +196,8 @@ class CoxModel {
       }
     }
     U.assign(n_ * p, 0.0);
+    if (mart) mart->assign(n_, 0.0);
+    if (xbar) xbar->assign(n_ * p, std::numeric_limits<double>::quiet_NaN());
     for (std::size_t i = 0; i < n_; ++i) {
       const std::size_t s = st(i);
       if (s >= nstr) continue;
@@ -204,11 +212,15 @@ class CoxModel {
       double* u = U.data() + i * p;
       const double sA = cA[s][hi] - cA[s][lo];
       for (std::size_t a = 0; a < p; ++a) u[a] = -r * (x[a] * sA - (cB[s][hi * p + a] - cB[s][lo * p + a]));
+      double haz = sA;
       if (status_[i] != 0 && hi > lo && tval(hi - 1) == time_[i]) {
         const EvTime& e = ev[ix[hi - 1]];
+        haz += e.AD - e.A;
         for (std::size_t a = 0; a < p; ++a)
           u[a] += -r * (x[a] * (e.AD - e.A) - (e.BD[a] - e.B[a])) + wt(i) * (x[a] - e.abar[a]);
+        if (xbar) for (std::size_t a = 0; a < p; ++a) (*xbar)[i * p + a] = e.abar[a];
       }
+      if (mart) (*mart)[i] = (status_[i] != 0 ? 1.0 : 0.0) - std::exp(eta[i] - c) * haz;
     }
   }
 

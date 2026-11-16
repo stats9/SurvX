@@ -106,3 +106,27 @@ test_that("every result names its sources", {
   expect_error(sx_references("nothing"), "no references")
   expect_gt(length(suppressWarnings(capture.output(all <- sx_references()))), 100)
 })
+
+test_that("Efron residuals with tied times agree with survival", {
+  skip_if_not_installed("survival")
+  d <- sim_cont(); d$time <- round(d$time, 1) + 0.1
+  expect_gt(anyDuplicated(d$time), 0L)
+  f <- cox(Event(time, status) ~ x + z, d)
+  r <- survival::coxph(survival::Surv(time, status) ~ x + z, d)
+  expect_close(residuals(f), unname(residuals(r, "martingale")), 1e-6)
+  expect_close(residuals(f, "deviance"), unname(residuals(r, "deviance")), 1e-6)
+  expect_close(residuals(f, "scaledsch"), unname(residuals(r, "scaledsch")), 1e-6)
+  expect_lt(abs(sum(residuals(f))), 1e-8)                    # Efron martingale residuals sum to zero
+  fs <- cox(Event(time, status) ~ x + z + strata(g), transform(d, g = rep(1:2, length.out = nrow(d))))
+  rs <- survival::coxph(survival::Surv(time, status) ~ x + z + strata(g), transform(d, g = rep(1:2, length.out = nrow(d))))
+  expect_close(residuals(fs), unname(residuals(rs, "martingale")), 1e-6)
+})
+
+test_that("the Event class does not clash with other packages (timereg)", {
+  skip_if_not_installed("timereg")
+  loadNamespace("timereg")
+  d <- sim_cont(); d$x[1:3] <- NA
+  f <- cox(Event(time, status) ~ x + z, d)
+  expect_identical(f@n, nrow(d) - 3L)
+  expect_s3_class(Event(1:3, c(1, 0, 1))[1:2], "SurvXEvent")
+})

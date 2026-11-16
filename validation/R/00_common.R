@@ -182,15 +182,15 @@ event_quantiles <- function(d, probs = c(0.25, 0.5, 0.75)) unname(stats::quantil
 # step function value at times (right-continuous)
 step_at <- function(x, y, at, y0 = 1) { i <- findInterval(at, x); c(y0, y)[i + 1L] }
 
-# elapsed seconds of expr; very fast calls are repeated until 0.2 s have passed (median per call)
-time_it <- function(expr_fun, min_total = 0.2, max_inner = 50L) {
+# elapsed seconds of one call; fast calls are repeated until 0.5 s have passed and the total time is
+# divided by the number of calls (the clock of Windows has a resolution of about 0.01 s)
+time_it <- function(expr_fun, min_total = 0.5, max_inner = 200L) {
   t0 <- proc.time()[["elapsed"]]; v <- attempt(expr_fun()); t1 <- proc.time()[["elapsed"]] - t0
   if (failed(v)) return(list(seconds = NA_real_, value = v))
-  k <- 1L; tt <- t1
-  while (sum(tt) < min_total && k < max_inner) {
-    t0 <- proc.time()[["elapsed"]]; expr_fun(); tt <- c(tt, proc.time()[["elapsed"]] - t0); k <- k + 1L
-  }
-  list(seconds = stats::median(tt), value = v)
+  if (t1 >= min_total) return(list(seconds = t1, value = v))
+  k <- 0L; t0 <- proc.time()[["elapsed"]]
+  repeat { expr_fun(); k <- k + 1L; el <- proc.time()[["elapsed"]] - t0; if (el >= min_total || k >= max_inner) break }
+  list(seconds = el / k, value = v)
 }
 
 # parallel lapply that also works on Windows (PSOCK cluster; the workers load SurvX and WORKER_FILES)

@@ -18,8 +18,11 @@ With \eqn{\hat H_i} the fitted cumulative hazard of subject \eqn{i} at its time 
 entry), the Cox-Snell residual is \eqn{\hat H_i}, the martingale residual
 \eqn{M_i = d_i - \hat H_i} and the deviance residual
 \eqn{\mathrm{sign}(M_i)\sqrt{-2\{M_i + d_i \log(d_i - M_i)\}}}. Schoenfeld residuals are defined at
-every event: the covariate vector minus its risk-weighted mean over the subjects at risk (Breslow
-weights). The scaled residuals are \eqn{\hat\beta + D\,V r}, with \eqn{D} the number of events and
+every event: the covariate vector minus its risk-weighted mean over the subjects at risk. For Cox
+models the cumulative hazard and the means take the form of the ties method of the fit: with Efron
+ties a subject who fails at a tied time contributes the Efron-weighted hazard increments, and the
+mean is averaged over the Efron terms, exactly as in \pkg{survival} (Therneau and Grambsch 2000,
+Section 3.3). The martingale residuals of a Cox model then sum to zero. The scaled residuals are \eqn{\hat\beta + D\,V r}, with \eqn{D} the number of events and
 \eqn{V} the covariance matrix of \eqn{\hat\beta}, as in \pkg{survival}; their smoothed trend
 against time estimates \eqn{\beta(t)} (Grambsch and Therneau 1994), see \code{\link{ph_test}}.
 }

@@ -166,6 +166,19 @@ int sc_coxph_ext_baseline(int n, int p, const double* entry, const double* time,
   return 0;
 } catch (...) { return -9; }
 
+int sc_coxph_resid(int n, int p, const double* entry, const double* time, const int* status, const int* strata,
+                   const double* X, const double* weights, int ties, const double* beta, double* mart, double* xbar) try {
+  if (int rc = check_common(n, p, time, X)) return rc;
+  if (!status || !beta || !mart || !xbar || p == 0) return -1;
+  if (int rc = check_ext(n, entry, time, strata, weights)) return rc;
+  CoxModel mod(n, p, time, status, X, weights, ties == 1 ? EFRON : BRESLOW, entry, strata);
+  std::vector<double> u, m, xb;
+  mod.score_residuals(std::vector<double>(beta, beta + p), u, &m, &xb);
+  for (int i = 0; i < n; ++i) mart[i] = m[i];
+  for (std::size_t i = 0; i < xb.size(); ++i) xbar[i] = xb[i];
+  return 0;
+} catch (...) { return -9; }
+
 int sc_coxph_score(int n, int p, const double* entry, const double* time, const int* status, const int* strata,
                    const double* X, const double* weights, int ties, const double* beta, double* U) try {
   if (int rc = check_common(n, p, time, X)) return rc;

@@ -48,24 +48,32 @@
   list(rows = ev, time = time[ev], xbar = xbar, V = V, w = w[ev])
 }
 
+# martingale residuals and Schoenfeld means from the C++ core (Efron or Breslow form, as survival)
+.cox_resid_c <- function(time, status, X, w, ties, beta, entry, strata) {
+  n <- length(time); p <- ncol(X)
+  r <- do.call(.C, c(list("SX_cox_resid"), .cox_args(time, status, X, w, entry, strata),
+                     list(as.integer(ties == "efron"), as.double(beta), mart = double(n), xbar = double(n * p), rc = integer(1),
+                          NAOK = TRUE, PACKAGE = "SurvX")))
+  .sx_rc(r$rc, "residuals")
+  list(mart = r$mart, xbar = matrix(r$xbar, n, p, byrow = TRUE))
+}
+
 .resid_cox_core <- function(time, status, X, beta, vcov, ties, type, w = NULL, baseline = NULL, entry = NULL, strata = NULL) {
+  rc <- .cox_resid_c(time, status, X, w, ties, beta, entry, strata)
   if (type %in% c("martingale", "deviance", "coxsnell")) {
-    H <- .cumhaz_at(baseline, time, strata)
-    if (!is.null(entry)) H <- H - .cumhaz_at(baseline, entry, strata)
-    H <- H * exp(drop(X %*% beta))
-    m <- status - H
-    out <- switch(type, martingale = m, coxsnell = H,
-                  deviance = sign(m) * sqrt(-2 * (m + ifelse(status == 1L, log(pmax(status - m, 1e-300)), 0))))
-    return(out)
+    m <- rc$mart
+    return(switch(type, martingale = m, coxsnell = status - m,
+                  deviance = sign(m) * sqrt(-2 * (m + ifelse(status == 1L, log(pmax(status - m, 1e-300)), 0)))))
   }
-  rs <- .cox_risksets(time, status, X, beta, w, entry, strata)
-  sch <- X[rs$rows, , drop = FALSE] - rs$xbar
-  dimnames(sch) <- list(format(rs$time, trim = TRUE), colnames(X))
-  if (type == "schoenfeld") return(structure(sch, time = rs$time))
-  nd <- length(rs$rows)
+  ev <- which(status == 1L)
+  ev <- ev[if (is.null(strata)) order(time[ev]) else order(strata[ev], time[ev])]
+  sch <- X[ev, , drop = FALSE] - rc$xbar[ev, , drop = FALSE]
+  dimnames(sch) <- list(format(time[ev], trim = TRUE), colnames(X))
+  if (type == "schoenfeld") return(structure(sch, time = time[ev]))
+  nd <- length(ev)
   sc <- sch %*% vcov * nd + matrix(beta, nd, length(beta), byrow = TRUE)
   dimnames(sc) <- dimnames(sch)
-  structure(sc, time = rs$time)
+  structure(sc, time = time[ev])
 }
 
 .par_resid <- function(m, type) {
@@ -88,7 +96,7 @@
 #' at entry), the Cox-Snell residual is \eqn{\hat H_i}, the martingale residual \eqn{d_i - \hat H_i}
 #' and the deviance residual \eqn{\mathrm{sign}(M_i)\sqrt{-2\{M_i + d_i \log(d_i - M_i)\}}}. Schoenfeld
 #' residuals are defined at every event: the covariate vector minus its risk-weighted mean over the
-#' subjects at risk (Breslow weights); the scaled residuals are \eqn{\hat\beta + D\,V r}, with
+#' subjects at risk (Efron or Breslow form, as the fit); the scaled residuals are \eqn{\hat\beta + D\,V r}, with
 #' \eqn{D} the number of events and \eqn{V} the covariance of \eqn{\hat\beta}, as in \pkg{survival},
 #' and their smoothed trend against time estimates \eqn{\beta(t)} (Grambsch and Therneau 1994).
 #' For cause-specific models a list with one element per cause is returned.

@@ -19,7 +19,7 @@ Event(time, status, entry = NULL)
   stop with a message.}
 }
 \value{
-a matrix of class \code{"Event"} with the columns \code{time}, \code{status} and, with delayed
+a matrix of class \code{"SurvXEvent"} (a name that cannot clash with other packages) with the columns \code{time}, \code{status} and, with delayed
   entry, \code{entry}, for the left-hand side of a model formula.
 }
 \references{

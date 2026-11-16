@@ -45,7 +45,7 @@
   environment(tt0) <- .sx_specials_env(environment(formula))
   mf <- stats::model.frame(tt0, data = data, na.action = stats::na.omit)
   y <- mf[[1L]]
-  if (!inherits(y, "Event")) stop("the left-hand side of the formula must be Event(time, status)", call. = FALSE)
+  if (!inherits(y, "SurvXEvent")) stop("the left-hand side of the formula must be Event(time, status)", call. = FALSE)
   if (!entry_ok) .no_entry(y, what)
   tt <- attr(mf, "terms")
   strata <- NULL; strata_levels <- NULL; strata_vars <- NULL; cluster <- NULL; cluster_var <- NULL
@@ -127,7 +127,7 @@
   if (missing(data) || is.null(data)) data <- environment(formula)
   mf <- stats::model.frame(formula, data = data, na.action = stats::na.omit)
   y <- mf[[1L]]
-  if (!inherits(y, "Event")) stop("the left-hand side of the formula must be Event(time, status)", call. = FALSE)
+  if (!inherits(y, "SurvXEvent")) stop("the left-hand side of the formula must be Event(time, status)", call. = FALSE)
   if (!entry_ok) .no_entry(y, what)
   y <- unclass(y)
   g <- if (ncol(mf) > 1L) interaction(mf[-1L], drop = TRUE, sep = ", ") else factor(rep("All patients", nrow(mf)))

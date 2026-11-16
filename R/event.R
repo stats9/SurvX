@@ -7,7 +7,7 @@
 #'   observation from \code{entry} to \code{time} and contributes to the risk sets only in that
 #'   interval. Must be smaller than \code{time}. Supported by \code{\link{parsurv}} and by
 #'   \code{\link{csc}} with a parametric baseline; the other functions stop with a message.
-#' @return a matrix of class \code{"Event"} with the columns \code{time}, \code{status} and, with
+#' @return a matrix of class \code{"SurvXEvent"} with the columns \code{time}, \code{status} and, with
 #'   delayed entry, \code{entry}, for the left-hand side of a model formula.
 #' @references Klein JP, Moeschberger ML (2003) Survival Analysis: Techniques for Censored and
 #'   Truncated Data, 2nd ed. Springer, Section 3.4 (left truncation).
@@ -32,15 +32,15 @@ Event <- function(time, status, entry = NULL) {
     if (any(entry[ok] >= time[ok])) stop("entry must be smaller than time for every subject", call. = FALSE)
     y <- cbind(y, entry = as.numeric(entry))
   }
-  class(y) <- "Event"
+  class(y) <- "SurvXEvent"
   y
 }
 
 #' @export
-"[.Event" <- function(x, i, j, drop = FALSE) {
+"[.SurvXEvent" <- function(x, i, j, drop = FALSE) {
   if (missing(j)) {
     y <- unclass(x)[i, , drop = FALSE]
-    class(y) <- "Event"
+    class(y) <- "SurvXEvent"
     y
   } else {
     unclass(x)[i, j, drop = drop]
@@ -48,12 +48,12 @@ Event <- function(time, status, entry = NULL) {
 }
 
 #' @export
-is.na.Event <- function(x) {
+is.na.SurvXEvent <- function(x) {
   as.vector(rowSums(is.na(unclass(x))) > 0)
 }
 
 #' @export
-print.Event <- function(x, ...) {
+print.SurvXEvent <- function(x, ...) {
   y <- unclass(x)
   s <- ifelse(y[, 2L] == 0, "+", ifelse(y[, 2L] == 1 & max(y[, 2L], na.rm = TRUE) <= 1, "", paste0(" (", y[, 2L], ")")))
   tt <- format(y[, 1L])

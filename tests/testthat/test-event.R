@@ -1,7 +1,7 @@
 test_that("Event() builds, subsets and prints", {
   y <- Event(c(1, 2, 3, 4, 5), c(0L, 1L, 2L, 1L, 0L))
-  expect_s3_class(y, "Event")
-  expect_s3_class(y[2:4], "Event")
+  expect_s3_class(y, "SurvXEvent")
+  expect_s3_class(y[2:4], "SurvXEvent")
   expect_identical(nrow(unclass(y[2:4])), 3L)
   expect_output(print(y))
   expect_false(any(is.na(y)))

@@ -1,3 +1,29 @@
+# SurvX 0.9.1
+
+* The S3 class of `Event()` objects is now `"SurvXEvent"`: the former name `"Event"` was also used
+  by timereg (loaded by riskRegression), whose `[` method then replaced SurvX's. `Event()` itself is
+  unchanged.
+* Cox residuals with Efron ties now follow the Efron form exactly, as in survival: a subject who
+  fails at a tied time contributes the Efron-weighted hazard increments to its martingale residual,
+  and Schoenfeld residuals use the risk-set mean averaged over the Efron terms (computed in the C++
+  core). The martingale residuals of an Efron fit sum to zero. Before, the Breslow form was used for
+  both, which differed from survival when event times were tied.
+* `parsurv()`, `csc(baseline = )` and `cure()` report a fit with non-finite estimates or standard
+  errors as not converged (with the warning in the printed output) instead of returning them silently.
+* `directcif(estimation = "weighted")` is much faster, with identical results. The baseline
+  quantities at the censoring support points are computed once per iteration instead of once per
+  (subject, support point) pair, and the competing-event terms use closed-form derivatives. With the
+  PH link (the default) the sums over the censoring distribution become suffix sums, so a fit is
+  linear in the sample size: n = 10000 takes about 0.1 s instead of 31 s. Other links remain
+  proportional to (competing events x support points) but are about 10 times faster. The new code
+  also evaluates log{1 - F} directly, so it no longer rejects parameter values where F rounds to 1.
+  Checked against the previous implementation (log-likelihood, score and information to 1e-9) for
+  every baseline and link.
+* New validation suite in `validation/` (not part of the package build): accuracy against survival,
+  cmprsk, riskRegression, flexsurv, flexsurvcure, survRM2 and timeROC; speed; a Monte Carlo study of
+  bias, standard errors and coverage for every model; stability and invariance checks. One run
+  writes all results to one text file and all figures to one PDF.
+
 # SurvX 0.9.0
 
 * New `cure()`: parametric cure models, **mixture** (Boag 1949; Berkson & Gage 1952; Farewell 1982)

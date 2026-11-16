@@ -102,18 +102,27 @@ cox_pair <- function(d, label, vars, variant) {
   extra_r <- c(if (variant$strata) "strata(g)")
   w <- if (variant$weights) d$w else NULL
   o <- attempt(cox(fml(lhs_o, c(vars, extra_o)), d, ties = variant$ties, weights = w))
+  # survival::coxph uses the robust variance by default with non-integer case weights: ask for the
+  # model-based one here (compared with cox()), and compare the robust one separately below
   r <- attempt(do.call(survival::coxph, c(list(fml(lhs_r, c(vars, extra_r)), data = d, ties = variant$ties),
-                                          if (variant$weights) list(weights = w), if (variant$cluster) list(cluster = d$id))))
+                                          if (variant$weights) list(weights = w, robust = FALSE), if (variant$cluster) list(cluster = d$id))))
+  if (variant$weights) {
+    o_rob <- attempt(cox(fml(lhs_o, c(vars, extra_o)), d, ties = variant$ties, weights = w, robust = TRUE))
+    r_rob <- attempt(survival::coxph(fml(lhs_r, c(vars, extra_r)), data = d, ties = variant$ties, weights = w))
+    check("Cox", "cox", "survival::coxph", paste0(label, " [", variant$name, "]"), "robust variance (case weights)",
+          attempt(vcov(o_rob)), attempt(vcov(r_rob)))
+  }
   tag <- paste0(label, " [", variant$name, "]")
   check("Cox", "cox", "survival::coxph", tag, "coefficients", attempt(coef(o)), attempt(coef(r)))
   check("Cox", "cox", "survival::coxph", tag, if (variant$cluster) "robust variance" else "variance", attempt(vcov(o)), attempt(vcov(r)))
   check("Cox", "cox", "survival::coxph", tag, "log partial likelihood", attempt(as.numeric(logLik(o))), attempt(r$loglik[2]))
   if (!variant$weights) {
     check("Cox", "residuals", "survival::residuals.coxph", tag, "martingale residuals", attempt(residuals(o)), attempt(unname(residuals(r, "martingale"))))
-    if (variant$ties == "breslow" && !variant$entry && !variant$strata)
+    if (!variant$strata)
       check("Cox", "residuals", "survival::residuals.coxph", tag, "scaled Schoenfeld residuals",
-            attempt(residuals(o, "scaledsch")), attempt(unname(residuals(r, "scaledsch"))),
-            note = "compared with Breslow ties, where both packages use the same risk-set means")
+            attempt(residuals(o, "scaledsch")), attempt(unname(residuals(r, "scaledsch"))))
+    check("Cox", "residuals", "survival::residuals.coxph", tag, "deviance residuals", attempt(residuals(o, "deviance")),
+          attempt(unname(residuals(r, "deviance"))))
   }
   if (!variant$weights && !variant$cluster) {
     nd <- d[seq_len(5), , drop = FALSE]; tq <- event_quantiles(d)
@@ -122,7 +131,7 @@ cox_pair <- function(d, label, vars, variant) {
     check("Cox", "predict(cox)", "survival::survfit.coxph", tag, "predicted survival", attempt(predict(o, nd, times = tq, type = "survival")), ref_s)
   }
   if (variant$ties == "breslow" && !variant$weights) {
-    for (tr in c("identity", "log")) {
+    for (tr in c("identity", "log", "km", "rank")) {
       ours <- attempt(ph_test(o, transform = tr)@table$chisq)
       ref <- attempt(unname(survival::cox.zph(r, transform = tr, terms = FALSE)$table[, "chisq"]))
       check("Cox", "ph_test", "survival::cox.zph", tag, paste0("score test chi-square (", tr, ")"), ours, ref)
@@ -171,7 +180,8 @@ acc_fg <- function(d, label, vars) {
   o <- attempt(fg(fml("Event(time, status)", vars), d))
   tq <- event_quantiles(d)
   if (has("cmprsk")) {
-    r <- attempt(cmprsk::crr(d$time, d$status, X, failcode = 1, cencode = 0))
+    # crr stops at a gradient tolerance of 1e-6 by default; a tight tolerance makes the comparison exact
+    r <- attempt(cmprsk::crr(d$time, d$status, X, failcode = 1, cencode = 0, gtol = 1e-12, maxiter = 100))
     check("Fine-Gray", "fg", "cmprsk::crr", label, "coefficients", attempt(coef(o)), attempt(r$coef))
     check("Fine-Gray", "fg", "cmprsk::crr", label, "robust (Fine-Gray) variance", attempt(vcov(o)), attempt(r$var))
     if (!failed(o) && !failed(r)) {
@@ -183,16 +193,21 @@ acc_fg <- function(d, label, vars) {
   if (has("survival")) {
     dd <- d; dd$ev <- factor(dd$status, 0:max(dd$status))
     fd <- attempt(survival::finegray(fml("survival::Surv(time, ev)", vars), data = dd, etype = "1"))
-    r2 <- if (failed(fd)) fd else attempt(survival::coxph(fml("survival::Surv(fgstart, fgstop, fgstatus)", vars), data = fd, weights = fgwt, ties = "breslow"))
-    check("Fine-Gray", "fg", "survival::finegray + coxph", label, "coefficients", attempt(coef(o)), attempt(coef(r2)))
+    ctl <- survival::coxph.control(eps = 1e-12, iter.max = 100)
+    tied <- anyDuplicated(d$time) > 0
+    tl <- if (tied) "info" else "exact"
+    nt <- if (tied) "tied times: finegray and crr order censoring and events at the same time differently" else ""
+    r2 <- if (failed(fd)) fd else attempt(survival::coxph(fml("survival::Surv(fgstart, fgstop, fgstatus)", vars), data = fd, weights = fgwt,
+                                                          ties = "breslow", control = ctl))
+    check("Fine-Gray", "fg", "survival::finegray + coxph", label, "coefficients", attempt(coef(o)), attempt(coef(r2)), tol = tl, note = nt)
     if (!is.null(d$entry)) {
       oe <- attempt(fg(fml("Event(time, status, entry = entry)", vars), d))
       dd$rid <- seq_len(nrow(dd))
       fe <- attempt(survival::finegray(fml("survival::Surv(entry, time, ev)", c(vars, "rid")), data = dd, etype = "1", id = rid))
       re <- if (failed(fe)) fe else attempt(survival::coxph(fml("survival::Surv(fgstart, fgstop, fgstatus)", vars), data = fe, weights = fgwt,
-                                                             ties = "breslow", cluster = rid))
-      check("Fine-Gray", "fg (delayed entry)", "survival::finegray + coxph", label, "coefficients", attempt(coef(oe)), attempt(coef(re)))
-      check("Fine-Gray", "fg (delayed entry)", "survival::finegray + coxph", label, "robust variance", attempt(vcov(oe)), attempt(vcov(re)))
+                                                             ties = "breslow", cluster = rid, control = ctl))
+      check("Fine-Gray", "fg (delayed entry)", "survival::finegray + coxph", label, "coefficients", attempt(coef(oe)), attempt(coef(re)), tol = tl, note = nt)
+      check("Fine-Gray", "fg (delayed entry)", "survival::finegray + coxph", label, "robust variance", attempt(vcov(oe)), attempt(vcov(re)), tol = tl, note = nt)
     }
   }
   invisible()
@@ -241,8 +256,12 @@ acc_parametric <- function(d, label, vars) {
           attempt(as.numeric(logLik(o))), attempt(r$loglik), tol = "optimiser")
     rp <- attempt(t(vapply(seq_len(nrow(nd)), function(i) summary(r, newdata = nd[i, , drop = FALSE], t = tq, type = "survival", tidy = TRUE)$est,
                            numeric(length(tq)))))
+    # when SurvX reached a clearly higher likelihood the reference stopped early: report, do not judge
+    gain <- tryCatch(as.numeric(logLik(o)) - r$loglik, error = function(e) NA_real_)
+    better <- is.finite(gain) && gain > 1e-4
     check("parametric", "predict(parsurv)", "flexsurv::flexsurvreg", label, paste(tag, "predicted survival"),
-          attempt(predict(o, nd, times = tq)), rp, tol = "optimiser")
+          attempt(predict(o, nd, times = tq)), rp, tol = if (better) "info" else "optimiser",
+          note = if (better) sprintf("SurvX log-likelihood higher by %.2g: the reference did not reach the maximum", gain) else "")
   }
   # Royston-Parmar spline (df = 3: two internal knots)
   o <- attempt(parsurv(fml(lhs_o, vars), d, baseline = "rp", df = 3))
@@ -292,9 +311,10 @@ acc_metrics <- function(d, label, vars) {
   check("prediction", "brier_score", "riskRegression::Score", label, "Brier score of the null model", attempt(ob[["brier_null"]]), bs$Brier[bs$model == "Null model"])
   check("prediction", "auc_t", "riskRegression::Score", label, "time-dependent AUC", attempt(auc_t(d$time, d$status, risk, t0)), au$AUC[au$model == "m"])
   if (has("timeROC"))
-    check("prediction", "auc_t", "timeROC::timeROC (definition 1)", label, "time-dependent AUC",
+    check("prediction", "auc_t", "timeROC::timeROC (definition 2)", label, "time-dependent AUC",
           attempt(auc_t(d$time, d$status, risk, t0)),
-          attempt(unname(utils::tail(timeROC::timeROC(d$time, d$status, risk, cause = 1, weighting = "marginal", times = t0, iid = FALSE)$AUC_1, 1))))
+          attempt(unname(utils::tail(timeROC::timeROC(d$time, d$status, risk, cause = 1, weighting = "marginal", times = t0, iid = FALSE)$AUC_2, 1))),
+          note = "definition 2: subjects with a competing event before t are controls (as riskRegression::Score)")
   invisible()
 }
 

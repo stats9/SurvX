@@ -85,8 +85,11 @@
           NAOK = TRUE, PACKAGE = "SurvX")
   .sx_rc(r$rc, "parametric fit")
   nm <- c("(Intercept)", colnames(X), .shape_name(dist, scale, knots))
-  list(theta = stats::setNames(r$theta, nm), var = matrix(r$var, P, P, byrow = TRUE, dimnames = list(nm, nm)),
-       loglik = r$info_d[2L], iterations = r$info_i[1L], converged = as.logical(r$info_i[2L]),
+  V <- matrix(r$var, P, P, byrow = TRUE, dimnames = list(nm, nm))
+  # a fit whose estimates or standard errors are not finite is never reported as converged
+  ok <- all(is.finite(r$theta)) && all(is.finite(diag(V))) && all(diag(V) >= 0) && is.finite(r$info_d[2L])
+  list(theta = stats::setNames(r$theta, nm), var = V,
+       loglik = r$info_d[2L], iterations = r$info_i[1L], converged = as.logical(r$info_i[2L]) && ok,
        flags = r$info_i[3L], nevent = r$info_i[4L])
 }
 

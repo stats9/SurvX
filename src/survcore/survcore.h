@@ -41,6 +41,10 @@ int sc_coxph_ext(int n, int p, const double* entry, const double* time, const in
 int sc_coxph_ext_baseline(int n, int p, const double* entry, const double* time, const int* status, const int* strata,
                           const double* X, const double* weights, int ties, const double* beta, const double* zref,
                           double* out_time, double* out_cumhaz, int* out_strata, int* m);
+/* Martingale residuals (Efron or Breslow form, as survival) and, for rows with an event, the
+ * risk-set covariate means of their Schoenfeld residuals (n x p row-major, NaN elsewhere). */
+int sc_coxph_resid(int n, int p, const double* entry, const double* time, const int* status, const int* strata,
+                   const double* X, const double* weights, int ties, const double* beta, double* mart, double* xbar);
 int sc_coxph_score(int n, int p, const double* entry, const double* time, const int* status, const int* strata,
                    const double* X, const double* weights, int ties, const double* beta, double* U);
 int sc_coxph_eval(int n, int p, const double* time, const int* status, const double* X,

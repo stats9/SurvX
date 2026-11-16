@@ -92,7 +92,10 @@ run_stability <- function(cfg) {
                                   status = if (!failed(f) && f@n == 390L) "PASS" else "FAIL", stringsAsFactors = FALSE))
 
   # ---- invariances ----
-  md <- function(a, b) tryCatch(max(abs(as.numeric(unlist(a)) - as.numeric(unlist(b)))), error = function(e) NA_real_)
+  md <- function(a, b) tryCatch({
+    a <- as.numeric(unlist(a)); b <- as.numeric(unlist(b))
+    if (length(a) != length(b) || any(xor(is.na(a), is.na(b)))) NA_real_ else max(c(0, abs(a - b)), na.rm = TRUE)
+  }, error = function(e) NA_real_)
   perm <- sample(nrow(base)); permcr <- sample(nrow(basecr))
   A <- fit_all(base); P <- fit_all(base[perm, ])
   for (f in setdiff(names(A), "km")) inv_rec("row order", f, md(coef(A[[f]]), coef(P[[f]])), 1e-6)
@@ -111,10 +114,15 @@ run_stability <- function(cfg) {
   w <- attempt(parsurv(Event(time, status) ~ x1 + x2, transform(base, time = 1000 * time)))
   inv_rec("time multiplied by 1000", "parsurv weibull (covariate coefficients)", md(coef(w)[c("x1", "x2")], coef(A$parsurv_weibull)[c("x1", "x2")]), 1e-5)
   # duplicated data: same coefficients, half the variance
+  # duplicated data (Breslow ties: duplicating creates tied times, and the Efron approximation is by
+  # design not invariant to that)
   dd <- rbind(base, base)
-  f2 <- attempt(cox(Event(time, status) ~ x1 + x2, dd))
-  inv_rec("data duplicated: coefficients", "cox", md(coef(f2), coef(A$cox)), 1e-7)
-  inv_rec("data duplicated: variance halved", "cox", md(2 * vcov(f2), vcov(A$cox)), 1e-7)
+  f1 <- attempt(cox(Event(time, status) ~ x1 + x2, base, ties = "breslow"))
+  f2 <- attempt(cox(Event(time, status) ~ x1 + x2, dd, ties = "breslow"))
+  inv_rec("data duplicated: coefficients (Breslow)", "cox", md(coef(f2), coef(f1)), 1e-7)
+  inv_rec("data duplicated: variance halved (Breslow)", "cox", md(2 * vcov(f2), vcov(f1)), 1e-7)
+  inv_rec("Efron martingale residuals sum to zero", "residuals(cox)", abs(sum(residuals(attempt(cox(Event(time, status) ~ x1 + x2,
+                                                                                 gen_surv(400, ties = 8)))))), 1e-8)
   # case weights 2 = duplicated rows (Breslow ties, where the two are exactly equivalent)
   fw <- attempt(cox(Event(time, status) ~ x1 + x2, base, ties = "breslow", weights = rep(2, nrow(base))))
   fd <- attempt(cox(Event(time, status) ~ x1 + x2, dd, ties = "breslow"))

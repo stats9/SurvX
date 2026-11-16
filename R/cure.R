@@ -66,8 +66,10 @@ cure <- function(formula, data, cure = NULL, baseline = "weibull", scale = NULL,
   .sx_rc(r$rc, "cure model fit")
   nm <- c("(Intercept)", colnames(Xl), .shape_name(dist, scale, kn), "cure: (Intercept)",
           if (pc) paste0("cure: ", colnames(Xc)) else character(0))
-  list(theta = stats::setNames(r$theta, nm), var = matrix(r$var, P, P, byrow = TRUE, dimnames = list(nm, nm)),
-       loglik = r$info_d[2L], iterations = r$info_i[1L], converged = as.logical(r$info_i[2L]),
+  V <- matrix(r$var, P, P, byrow = TRUE, dimnames = list(nm, nm))
+  ok <- all(is.finite(r$theta)) && all(is.finite(diag(V))) && all(diag(V) >= 0) && is.finite(r$info_d[2L])
+  list(theta = stats::setNames(r$theta, nm), var = V,
+       loglik = r$info_d[2L], iterations = r$info_i[1L], converged = as.logical(r$info_i[2L]) && ok,
        flags = r$info_i[3L], nevent = r$info_i[4L])
 }
 

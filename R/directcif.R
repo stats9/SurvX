@@ -89,8 +89,9 @@
 #' @param knots optional list with the knots (log time, boundary knots first and last) of every cause.
 #' @param constraint joint estimation only: keep the sum of the fitted CIFs below 1 within follow-up.
 #' @param censoring_grid weighted estimation only: coarsen the estimated censoring distribution to at
-#'   most this many support points (0 = exact). The cost of a fit grows with the number of competing
-#'   events times the number of support points.
+#'   most this many support points (0 = exact). With the PH link the exact fit is linear in the
+#'   sample size; with other links its cost grows with the number of competing events times the
+#'   number of support points (a few seconds at n = 10000), and a grid can shorten it.
 #' @param init optional start values on the estimation scale.
 #' @param max_iter,tol iteration limit and convergence tolerance.
 #' @return an S7 object of class \code{DirectCIFFit}. Coefficients are named \code{"<cause>:<term>"}.

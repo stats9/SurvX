@@ -99,7 +99,7 @@ test_that("compare_models() and ph_test(): print, summary/as.data.frame, plot", 
 test_that("Event(): S3 methods", {
   y <- Event(c(2, 3, NA), c(1, 0, 1))
   expect_output(print(y))
-  expect_s3_class(y[1:2], "Event")
+  expect_s3_class(y[1:2], "SurvXEvent")
   expect_identical(is.na(y), c(FALSE, FALSE, TRUE))
 })
 

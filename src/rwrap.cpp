@@ -40,6 +40,10 @@ void SX_cox2_baseline(int* n, int* p, int* has_entry, double* entry, double* tim
   *rc = sc_coxph_ext_baseline(*n, *p, *has_entry ? entry : nullptr, time, status, *has_strata ? strata : nullptr, X, *has_w ? weights : nullptr,
                               *ties, beta, nullptr, out_time, out_cumhaz, out_strata, m);
 }
+void SX_cox_resid(int* n, int* p, int* has_entry, double* entry, double* time, int* status, int* has_strata, int* strata, double* X, int* has_w, double* weights, int* ties, double* beta, double* mart, double* xbar, int* rc) {
+  *rc = sc_coxph_resid(*n, *p, *has_entry ? entry : nullptr, time, status, *has_strata ? strata : nullptr, X, *has_w ? weights : nullptr,
+                       *ties, beta, mart, xbar);
+}
 void SX_cox_score(int* n, int* p, int* has_entry, double* entry, double* time, int* status, int* has_strata, int* strata, double* X, int* has_w, double* weights, int* ties, double* beta, double* U, int* rc) {
   *rc = sc_coxph_score(*n, *p, *has_entry ? entry : nullptr, time, status, *has_strata ? strata : nullptr, X, *has_w ? weights : nullptr,
                        *ties, beta, U);
