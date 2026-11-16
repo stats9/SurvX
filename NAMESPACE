@@ -4,5 +4,6 @@ export(Event, km, aj, rmst, logrank_test, gray_test, cox, fg, csc, directcif,
 S3method("[", Event)
 S3method(is.na, Event)
 S3method(print, Event)
+importFrom(utils, globalVariables)
 importFrom(stats, coef, vcov, nobs, logLik, predict, confint, formula, getCall, terms, model.matrix)
 if (getRversion() < "4.3.0") importFrom("S7", "@")

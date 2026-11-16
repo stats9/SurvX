@@ -1,6 +1,8 @@
 test_that("brier_score() and auc_t() agree with riskRegression::Score", {
   d <- mgus_cr(); skip_if(is.null(d), "survival not installed")
   skip_if_not_installed("riskRegression"); skip_if_not_installed("prodlim")
+  # riskRegression::Score calls Surv() through prodlim without loading survival, so attach it
+  suppressPackageStartupMessages(library(survival))
   Hist <- prodlim::Hist
   f <- directcif(Event(time, status) ~ sex + age + hgb + mspike, d)
   risk <- drop(predict(f, times = 100))

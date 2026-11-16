@@ -2,7 +2,7 @@
 # typical covariate values, the average over the sample or no covariates; drawn with base graphics
 # or ggplot2. cif_data() computes the curves, cif_plot() draws them.
 
-utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label", "step"))
+utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label", "step", "ymin", "ymax", "xend"))
 
 .okabe_ito <- c("#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#000000", "#F0E442")
 

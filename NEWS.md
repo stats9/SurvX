@@ -13,6 +13,8 @@
   with tied times, rare events and a nearly separating covariate) and speed (n = 500 to 50 000) of
   SurvX against cmprsk, survival and riskRegression on the same simulated data.
 * The GitHub checks install pandoc, which the vignette needs.
+* `R CMD check` notes removed: global variables of the ggplot2 layers declared, `utils` imported,
+  an example line of `directcif()` shortened.
 
 # SurvX 0.5.3
 

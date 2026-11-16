@@ -125,5 +125,6 @@ fit
 predict(fit, data.frame(x = 0:1), times = c(1, 2, Inf))
 fw <- directcif(Event(time, status) ~ x, d, estimation = "weighted", cause = 1)
 fc <- directcif(Event(time, status) ~ x, d, estimation = "constrained", cause = 1, cond = "weibull")
-predict(fc, data.frame(x = 0:1), times = Inf, cause = 1) + predict(fc, data.frame(x = 0:1), times = Inf, cause = 2)
+nd <- data.frame(x = 0:1)
+predict(fc, nd, times = Inf, cause = 1) + predict(fc, nd, times = Inf, cause = 2)
 }
