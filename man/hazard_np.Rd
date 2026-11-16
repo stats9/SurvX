@@ -7,7 +7,8 @@ group of the right-hand side and, with competing risks, for every cause (cause-s
 the other causes treated as censoring). Delayed entry is allowed.
 }
 \usage{
-hazard_np(formula, data, smooth = TRUE, bw = NULL, boundary = TRUE, level = 0.95, grid = 201L)
+hazard_np(formula, data, smooth = TRUE, bw = NULL, boundary = TRUE, level = 0.95,
+          grid = 201L)
 }
 \arguments{
 \item{formula}{\code{Event(time, status) ~ 1} or \code{~ group}.}

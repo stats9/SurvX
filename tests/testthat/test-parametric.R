@@ -256,12 +256,16 @@ test_that("the Royston-Parmar model agrees with flexsurv::flexsurvspline", {
 })
 
 test_that("the piecewise exponential model equals a Poisson GLM on split data", {
-  skip_if_not_installed("survival")
-  d <- sim_surv(); d$id <- seq_len(nrow(d))
+  d <- sim_surv()
   cuts <- c(1, 2.5, 4)
   f <- parsurv(Event(time, status) ~ x + z, d, baseline = "pwexp", cuts = cuts)
-  sp <- survival::survSplit(survival::Surv(time, status) ~ x + z + id, data = d, cut = cuts, episode = "interval")
-  sp$expo <- sp$time - sp$tstart
+  # split the follow-up at the cut points: one row per subject and interval (lo, hi]
+  br <- c(0, cuts, Inf)
+  sp <- do.call(rbind, lapply(seq_len(length(br) - 1L), function(j) {
+    r <- d[d$time > br[j], , drop = FALSE]
+    data.frame(x = r$x, z = r$z, interval = j, expo = pmin(r$time, br[j + 1L]) - br[j],
+               status = as.integer(r$status == 1L & r$time <= br[j + 1L]))
+  }))
   g <- stats::glm(status ~ factor(interval) + x + z + offset(log(expo)), family = stats::poisson(), data = sp)
   cg <- coef(g)
   expect_close(coef(f)[c("(Intercept)", "x", "z")], cg[c("(Intercept)", "x", "z")], 1e-6)

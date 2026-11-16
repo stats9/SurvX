@@ -9,9 +9,10 @@ Kaplan-Meier) as a reference. Agreement of the fitted and the non-parametric cur
 check of the chosen distribution.
 }
 \usage{
-hazard_plot(x, newdata = NULL, type = c("hazard", "cumhaz", "survival"), cause = NULL,
-            reference = TRUE, conf.int = TRUE, level = 0.95, times = NULL, col = NULL, lwd = 2,
-            xlab = "Time", ylab = NULL, main = NULL, legend = TRUE, cex = 0.85, ...)
+hazard_plot(x, newdata = NULL, type = c("hazard", "cumhaz", "survival"),
+            cause = NULL, reference = TRUE, conf.int = TRUE, level = 0.95, times = NULL,
+            col = NULL, lwd = 2, xlab = "Time", ylab = NULL, main = NULL, legend = TRUE,
+            cex = 0.85, ...)
 }
 \arguments{
 \item{x}{a model fitted by \code{\link{parsurv}} or by \code{\link{csc}} with a parametric

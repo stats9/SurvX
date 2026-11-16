@@ -8,8 +8,8 @@ under right censoring and, optionally, delayed entry (left truncation). Covariat
 the time scale (accelerated failure time, \code{scale = "AFT"}).
 }
 \usage{
-parsurv(formula, data, baseline = "weibull", scale = NULL, df = 3L, knots = NULL, cuts = NULL,
-        init = NULL, max_iter = 200L, tol = 1e-10)
+parsurv(formula, data, baseline = "weibull", scale = NULL, df = 3L, knots = NULL,
+        cuts = NULL, init = NULL, max_iter = 200L, tol = 1e-10)
 }
 \arguments{
 \item{formula}{\code{Event(time, status) ~ covariates}, status 0/1; \code{Event(time, status,
