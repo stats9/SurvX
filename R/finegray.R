@@ -15,9 +15,10 @@
 #' @export
 fg <- function(formula, data, cause = 1L, variance = c("robust", "model"), max_iter = 50L, tol = 1e-10) {
   cl <- match.call(); variance <- match.arg(variance)
-  f <- .sx_frame(formula, data, what = "fg()")
+  f <- .sx_frame(formula, data, entry_ok = TRUE, what = "fg()")
   n <- length(f$time); p <- ncol(f$X)
   if (p < 1L) stop("at least one covariate is needed", call. = FALSE)
+  if (!is.null(f$entry)) return(.fg_entry(cl, f, as.integer(cause), variance, max_iter, tol))
   r <- .C("SX_fg", as.integer(n), as.integer(p), f$time, f$status, .rm(f$X), as.integer(cause),
           as.integer(max_iter), as.double(tol), beta = double(p), var_model = double(p * p), var_robust = double(p * p),
           info_d = double(3), info_i = integer(4), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
@@ -32,14 +33,72 @@ fg <- function(formula, data, cause = 1L, variance = c("robust", "model"), max_i
               vcov_model = vm, vcov_robust = vr, loglik_null = r$info_d[1L])
 }
 
+# Fine-Gray data with delayed entry (Geskus 2011): subjects with a competing event stay in the risk
+# set after their event time T_i with weight w_i(t) = G(t-) H(t-) / {G(T_i-) H(T_i-)}, where G is
+# the product-limit estimate of the censoring distribution (risk set entry < s <= time) and H the
+# reverse-time product-limit estimate of the entry distribution, H(t) = prod_{l > t} {1 - e(l)/R(l)}
+# with R(l) = #{entry_j <= l < time_j}. The weights are constant between the jump points of G and H,
+# so the extended rows are cut there. Without entry the weights are those of Fine & Gray (1999).
+.fg_expand <- function(time, status, entry, cause) {
+  n <- length(time)
+  if (is.null(entry)) entry <- rep(0, n)
+  se <- sort(entry); st <- sort(time)
+  ct <- sort(unique(time[status == 0L]))
+  Y <- findInterval(ct, se, left.open = TRUE) - findInterval(ct, st, left.open = TRUE)     # #{entry < c <= time}
+  dc <- tabulate(match(time[status == 0L], ct), length(ct))
+  cumG <- c(1, cumprod(1 - dc / Y))
+  lt <- sort(unique(entry[entry > 0]))
+  R <- findInterval(lt, se) - findInterval(lt, st)                                          # #{entry <= l < time}
+  el <- tabulate(match(entry[entry > 0], lt), length(lt))
+  Hrev <- c(rev(cumprod(rev(1 - el / R))), 1)                                               # prod over l_k, l_k+1, ...
+  G_right <- function(a) cumG[findInterval(a, ct) + 1L]                                     # G(a)
+  G_left <- function(a) cumG[findInterval(a, ct, left.open = TRUE) + 1L]                    # G(a-)
+  H_after <- function(a) Hrev[findInterval(a, lt) + 1L]                                     # prod over l > a
+  H_left <- function(a) Hrev[findInterval(a, lt, left.open = TRUE) + 1L]                    # H(a-): prod over l >= a
+  jumps <- sort(unique(c(ct, lt)))
+  tmax <- max(c(0, time[status == cause]))
+  base <- data.frame(id = seq_len(n), start = entry, stop = time, status = as.integer(status == cause), w = 1)
+  comp <- which(status != 0L & status != cause & time < tmax)
+  ext <- lapply(comp, function(i) {
+    Ti <- time[i]
+    cuts <- c(Ti, jumps[jumps > Ti & jumps < tmax])
+    stops <- c(cuts[-1L], tmax)
+    den <- G_left(Ti) * H_left(Ti)
+    w <- if (den > 0) G_right(cuts) * H_after(cuts) / den else rep(0, length(cuts))
+    data.frame(id = i, start = cuts, stop = stops, status = 0L, w = w)
+  })
+  d <- do.call(rbind, c(list(base), ext))
+  d[d$w > 0 & d$stop > d$start, , drop = FALSE]
+}
+
+.fg_entry <- function(cl, f, cause, variance, max_iter, tol) {
+  e <- .fg_expand(f$time, f$status, f$entry, cause)
+  Xe <- f$X[e$id, , drop = FALSE]
+  r <- .cox_fit(e$stop, e$status, Xe, e$w, "breslow", max_iter, tol, e$start, NULL)
+  vm <- r$vcov
+  vr <- .cox_robust(r, e$stop, e$status, Xe, e$w, "breslow", e$start, NULL, e$id)
+  FineGrayFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
+              coefficients = r$coefficients, vcov = if (variance == "robust") vr else vm,
+              loglik = r$loglik, n = length(f$time), nevent = as.integer(sum(f$status == cause)), iterations = r$iterations,
+              converged = r$converged, flags = r$flags,
+              time = f$time, status = f$status, X = f$X, cause = cause, variance = variance,
+              vcov_model = vm, vcov_robust = vr, loglik_null = r$loglik_null, entry = f$entry, expanded = e)
+}
+
 S7::method(predict, FineGrayFit) <- function(object, newdata = NULL, times, ...) {
-  n <- object@n; p <- length(object@coefficients)
-  r <- .C("SX_fg_baseline", as.integer(n), as.integer(p), object@time, object@status, .rm(object@X), object@cause,
-          as.double(object@coefficients), time = double(n), cumhaz = double(n), m = integer(1), rc = integer(1),
-          NAOK = TRUE, PACKAGE = "SurvX")
-  .sx_rc(r$rc, "baseline subdistribution hazard")
-  k <- seq_len(r$m)
-  H <- .step_at(r$time[k], r$cumhaz[k], times, 0)
+  if (!is.null(object@entry)) {
+    e <- object@expanded
+    bh <- .cox_baseline_raw(object@coefficients, e$stop, e$status, object@X[e$id, , drop = FALSE], e$w, "breslow", e$start, NULL)
+    H <- .step_at(bh$time, bh$cumhaz, times, 0)
+  } else {
+    n <- object@n; p <- length(object@coefficients)
+    r <- .C("SX_fg_baseline", as.integer(n), as.integer(p), object@time, object@status, .rm(object@X), object@cause,
+            as.double(object@coefficients), time = double(n), cumhaz = double(n), m = integer(1), rc = integer(1),
+            NAOK = TRUE, PACKAGE = "SurvX")
+    .sx_rc(r$rc, "baseline subdistribution hazard")
+    k <- seq_len(r$m)
+    H <- .step_at(r$time[k], r$cumhaz[k], times, 0)
+  }
   lp <- drop(.sx_newX(object, newdata) %*% object@coefficients)
   out <- 1 - exp(-outer(exp(lp), H))
   dimnames(out) <- list(NULL, paste0("t=", times))

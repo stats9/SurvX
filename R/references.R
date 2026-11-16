@@ -49,6 +49,15 @@
   friedman1982 = c("Friedman (1982)", "Friedman M (1982). Piecewise exponential models for survival data with covariates. Annals of Statistics 10:101-113."),
   prentice1974 = c("Prentice (1974)", "Prentice RL (1974). A log gamma model and its maximum likelihood estimation. Biometrika 61:539-544."),
   cox2007 = c("Cox et al. (2007)", "Cox C, Chu H, Schneider MF, Munoz A (2007). Parametric survival analysis and taxonomy of hazard functions for the generalized gamma distribution. Statistics in Medicine 26:4352-4374."),
+  # cure models
+  boag1949 = c("Boag (1949)", "Boag JW (1949). Maximum likelihood estimates of the proportion of patients cured by cancer therapy. Journal of the Royal Statistical Society, Series B 11:15-53."),
+  berkson1952 = c("Berkson & Gage (1952)", "Berkson J, Gage RP (1952). Survival curve for cancer patients following treatment. Journal of the American Statistical Association 47:501-515."),
+  farewell1982 = c("Farewell (1982)", "Farewell VT (1982). The use of mixture models for the analysis of survival data with long-term survivors. Biometrics 38:1041-1046."),
+  yakovlev1996 = c("Yakovlev & Tsodikov (1996)", "Yakovlev AY, Tsodikov AD (1996). Stochastic Models of Tumor Latency and Their Biostatistical Applications. World Scientific, Singapore."),
+  chen1999 = c("Chen, Ibrahim & Sinha (1999)", "Chen MH, Ibrahim JG, Sinha D (1999). A new Bayesian model for survival data with a surviving fraction. Journal of the American Statistical Association 94:909-919."),
+  lambert2007 = c("Lambert et al. (2007)", "Lambert PC, Thompson JR, Weston CL, Dickman PW (2007). Estimating and modeling the cure fraction in population-based cancer survival analysis. Biostatistics 8:576-594."),
+  maller1996 = c("Maller & Zhou (1996)", "Maller RA, Zhou X (1996). Survival Analysis with Long-Term Survivors. Wiley, Chichester."),
+  amico2018 = c("Amico & Van Keilegom (2018)", "Amico M, Van Keilegom I (2018). Cure models in survival analysis. Annual Review of Statistics and Its Application 5:311-342."),
   # diagnostics
   cox_snell1968 = c("Cox & Snell (1968)", "Cox DR, Snell EJ (1968). A general definition of residuals. Journal of the Royal Statistical Society, Series B 30:248-275."),
   schoenfeld1982 = c("Schoenfeld (1982)", "Schoenfeld D (1982). Partial residuals for the proportional hazards regression model. Biometrika 69:239-241."),
@@ -92,6 +101,8 @@
               "levenberg1944", "marquardt1963"),
   directcif = c("jeong_fine2006", "jeong_fine2007", "dabrowska1988", "casella2002", "akaike1974",
                 "levenberg1944", "marquardt1963"),
+  cure = c("boag1949", "berkson1952", "farewell1982", "yakovlev1996", "chen1999", "lambert2007", "maller1996", "amico2018",
+           "kalbfleisch2002", "casella2002"),
   residuals = c("cox_snell1968", "schoenfeld1982", "therneau1990", "grambsch1994"),
   ph_test = c("grambsch1994", "therneau2000", "schoenfeld1982"),
   dist_plot = c("klein2003", "collett2015", "nelson1972", "cox_snell1968"),
@@ -113,9 +124,14 @@
   if (S7::S7_inherits(x, CoxFit))
     return(c("cox1972", if (x@ties == "efron") "efron1977" else "breslow1974", "breslow1974", .design_keys(x)))
   if (S7::S7_inherits(x, FineGrayFit))
-    return(c("fine_gray1999", if (identical(x@variance, "robust")) "white1982"))
+    return(c("fine_gray1999", if (!is.null(x@entry)) c("geskus2011", "andersen_gill1982"),
+             if (identical(x@variance, "robust")) (if (is.null(x@entry)) "white1982" else "lin_wei1989")))
   if (S7::S7_inherits(x, CSCFit))
     return(c("prentice1978", "cox1972", if (x@ties == "efron") "efron1977", "breslow1974", "benichou1990", .design_keys(x)))
+  if (S7::S7_inherits(x, CureFit))
+    return(c(if (x@mixture) c("boag1949", "berkson1952", "farewell1982") else c("yakovlev1996", "chen1999"), "lambert2007",
+             "kalbfleisch2002", if (x@dist == "rp") "royston_parmar2002", if (x@dist == "pwexp") "friedman1982",
+             if (x@dist == "gengamma") c("prentice1974", "cox2007"), if (!is.null(x@entry)) "klein2003", "casella2002"))
   if (S7::S7_inherits(x, ParSurvFit) || S7::S7_inherits(x, ParCSCFit)) {
     d <- unique(x@dist)
     k <- c(if (S7::S7_inherits(x, ParCSCFit)) c("prentice1978", "hinchliffe2013"), "kalbfleisch2002", "lawless2003",

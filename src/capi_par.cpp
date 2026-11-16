@@ -9,6 +9,7 @@
 #include "survcore/survcore.h"
 #include "survcore/hazard.hpp"
 #include "survcore/parametric.hpp"
+#include "survcore/cure.hpp"
 
 using namespace survcore;
 
@@ -176,6 +177,111 @@ int sc_kernel_hazard(int m, const double* et, const double* d, const double* Y, 
   const double b = bw > 0 ? bw : hazard_bandwidth(m, et, d, Y, boundary != 0);
   if (bw_used) *bw_used = b;
   kernel_hazard(m, et, d, Y, b, boundary != 0, nx, x, out_h, out_se);
+  return 0;
+} catch (...) { return -9; }
+
+// Parametric cure models (survcore/cure.hpp). theta = (latency: intercept, pl coefficients, shapes;
+// cure: intercept, pc coefficients on the logit of the cured fraction).
+int sc_cure_fit(int n, int pl, int pc, int dist, int aft, int nk, const double* knots, int mixture,
+                const double* entry, const double* time, const int* status, const double* Xl, const double* Xc,
+                const double* init, int max_iter, double tol, double* theta, double* var, sc_fit_info* info) try {
+  ParSpec sp;
+  if (n <= 0 || pl < 0 || pc < 0 || !time || !status || (pl > 0 && !Xl) || (pc > 0 && !Xc) || !spec_of(dist, aft, pl, nk, knots, sp)) return -1;
+  int events = 0;
+  for (int i = 0; i < n; ++i) {
+    if (!std::isfinite(time[i]) || !(time[i] > 0.0)) return -2;
+    if (entry && (!std::isfinite(entry[i]) || entry[i] < 0.0 || entry[i] >= time[i])) return -2;
+    for (int j = 0; j < pl; ++j) if (!std::isfinite(Xl[static_cast<std::size_t>(i) * pl + j])) return -2;
+    for (int j = 0; j < pc; ++j) if (!std::isfinite(Xc[static_cast<std::size_t>(i) * pc + j])) return -2;
+    if (status[i]) ++events;
+  }
+  if (!events) return -3;
+  CureModel m;
+  m.sp = sp; m.pc = pc; m.mixture = mixture != 0;
+  m.dat.n = n; m.dat.entry = entry; m.dat.time = time; m.dat.status = status; m.dat.Xl = Xl; m.dat.Xc = Xc;
+  const int P = m.npar();
+  std::vector<double> start(P, 0.0);
+  if (init) start.assign(init, init + P);
+  else {
+    // latency: the parametric model fitted to the event times alone (the uncured fail);
+    // cure intercept: logit of the Kaplan-Meier estimate at the last time, kept within [0.02, 0.9]
+    std::vector<int> idx;
+    for (int i = 0; i < n; ++i) if (status[i]) idx.push_back(i);
+    std::vector<double> te(idx.size()), xe(idx.size() * static_cast<std::size_t>(pl));
+    std::vector<int> de(idx.size(), 1);
+    for (std::size_t k = 0; k < idx.size(); ++k) {
+      te[k] = time[idx[k]];
+      for (int j = 0; j < pl; ++j) xe[k * pl + j] = Xl[static_cast<std::size_t>(idx[k]) * pl + j];
+    }
+    ParData de_dat; de_dat.n = static_cast<int>(idx.size()); de_dat.time = te.data(); de_dat.status = de.data(); de_dat.X = xe.data();
+    ParSpec ws = sp;
+    if (ws.dist == PD_GENGAMMA) ws.dist = PD_WEIBULL;
+    ParModel lm{ws, de_dat};
+    FitResult rl = par_newton(lm, par_start(ws, de_dat), max_iter, tol);
+    std::vector<double> lat = std::isfinite(rl.ll) ? rl.beta : par_start(ws, de_dat);
+    for (std::size_t j = 0; j < lat.size(); ++j) start[j] = lat[j];
+    if (sp.dist == PD_GENGAMMA) start[1 + pl + 1] = 1.0;
+    std::vector<int> o(n);
+    std::iota(o.begin(), o.end(), 0);
+    std::sort(o.begin(), o.end(), [&](int a, int b) { return time[a] < time[b]; });
+    double S = 1.0; int risk = n;
+    for (int k = 0; k < n;) {
+      int j = k, d = 0;
+      while (j < n && time[o[j]] == time[o[k]]) { d += status[o[j]] ? 1 : 0; ++j; }
+      if (risk > 0) S *= 1.0 - static_cast<double>(d) / risk;
+      risk -= j - k; k = j;
+    }
+    const double p0 = std::min(0.9, std::max(0.02, S));
+    start[sp.npar()] = std::log(p0 / (1.0 - p0));
+  }
+  FitResult r = par_newton(m, start, max_iter, tol);
+  for (int j = 0; j < P; ++j) theta[j] = r.beta[j];
+  const std::size_t PP = static_cast<std::size_t>(P) * P;
+  if (var) for (std::size_t j = 0; j < PP; ++j) var[j] = r.var.n == static_cast<std::size_t>(P) ? r.var.a[j] : kNaN;
+  if (info) {
+    info->loglik_init = r.ll_init; info->loglik = r.ll; info->grad_maxabs = r.grad_maxabs;
+    info->iterations = r.iterations; info->converged = r.converged; info->flags = r.flags; info->n_events = events;
+  }
+  return 0;
+} catch (...) { return -9; }
+
+// type: 0 survival, 1 hazard, 2 survival of the uncured, 3 cured fraction, 4 cumulative hazard (-log S).
+// out, out_se: n_new x nt (row-major), or nt with average.
+int sc_cure_predict(int dist, int aft, int nk, const double* knots, int pl, int pc, int mixture, const double* theta,
+                    const double* var, int n_new, const double* Xl, const double* Xc, int nt, const double* times,
+                    int type, int average, double* out, double* out_se) try {
+  CureModel m;
+  if (!spec_of(dist, aft, pl, nk, knots, m.sp) || n_new <= 0 || nt <= 0 || type < 0 || type > 4) return -1;
+  m.pc = pc; m.mixture = mixture != 0;
+  const std::size_t P = m.npar();
+  std::vector<double> th(theta, theta + P), V;
+  if (var) V.assign(var, var + P * P);
+  auto value = [&](const std::vector<double>& a, int i, double t) {
+    const double* xl = Xl + static_cast<std::size_t>(i) * pl;
+    const double* xc = Xc + static_cast<std::size_t>(i) * pc;
+    double h, su, pi;
+    const double S = cure_surv(m, a, xl, xc, t, &h, &su, &pi);
+    switch (type) {
+      case 0: return S;
+      case 1: return h;
+      case 2: return su;
+      case 3: return pi;
+      default: return -std::log(S);
+    }
+  };
+  for (int j = 0; j < nt; ++j) {
+    if (average) {
+      auto mean = [&](const std::vector<double>& a) { double s = 0; for (int i = 0; i < n_new; ++i) s += value(a, i, times[j]); return s / n_new; };
+      out[j] = mean(th);
+      if (out_se) out_se[j] = var && std::isfinite(out[j]) ? delta_se(mean, th, V) : kNaN;
+    } else {
+      for (int i = 0; i < n_new; ++i) {
+        const std::size_t c = static_cast<std::size_t>(i) * nt + j;
+        out[c] = value(th, i, times[j]);
+        if (out_se) out_se[c] = var && std::isfinite(out[c]) ? delta_se([&](const std::vector<double>& a) { return value(a, i, times[j]); }, th, V) : kNaN;
+      }
+    }
+  }
   return 0;
 } catch (...) { return -9; }
 

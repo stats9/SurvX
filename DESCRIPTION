@@ -1,7 +1,7 @@
 Package: SurvX
 Type: Package
 Title: Survival and Competing Risks Analysis with Direct Parametric Models for the Cumulative Incidence Function
-Version: 0.8.0
+Version: 0.9.0
 Authors@R: c(
     person("Habib", "Ezzatabadipour", email = "habibezati@outlook.com", role = c("aut", "cre")),
     person("Robert", "Gray", role = "cph",
@@ -23,7 +23,7 @@ BugReports: https://github.com/stats9/SurvX/issues
 Encoding: UTF-8
 Depends: R (>= 4.1.0)
 Imports: S7, stats, graphics, grDevices, utils, splines
-Suggests: survival, cmprsk, riskRegression, prodlim, ggplot2, flexsurv, testthat (>= 3.1.5), knitr, rmarkdown
+Suggests: survival, cmprsk, riskRegression, prodlim, ggplot2, flexsurv, flexsurvcure, testthat (>= 3.1.5), knitr, rmarkdown
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 SystemRequirements: C++17

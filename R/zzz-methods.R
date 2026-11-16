@@ -12,3 +12,13 @@ S7::method(plot, ParSurvFit) <- function(x, ...) hazard_plot(x, type = "survival
 
 # the tests of ph_test() as a data frame
 S7::method(as.data.frame, PHTest) <- function(x, ...) x@table
+
+# cure models (generic estimates() is defined in zz-output.R)
+S7::method(estimates, CureFit) <- function(object, level = 0.95, ...) {
+  est <- object@coefficients; nm <- names(est)
+  pl <- ncol(object@X); L <- object@n_latency; P <- length(est)
+  role <- c("baseline", rep("beta", pl), rep("shape", L - 1L - pl), "cure_baseline", rep("cure", P - L - 1L))
+  sc <- ifelse(role == "beta", if (object@scale == "AFT") "log time ratio (uncured)" else "log hazard ratio (uncured)",
+               ifelse(role == "cure", "log odds ratio of being cured", ifelse(role == "cure_baseline", "logit of the cured fraction", nm)))
+  .est_frame(NA_integer_, nm, role, sc, est, .se_of(object), level, role %in% c("beta", "cure"))
+}

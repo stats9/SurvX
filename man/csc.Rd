@@ -42,8 +42,9 @@ With a Cox baseline, strata, (entry, time] data and clusters are handled for eve
 as in \code{\link{cox}}; each cause-specific model agrees with \code{survival::coxph} on
 \code{Surv(..., status == k)}. The cumulative incidence of cause \eqn{k} for a subject in stratum
 \eqn{s} is \eqn{\sum_{u \le t} \hat S_s(u-) \, d\hat\Lambda_{ks}(u) e^{x^\top\hat\beta_k}}, with the
-baseline hazards of that stratum (Benichou and Gail 1990). \code{predict()} gives it for such fits;
-curves with bootstrap bands (\code{cif_plot()}) are not yet available for them.
+baseline hazards of that stratum (Benichou and Gail 1990). For such fits \code{cif_plot()} and
+\code{cif_data()} refit the models in R for the bootstrap bands (resampling clusters when
+\code{cluster()} is given) and draw one curve per stratum for the typical covariate values.
 }
 \value{
 With \code{baseline = "cox"}: an S7 object of class \code{CSCFit}; \code{x@models} holds the fit

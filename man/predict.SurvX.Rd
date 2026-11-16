@@ -13,7 +13,9 @@
 \item{\code{type}}{for \code{cox}: \code{"lp"} (linear predictor) or \code{"survival"}. For
   \code{parsurv}: \code{"survival"}, \code{"hazard"}, \code{"cumhaz"}, \code{"quantile"} (at the
   probabilities \code{p}) or \code{"rmst"} (restricted mean survival time). For \code{csc} with a
-  parametric baseline: \code{"cif"} or \code{"survival"} (event-free probability).}
+  parametric baseline: \code{"cif"} or \code{"survival"} (event-free probability). For
+  \code{cure}: \code{"survival"}, \code{"hazard"}, \code{"cumhaz"}, \code{"uncured"} (survival
+  of the uncured) or \code{"cured"} (the cured fraction, without \code{times}).}
 \item{\code{p}}{\code{parsurv}, \code{type = "quantile"}: probabilities; the time by which a
   fraction \code{p} has failed (\code{p = 0.5}: the median).}
 \item{\code{cause}}{cause of interest (\code{csc} and \code{directcif} fits).}

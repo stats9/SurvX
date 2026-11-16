@@ -121,7 +121,12 @@ test_that("csc() with strata, entry and clusters", {
   p <- predict(f, data.frame(x = c(0, 1), z = 0, g = c("u", "v")), times = c(0.5, 1, 2), cause = 1)
   expect_true(all(is.finite(p) & p >= 0 & p <= 1))
   expect_true(all(diff(p[1, ]) >= 0))
-  expect_error(cif_plot(f), "not available yet")
+  cd <- cif_data(f, cause = 1, B = 20)
+  expect_setequal(unique(cd$profile), c("typical covariate values, u", "typical covariate values, v"))
+  expect_true(all(cd$lower <= cd$cif + 1e-12 & cd$cif <= cd$upper + 1e-12, na.rm = TRUE))
+  cn <- cif_data(f, newdata = data.frame(x = 1, z = 0, g = "v"), cause = 2, B = 0, conf.int = FALSE)
+  expect_close(cn$cif, predict(f, data.frame(x = 1, z = 0, g = "v"), times = cn$time, cause = 2), 1e-10)
+  with_null_device(expect_no_error(cif_plot(f, B = 10, type = "marginal")))
   # the general CIF code reproduces the C++ code on an unstratified fit
   f0 <- csc(Event(time, status) ~ x + z, d)
   nd <- data.frame(x = c(0, 1), z = c(-1, 1))

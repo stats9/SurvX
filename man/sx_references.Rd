@@ -12,7 +12,7 @@ sx_references(x = NULL)
 }
 \arguments{
 \item{x}{a fitted object (from \code{\link{cox}}, \code{\link{fg}}, \code{\link{csc}},
-  \code{\link{directcif}}, \code{\link{parsurv}}, \code{\link{km}}, \code{\link{aj}},
+  \code{\link{directcif}}, \code{\link{parsurv}}, \code{\link{cure}}, \code{\link{km}}, \code{\link{aj}},
   \code{\link{hazard_np}}, \code{\link{compare_models}} or \code{\link{ph_test}}), or the name of a
   function of the package as a character string (for example \code{"brier_score"}); \code{NULL}
   lists all references of the package.}

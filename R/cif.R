@@ -180,6 +180,95 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
   do.call(rbind, out)
 }
 
+# csc() with strata or (entry, time] data and fg() with delayed entry are refitted in R (the
+# bootstrap of the C++ core covers the right-censored models without strata)
+.needs_general_boot <- function(m) {
+  (S7::S7_inherits(m, CSCFit) && (!is.null(m@strata) || !is.null(m@entry))) ||
+    (S7::S7_inherits(m, FineGrayFit) && !is.null(m@entry))
+}
+
+# the model refitted on rows idx of its data (zero coefficients when adjust = 0: no covariates)
+.refit_rows <- function(fit, idx, adjust) {
+  fb <- fit
+  sub <- function(v) if (is.null(v)) NULL else v[idx]
+  fb@time <- fit@time[idx]; fb@status <- fit@status[idx]; fb@X <- fit@X[idx, , drop = FALSE]; fb@n <- length(idx)
+  if (S7::S7_inherits(fit, CSCFit)) {
+    fb@entry <- sub(fit@entry); fb@strata <- sub(fit@strata); fb@cluster <- sub(fit@cluster)
+    fb@models <- lapply(seq_len(fit@K), function(k) {
+      if (!adjust) return(list(coefficients = 0 * fit@models[[k]]$coefficients))
+      st <- as.integer(fb@status == k)
+      if (!any(st == 1L)) stop("no events of cause ", k, call. = FALSE)
+      .cox_fit(fb@time, st, fb@X, NULL, fit@ties, 50L, 1e-9, fb@entry, fb@strata)
+    })
+  } else {
+    fb@entry <- fit@entry[idx]
+    e <- .fg_expand(fb@time, fb@status, fb@entry, fit@cause)
+    fb@expanded <- e
+    fb@coefficients <- if (!adjust) 0 * fit@coefficients
+                       else .cox_fit(e$stop, e$status, fb@X[e$id, , drop = FALSE], e$w, "breslow", 50L, 1e-9, e$start, NULL)$coefficients
+  }
+  fb
+}
+
+# predicted cumulative incidence (rows x times) of cause k for covariate rows X in strata s
+.predict_rows <- function(fb, X, s, times, k) {
+  if (S7::S7_inherits(fb, CSCFit)) return(.csc_cif_general(fb, X, s, times, k))
+  e <- fb@expanded
+  bh <- .cox_baseline_raw(fb@coefficients, e$stop, e$status, fb@X[e$id, , drop = FALSE], e$w, "breslow", e$start, NULL)
+  1 - exp(-outer(exp(drop(X %*% fb@coefficients)), .step_at(bh$time, bh$cumhaz, times, 0)))
+}
+
+.curves_boot_general <- function(fit, name, causes, rows, times, conf.int, level, B, seed, interval, adjust) {
+  is_csc <- S7::S7_inherits(fit, CSCFit)
+  strat <- is_csc && !is.null(fit@strata)
+  avg <- is.null(rows)
+  if (!avg) {
+    X <- rows$X; labels <- rows$labels; s <- rows$strata
+    if (!adjust) X <- 0 * X
+    if (strat && is.null(s)) {                                   # one curve per stratum
+      L <- length(fit@strata_levels)
+      X <- X[rep(seq_len(nrow(X)), each = L), , drop = FALSE]
+      s <- rep(seq_len(L) - 1L, times = length(labels))
+      labels <- paste0(rep(labels, each = L), ", ", rep(fit@strata_levels, times = length(labels)))
+    }
+  } else labels <- "average over the sample"
+  ids <- if (is_csc && !is.null(fit@cluster)) fit@cluster else seq_len(fit@n)
+  groups <- split(seq_len(fit@n), factor(ids, levels = unique(ids)))
+  curves <- function(fb, k) {
+    if (avg) return(matrix(colMeans(.predict_rows(fb, fb@X * adjust, if (strat) fb@strata else NULL, times, k)), 1L))
+    .predict_rows(fb, X, s, times, k)
+  }
+  out <- list()
+  for (k in causes) {
+    if (is_csc && k > fit@K) next
+    if (!is_csc && k != fit@cause) next
+    est <- curves(.refit_rows(fit, seq_len(fit@n), adjust), k)
+    nt <- length(times); Bu <- if (conf.int) as.integer(B) else 0L
+    se <- lo <- up <- matrix(NA_real_, nrow(est), nt); n_ok <- 0L
+    if (Bu > 1L) {
+      set.seed(seed)
+      bs <- array(NA_real_, c(nrow(est), nt, Bu))
+      for (b in seq_len(Bu)) {
+        idx <- unlist(groups[sample.int(length(groups), replace = TRUE)], use.names = FALSE)
+        r <- tryCatch(curves(.refit_rows(fit, idx, adjust), k), error = function(e) NULL)
+        if (!is.null(r)) { bs[, , b] <- r; n_ok <- n_ok + 1L }
+      }
+      if (n_ok < Bu) warning(name, ", cause ", k, ": ", Bu - n_ok, " of ", Bu, " bootstrap samples could not be fitted", call. = FALSE)
+      a <- (1 - level) / 2
+      se <- apply(bs, c(1L, 2L), stats::sd, na.rm = TRUE)
+      lo <- apply(bs, c(1L, 2L), stats::quantile, probs = a, na.rm = TRUE, names = FALSE)
+      up <- apply(bs, c(1L, 2L), stats::quantile, probs = 1 - a, na.rm = TRUE, names = FALSE)
+      if (nrow(est) == 1L) { se <- matrix(se, 1L); lo <- matrix(lo, 1L); up <- matrix(up, 1L) }
+    }
+    for (i in seq_len(nrow(est))) {
+      ci <- if (Bu > 1L) .interval(est[i, ], se[i, ], lo[i, ], up[i, ], level, interval) else list(lower = rep(NA_real_, nt), upper = rep(NA_real_, nt))
+      out[[length(out) + 1L]] <- .curve_frame(name, k, labels[i], times, est[i, ], se[i, ], ci, TRUE,
+                                              if (Bu > 1L) paste0("bootstrap (", n_ok, " samples, refitted in R)") else "none")
+    }
+  }
+  do.call(rbind, out)
+}
+
 # parametric cause-specific hazards: delta-method bands from the C++ core
 .curves_parcsc <- function(fit, name, causes, rows, times, conf.int, level) {
   out <- list()
@@ -312,13 +401,12 @@ cif_data <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
     is_par <- S7::S7_inherits(m, ParCSCFit)
     if (!is_direct && !is_par && !S7::S7_inherits(m, FineGrayFit) && !S7::S7_inherits(m, CSCFit))
       stop("cif_data() takes models fitted by directcif(), fg(), csc() or an aj() estimate", call. = FALSE)
-    if (S7::S7_inherits(m, CSCFit) && (!is.null(m@strata) || !is.null(m@entry)))
-      stop(nm, ": curves with bootstrap bands are not available yet for csc() with strata() or delayed entry; ",
-           "use predict(fit, newdata, times) for the cumulative incidence", call. = FALSE)
+    general <- .needs_general_boot(m)
     tg <- if (!is.null(times)) times else if (is_direct || is_par) .grid_smooth(tmax) else .grid_step(m@time, m@status, tmax)
     rows <- NULL; adjust <- 1L; fit <- m
     if (type == "newdata") {
-      rows <- list(X = .sx_newX(m, newdata), labels = .newdata_labels(m, newdata))
+      rows <- list(X = .sx_newX(m, newdata), labels = .newdata_labels(m, newdata),
+                   strata = if (general && S7::S7_inherits(m, CSCFit)) .sx_newstrata(m, newdata) else NULL)
     } else if (type == "profile") {
       pf <- .profile(m); rows <- list(X = pf$X, labels = "typical covariate values"); desc[nm] <- pf$label
     } else if (type == "unadjusted") {
@@ -332,6 +420,7 @@ cif_data <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
     }
     out[[nm]] <- if (is_par) .curves_parcsc(fit, nm, causes, rows, tg, conf.int, level)
                  else if (is_direct) .curves_direct(fit, nm, causes, rows, tg, conf.int, level)
+                 else if (general) .curves_boot_general(fit, nm, causes, rows, tg, conf.int, level, B, seed, interval, adjust)
                  else .curves_boot(fit, nm, causes, rows, tg, conf.int, level, B, seed, interval, adjust)
   }
   d <- do.call(rbind, out)

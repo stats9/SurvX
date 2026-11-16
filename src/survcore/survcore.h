@@ -219,6 +219,14 @@ int sc_cif_bootstrap(int model, int n, int p, const double* time, const int* cau
  * included), 7 piecewise exponential (knots = cut points); aft: 0 proportional hazards, 1 AFT. entry may be
  * null (no delayed entry); times must be positive and entry < time. theta: 1 + p (+1 shape)
  * parameters; init may be null. */
+/* Parametric cure models: mixture (mixture = 1) or non-mixture (promotion time) with the cured
+ * fraction expit(gamma'z); latency as in sc_par_fit. See survcore/cure.hpp. */
+int sc_cure_fit(int n, int pl, int pc, int dist, int aft, int nk, const double* knots, int mixture,
+                const double* entry, const double* time, const int* status, const double* Xl, const double* Xc,
+                const double* init, int max_iter, double tol, double* theta, double* var, sc_fit_info* info);
+int sc_cure_predict(int dist, int aft, int nk, const double* knots, int pl, int pc, int mixture, const double* theta,
+                    const double* var, int n_new, const double* Xl, const double* Xc, int nt, const double* times,
+                    int type, int average, double* out, double* out_se);
 int sc_par_fit(int n, int p, int dist, int aft, int nk, const double* knots, const double* entry, const double* time,
                const int* status, const double* X, const double* init, int max_iter, double tol, double* theta,
                double* var, sc_fit_info* info);

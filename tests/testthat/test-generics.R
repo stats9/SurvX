@@ -102,3 +102,16 @@ test_that("Event(): S3 methods", {
   expect_s3_class(y[1:2], "Event")
   expect_identical(is.na(y), c(FALSE, FALSE, TRUE))
 })
+
+set.seed(62)
+dc <- data.frame(x = rnorm(300), z = rbinom(300, 1, 0.5))
+dc$tt <- ifelse(runif(300) < plogis(-0.3 + dc$z), Inf, rweibull(300, 1.2, 2)); dc$cc <- runif(300, 0, 8)
+dc$time <- pmin(dc$tt, dc$cc); dc$status <- as.integer(dc$tt <= dc$cc)
+
+test_that("cure(): all generics", {
+  f <- cure(Event(time, status) ~ x, dc, cure = ~ z)
+  check_model_generics(f)
+  expect_true(all(is.finite(predict(f, dc[1:3, ], times = 1))))
+  expect_length(residuals(f), nrow(dc))
+  with_null_device(plot(f))
+})

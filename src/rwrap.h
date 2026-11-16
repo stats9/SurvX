@@ -36,6 +36,8 @@ void SX_cif_bootstrap(int* model, int* n, int* p, double* time, int* cause, doub
 void SX_par_fit(int* n, int* p, int* dist, int* aft, int* nk, double* knots, int* has_entry, double* entry, double* time, int* status, double* X, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc);
 void SX_par_predict(int* dist, int* aft, int* nk, double* knots, int* p, double* theta, int* has_var, double* var, int* n_new, double* Xnew, int* nt, double* times, int* type, int* average, double* out, double* out_se, int* rc);
 void SX_parcsc_predict(int* K, int* dist, int* aft, int* nk, double* knots, int* p, double* theta, int* has_var, double* var, int* k, int* n_new, double* Xnew, int* nt, double* times, double* tmax, int* average, double* out, double* out_se, int* rc);
+void SX_cure_fit(int* n, int* pl, int* pc, int* dist, int* aft, int* nk, double* knots, int* mixture, int* has_entry, double* entry, double* time, int* status, double* Xl, double* Xc, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc);
+void SX_cure_predict(int* dist, int* aft, int* nk, double* knots, int* pl, int* pc, int* mixture, double* theta, int* has_var, double* var, int* n_new, double* Xl, double* Xc, int* nt, double* times, int* type, int* average, double* out, double* out_se, int* rc);
 void SX_cv_folds(int* n, int* folds, int* seed, int* out, int* rc);
 void SX_kernel_hazard(int* m, double* et, double* d, double* Y, double* bw, int* boundary, int* nx, double* x, double* out_h, double* out_se, double* bw_used, int* rc);
 #ifdef __cplusplus

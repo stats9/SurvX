@@ -40,7 +40,9 @@ FineGrayFit <- S7::new_class("FineGrayFit", parent = SurvXFit, package = "SurvX"
     variance = S7::class_character,
     vcov_model = S7::class_any,
     vcov_robust = S7::class_any,
-    loglik_null = S7::class_numeric
+    loglik_null = S7::class_numeric,
+    entry = S7::class_any,            # delayed entry (Geskus 2011), or NULL
+    expanded = S7::class_any          # weighted counting-process rows of the Geskus fit
   ))
 
 DirectCIFFit <- S7::new_class("DirectCIFFit", parent = SurvXFit, package = "SurvX",
@@ -178,4 +180,22 @@ PHTest <- S7::new_class("PHTest", package = "SurvX",
     tests = S7::class_list,
     transform = S7::class_character,
     table = S7::class_any
+  ))
+
+# parametric cure model: latency coefficients first (as ParSurvFit), then the logistic model of the
+# cured fraction
+CureFit <- S7::new_class("CureFit", parent = SurvXFit, package = "SurvX",
+  properties = list(
+    dist = S7::class_character,
+    scale = S7::class_character,
+    dist_code = S7::class_integer,
+    aft = S7::class_integer,
+    entry = S7::class_any,
+    knots = S7::class_numeric,
+    mixture = S7::class_logical,
+    Xc = S7::class_any,
+    cure_terms = S7::class_any,
+    cure_xlevels = S7::class_any,
+    cure_contrasts = S7::class_any,
+    n_latency = S7::class_integer
   ))

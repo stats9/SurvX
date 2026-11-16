@@ -1,3 +1,21 @@
+# SurvX 0.9.0
+
+* New `cure()`: parametric cure models, **mixture** (Boag 1949; Berkson & Gage 1952; Farewell 1982)
+  and **non-mixture / promotion time** (Yakovlev & Tsodikov 1996; Chen, Ibrahim & Sinha 1999), with
+  a logistic model for the cured fraction (`cure = ~ covariates`) and any latency distribution of
+  `parsurv()` (PH or AFT, splines, piecewise exponential, generalized gamma), with delayed entry.
+  Exact derivatives in the C++ core; validated against independent code (log-likelihood and maximum
+  to 1e-12) and, in the tests, against `flexsurvcure`. `predict()` gives the population survival,
+  hazard, survival of the uncured and the cured fraction with delta-method intervals; `plot()`
+  compares the fitted marginal survival with Kaplan-Meier and shows the cured fraction; the print
+  reports odds ratios of being cured and latency effects with Reading lines.
+* `fg()` accepts delayed entry (`Event(time, status, entry = )`) with the censoring and truncation
+  weights of Geskus (2011), fitted as a weighted counting-process Cox model in the extended C++ core;
+  agrees with `survival::finegray` + `coxph(cluster = id)`.
+* `cif_plot()` and `cif_data()` now work for `csc()` with `strata()` or delayed entry (one curve per
+  stratum at typical covariate values; bootstrap that resamples clusters when `cluster()` is given)
+  and for `fg()` with delayed entry. The models are refitted in R for the bootstrap.
+
 # SurvX 0.8.0
 
 * `cox()` and `csc()` (Cox baseline) gain the three extensions that make them cover the uses of

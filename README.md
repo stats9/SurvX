@@ -124,13 +124,14 @@ patient, which keeps the plateau parameters interpretable and stabilises the fit
 | `cox(formula, data, ties, weights, robust)` | Cox proportional hazards model: Efron or Breslow ties, `strata()`, (start, stop] data and delayed entry, `cluster()` robust variance, case weights, baseline hazard, predicted survival |
 | `csc(formula, data, ties, product_limit, baseline)` | cause-specific hazard models for all causes and the cumulative incidence they imply: Cox (default) or parametric (`baseline = "weibull"`, ...) |
 | `parsurv(formula, data, baseline, scale)` | parametric survival regression: exponential, Weibull, Gompertz, log-normal, log-logistic, generalized gamma, piecewise exponential, Royston-Parmar spline; PH or AFT; delayed entry |
+| `cure(formula, data, cure, baseline, type)` | parametric mixture and non-mixture cure models: logistic cured fraction, any latency distribution of `parsurv()`, delayed entry |
 | `residuals(fit, type)` | martingale, deviance, Cox-Snell and (scaled) Schoenfeld residuals of Cox, cause-specific and parametric models |
 | `ph_test(fit, transform)` | test of proportional hazards per covariate and global, for Cox and cause-specific Cox models; plot of beta(t) |
 | `sx_references(x)` | full references of the methods behind a fitted object or a function; every printed result ends with a short "Methods:" line |
 | `dist_plot(x, data)` | linearising plots for choosing a distribution; Cox-Snell residual plot of a fitted model |
 | `hazard_np(formula, data, smooth, bw)` | Nelson-Aalen cumulative hazard and kernel-smoothed hazard by group and cause |
 | `hazard_plot(fit, type)` | fitted hazard, cumulative hazard or survival of parametric models, with the non-parametric estimate as reference |
-| `fg(formula, data, cause, variance)` | Fine-Gray proportional subdistribution hazards model: robust or model-based variance, predicted CIF |
+| `fg(formula, data, cause, variance)` | Fine-Gray proportional subdistribution hazards model: robust or model-based variance, delayed entry (Geskus weights), predicted CIF |
 | `directcif(formula, data, baseline, link, estimation, ...)` | direct parametric CIF regression; see [The direct models](#the-direct-models) |
 | `predict(fit, newdata, times, cause, se)` | absolute risks (CIF or survival) for new patients; delta-method standard errors for direct models |
 | `cif_data()`, `cif_plot()` | data behind, and drawing of, cumulative incidence curves for any model(s) |
@@ -427,6 +428,8 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 | `cox()` | partial likelihood; Efron and Breslow ties; Breslow baseline hazard; strata; counting-process (start, stop] form; robust variance | Cox (1972); Breslow (1974); Efron (1977); Kalbfleisch & Prentice (2002); Andersen & Gill (1982); Lin & Wei (1989) |
 | `csc()` | cause-specific Cox models combined into CIFs | Prentice et al. (1978); Benichou & Gail (1990) |
 | `parsurv()` | parametric PH and AFT models by maximum likelihood with delayed entry; spline, piecewise exponential and generalized gamma baselines | Kalbfleisch & Prentice (2002); Lawless (2003); Klein & Moeschberger (2003); Royston & Parmar (2002); Friedman (1982); Prentice (1974); Cox et al. (2007) |
+| `cure()` | mixture and non-mixture (promotion time) cure models, maximum likelihood | Boag (1949); Berkson & Gage (1952); Farewell (1982); Yakovlev & Tsodikov (1996); Chen, Ibrahim & Sinha (1999); Lambert et al. (2007) |
+| `fg()` with delayed entry | censoring and truncation weights | Geskus (2011) |
 | `residuals()` | martingale, deviance, Cox-Snell, Schoenfeld and scaled Schoenfeld residuals | Cox & Snell (1968); Schoenfeld (1982); Therneau, Grambsch & Fleming (1990) |
 | `ph_test()` | score test of proportional hazards with a time function g(t), exact form of `survival::cox.zph` | Grambsch & Therneau (1994); Therneau & Grambsch (2000) |
 | `sx_references()` | full references of the methods behind any result | — |

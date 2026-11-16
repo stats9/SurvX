@@ -500,7 +500,7 @@ inline std::vector<double> par_start(const ParSpec& sp, const ParData& dat) {
 
 // Newton-Raphson with step halving; when the information is not positive definite (far from the
 // maximum), a Levenberg-Marquardt ridge is added to it (More 1978, Lecture Notes in Math 630:105-116).
-inline FitResult par_newton(const ParModel& m, std::vector<double> th, int max_iter, double tol) {
+template <class M> FitResult par_newton(const M& m, std::vector<double> th, int max_iter, double tol) {
   FitResult r;
   const std::size_t P = th.size();
   Eval ev, evt;

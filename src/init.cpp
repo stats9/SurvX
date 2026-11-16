@@ -14,6 +14,8 @@ static const R_CMethodDef c_methods[] = {
   {"SX_cox2", (DL_FUNC) &SX_cox2, 19, NULL},
   {"SX_cox2_baseline", (DL_FUNC) &SX_cox2_baseline, 18, NULL},
   {"SX_cox_score", (DL_FUNC) &SX_cox_score, 15, NULL},
+  {"SX_cure_fit", (DL_FUNC) &SX_cure_fit, 23, NULL},
+  {"SX_cure_predict", (DL_FUNC) &SX_cure_predict, 20, NULL},
   {"SX_fg", (DL_FUNC) &SX_fg, 14, NULL},
   {"SX_fg_baseline", (DL_FUNC) &SX_fg_baseline, 11, NULL},
   {"SX_csc_cif", (DL_FUNC) &SX_csc_cif, 15, NULL},

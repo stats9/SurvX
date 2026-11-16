@@ -231,7 +231,10 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
   out <- c(paste0("Fine-Gray regression for the cumulative incidence of cause ", x@cause),
            paste0("  Subjects: ", x@n, "   events of cause ", x@cause, ": ", x@nevent,
                   "   other events: ", sum(x@status != 0L & x@status != x@cause), "   censored: ", sum(x@status == 0L)),
-           paste0("  Standard errors: ", if (x@variance == "robust") "robust sandwich (Fine & Gray 1999)" else "model-based"),
+           if (!is.null(x@entry)) "  Delayed entry: censoring and truncation weights of Geskus (2011)",
+           paste0("  Standard errors: ", if (x@variance != "robust") "model-based"
+                  else if (is.null(x@entry)) "robust sandwich (Fine & Gray 1999)"
+                  else "robust sandwich over subjects (Lin & Wei 1989), weights taken as known"),
            "",
            "Effect of covariates: subdistribution hazard ratio (sHR)",
            .effect_lines(e, "sHR", level, x@xlevels), "",

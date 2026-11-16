@@ -131,6 +131,16 @@ void SX_par_predict(int* dist, int* aft, int* nk, double* knots, int* p, double*
 void SX_parcsc_predict(int* K, int* dist, int* aft, int* nk, double* knots, int* p, double* theta, int* has_var, double* var, int* k, int* n_new, double* Xnew, int* nt, double* times, double* tmax, int* average, double* out, double* out_se, int* rc) {
   *rc = sc_parcsc_predict(*K, dist, aft, nk, knots, *p, theta, *has_var ? var : nullptr, *k, *n_new, Xnew, *nt, times, *tmax, *average, out, *has_var ? out_se : nullptr);
 }
+void SX_cure_fit(int* n, int* pl, int* pc, int* dist, int* aft, int* nk, double* knots, int* mixture, int* has_entry, double* entry, double* time, int* status, double* Xl, double* Xc, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc) {
+  sc_fit_info f = sc_fit_info();
+  *rc = sc_cure_fit(*n, *pl, *pc, *dist, *aft, *nk, knots, *mixture, *has_entry ? entry : nullptr, time, status, Xl, Xc,
+                    *has_init ? init : nullptr, *max_iter, *tol, theta, var, &f);
+  put(f, info_d, info_i);
+}
+void SX_cure_predict(int* dist, int* aft, int* nk, double* knots, int* pl, int* pc, int* mixture, double* theta, int* has_var, double* var, int* n_new, double* Xl, double* Xc, int* nt, double* times, int* type, int* average, double* out, double* out_se, int* rc) {
+  *rc = sc_cure_predict(*dist, *aft, *nk, knots, *pl, *pc, *mixture, theta, *has_var ? var : nullptr, *n_new, Xl, Xc, *nt, times,
+                        *type, *average, out, *has_var ? out_se : nullptr);
+}
 void SX_cv_folds(int* n, int* folds, int* seed, int* out, int* rc) {
   *rc = sc_cv_folds(*n, *folds, static_cast<unsigned long long>(*seed < 0 ? -*seed : *seed), out);
 }
