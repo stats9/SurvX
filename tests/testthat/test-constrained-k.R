@@ -1,5 +1,5 @@
 # Constrained model for K >= 3 causes. Reference values: the C++ fit checked against an
-# independent log-likelihood (paper2/proto/check_ck2.py of the development repository; the
+# independent log-likelihood (an independent Python implementation used during development; the
 # log-likelihoods agree to 1e-12) and, for K = 2, identical to the two-cause model.
 ck_data <- function() {
   i <- 1:300

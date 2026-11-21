@@ -1,7 +1,7 @@
 # Variance of the weighted estimator with the term for the estimated censoring distribution.
 # Reference values: an independent Python implementation of the influence function (the exact
 # derivative of the total score with respect to case weights, the Kaplan-Meier estimate of the
-# censoring distribution recomputed), paper2/proto/wvar.py of the development repository.
+# censoring distribution recomputed), used during development.
 ipcw_data <- function() {
   i <- 1:120
   data.frame(time = ((i * 37) %% 97) / 10 + 0.1,
