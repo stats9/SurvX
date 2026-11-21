@@ -131,7 +131,7 @@ test_that("directcif() with Interval(): exact data reproduce Event(), and the lo
   set.seed(9)
   n <- nrow(sc); L <- R <- numeric(n)
   for (i in seq_len(n)) {
-    v <- cumsum(runif(10, 0.2, 0.6))
+    v <- cumsum(runif(30, 0.2, 0.6))           # visits up to about 12, beyond every time
     if (sc$status[i] == 0L) { L[i] <- max(c(0.05, v[v < sc$time[i]])); R[i] <- Inf }
     else { L[i] <- max(c(0, v[v < sc$time[i]])); R[i] <- min(v[v >= sc$time[i]]) }
   }
