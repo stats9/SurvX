@@ -168,6 +168,13 @@ int sc_subdist_fit(int n, int p, const double* time, const int* cause, const dou
                    int alpha_free, double alpha_value, int baseline, int n_knots, const double* knots, int grid,
                    const double* init, int max_iter, double tol,
                    double* theta, double* var_robust, double* var_model, sc_fit_info* info, int* n_support);
+/* Sandwich variance of the weighted fit that includes the effect of estimating the censoring
+ * distribution (exact influence of each subject, the Kaplan-Meier estimate recomputed):
+ * var = var_model M var_model with M = sum_i (s_i + psi_i)(s_i + psi_i)'. Computed on the exact
+ * censoring distribution. rc -4: outside the support. */
+int sc_subdist_var_ipcw(int n, int p, const double* time, const int* cause, const double* X, int interest,
+                        int alpha_free, double alpha_value, int baseline, int n_knots, const double* knots,
+                        const double* theta, const double* var_model, double* var);
 int sc_subdist_eval(int n, int p, const double* time, const int* cause, const double* X, int interest,
                     int alpha_free, double alpha_value, int baseline, int n_knots, const double* knots, int grid,
                     const double* theta, double* loglik, double* grad, double* info_matrix);
@@ -176,6 +183,22 @@ int sc_subdist_eval(int n, int p, const double* time, const int* cause, const do
  * baseline with a plateau: not Weibull, not spline), F_2(t; z) = {1 - F_1(inf; z)} G(t).
  * family (G): 0 modified logistic (log b, c), 1 Weibull, 2 log-logistic (log lambda, log kappa),
  * 3 log-normal (mu, log sigma). cause: 0, 1, 2. Parameters: cause 1 block, then the two of G. */
+/* Constrained model for K >= 2 causes (extension of Shi, Cheng & Jeong 2013): cause 1 as in
+ * sc_constrained_fit; F_k(t; z) = {1 - F_1(inf; z)} pi_k(z) G_k(t) for k = 2..K, with pi_k a
+ * multinomial logit (cause 2 the reference) and G_k of family[k-2]. cause: 0 censored, 1..K.
+ * Parameters: cause 1 block, (a_k, b_k) for k = 2..K, (gamma_k, delta_k) for k = 3..K.
+ * K = 2 gives the model of sc_constrained_fit. predict: average = 1 gives the mean over the rows
+ * of Xnew (out_cif and out_se of length nt). */
+int sc_constrainedK_fit(int n, int p, const double* time, const int* cause, const double* X, int K,
+                        int alpha_free, double alpha_value, int baseline, const int* family,
+                        const double* init, int max_iter, double tol,
+                        double* theta, double* var, sc_fit_info* info);
+int sc_constrainedK_eval(int n, int p, const double* time, const int* cause, const double* X, int K,
+                         int alpha_free, double alpha_value, int baseline, const int* family,
+                         const double* theta, double* loglik, double* grad, double* info_matrix);
+int sc_constrainedK_predict(int p, int K, int alpha_free, double alpha_value, int baseline, const int* family,
+                            const double* theta, const double* var, int k, int average, int n_new, const double* Xnew,
+                            int nt, const double* times, double* out_cif, double* out_se);
 int sc_constrained_fit(int n, int p, const double* time, const int* cause, const double* X,
                        int alpha_free, double alpha_value, int baseline, int family,
                        const double* init, int max_iter, double tol,

@@ -600,9 +600,101 @@ int check_constrained(int n, int p, const double* time, const int* cause, const 
   if (family != COND_LOGISTIC || base_needs_positive_time(s.baseline[0])) for (int i = 0; i < n; ++i) if (!(time[i] > 0.0)) return -2;
   return (n1 == 0 || n2 == 0) ? -3 : 0;
 }
+int check_constrainedK(int n, int p, const double* time, const int* cause, const double* X, int K, const int* family,
+                       const DirectSpec& s) {
+  if (int rc = check_common(n, p, time, X)) return rc;
+  if (!cause || !family || K < 2) return -1;
+  if (s.baseline[0] == BASE_WEIBULL || s.baseline[0] == BASE_SPLINE) return -1;
+  bool need_pos = base_needs_positive_time(s.baseline[0]);
+  for (int k = 0; k < K - 1; ++k) { if (family[k] < 0 || family[k] >= COND_COUNT) return -1; if (family[k] != COND_LOGISTIC) need_pos = true; }
+  std::vector<int> cnt(static_cast<std::size_t>(K + 1), 0);
+  for (int i = 0; i < n; ++i) { if (cause[i] < 0 || cause[i] > K) return -2; cnt[static_cast<std::size_t>(cause[i])] += 1; }
+  if (need_pos) for (int i = 0; i < n; ++i) if (!(time[i] > 0.0)) return -2;
+  for (int k = 1; k <= K; ++k) if (cnt[static_cast<std::size_t>(k)] == 0) return -3;
+  return 0;
+}
 }  // namespace
 
 extern "C" {
+
+int sc_constrainedK_fit(int n, int p, const double* time, const int* cause, const double* X, int K,
+                        int alpha_free, double alpha_value, int baseline, const int* family,
+                        const double* init, int max_iter, double tol,
+                        double* theta, double* var, sc_fit_info* info) try {
+  DirectSpec s;
+  if (int rc = one_spec(p, alpha_free, alpha_value, baseline, 0, nullptr, s)) return rc;
+  if (int rc = check_constrainedK(n, p, time, cause, X, K, family, s)) return rc;
+  if (!theta) return -1;
+  const std::vector<int> fam(family, family + (K - 1));
+  ConstrainedKModel m(n, time, cause, X, s, K, fam);
+  const std::size_t P = m.nparam();
+  std::vector<double> st;
+  if (init) { if (!finite_all(init, P)) return -2; st.assign(init, init + P); }
+  const FitResult f = constrainedK_fit(m, n, time, cause, fam, init ? &st : nullptr, max_iter, tol);
+  int ne = 0;
+  for (int i = 0; i < n; ++i) ne += cause[i] != 0;
+  export_fit(f, P, ne, theta, var, info);
+  return 0;
+} catch (...) { return -9; }
+
+int sc_constrainedK_eval(int n, int p, const double* time, const int* cause, const double* X, int K,
+                         int alpha_free, double alpha_value, int baseline, const int* family,
+                         const double* theta, double* loglik, double* grad, double* info_matrix) try {
+  DirectSpec s;
+  if (int rc = one_spec(p, alpha_free, alpha_value, baseline, 0, nullptr, s)) return rc;
+  if (int rc = check_constrainedK(n, p, time, cause, X, K, family, s); rc != 0 && rc != -3) return rc;
+  if (!theta) return -1;
+  ConstrainedKModel m(n, time, cause, X, s, K, std::vector<int>(family, family + (K - 1)));
+  Eval ev;
+  m.eval(std::vector<double>(theta, theta + m.nparam()), ev, true);
+  export_eval(ev, m.nparam(), loglik, grad, info_matrix);
+  return 0;
+} catch (...) { return -9; }
+
+int sc_constrainedK_predict(int p, int K, int alpha_free, double alpha_value, int baseline, const int* family,
+                            const double* theta, const double* var, int k, int average, int n_new, const double* Xnew,
+                            int nt, const double* times, double* out_cif, double* out_se) try {
+  DirectSpec s;
+  if (int rc = one_spec(p, alpha_free, alpha_value, baseline, 0, nullptr, s)) return rc;
+  if (!theta || !family || !times || !out_cif || n_new <= 0 || nt <= 0 || K < 2 || k < 1 || k > K || (p > 0 && !Xnew)) return -1;
+  for (int j = 0; j < K - 1; ++j) if (family[j] < 0 || family[j] >= COND_COUNT) return -1;
+  if (out_se && !var) return -1;
+  std::vector<double> dummy_t(1, 0.0); std::vector<int> dummy_c(1, 0);
+  ConstrainedKModel m(0, dummy_t.data(), dummy_c.data(), Xnew, s, K, std::vector<int>(family, family + (K - 1)));
+  const std::size_t P = m.nparam();
+  const std::vector<double> th(theta, theta + P);
+  std::vector<double> g;
+  if (average) {                                         // mean over the rows; delta method for the mean
+    std::vector<double> gs(P);
+    for (int t = 0; t < nt; ++t) {
+      double Fs = 0.0;
+      std::fill(gs.begin(), gs.end(), 0.0);
+      for (int i = 0; i < n_new; ++i) {
+        Fs += m.cifk_grad(th, k, Xnew + static_cast<std::size_t>(i) * p, times[t], g);
+        for (std::size_t a = 0; a < P; ++a) gs[a] += g[a];
+      }
+      out_cif[t] = Fs / n_new;
+      if (out_se) {
+        double v = 0.0;
+        for (std::size_t a = 0; a < P; ++a) { if (gs[a] == 0.0) continue; for (std::size_t b = 0; b < P; ++b) v += gs[a] * var[a * P + b] * gs[b]; }
+        v /= static_cast<double>(n_new) * n_new;
+        out_se[t] = v >= 0.0 ? std::sqrt(v) : std::numeric_limits<double>::quiet_NaN();
+      }
+    }
+    return 0;
+  }
+  for (int i = 0; i < n_new; ++i)
+    for (int t = 0; t < nt; ++t) {
+      const double F = m.cifk_grad(th, k, Xnew + static_cast<std::size_t>(i) * p, times[t], g);
+      out_cif[static_cast<std::size_t>(i) * nt + t] = F;
+      if (out_se) {
+        double v = 0.0;
+        for (std::size_t a = 0; a < P; ++a) { if (g[a] == 0.0) continue; for (std::size_t b = 0; b < P; ++b) v += g[a] * var[a * P + b] * g[b]; }
+        out_se[static_cast<std::size_t>(i) * nt + t] = v >= 0.0 ? std::sqrt(v) : std::numeric_limits<double>::quiet_NaN();
+      }
+    }
+  return 0;
+} catch (...) { return -9; }
 
 int sc_subdist_fit(int n, int p, const double* time, const int* cause, const double* X, int interest,
                    int alpha_free, double alpha_value, int baseline, int n_knots, const double* knots, int grid,
@@ -623,6 +715,26 @@ int sc_subdist_fit(int n, int p, const double* time, const int* cause, const dou
   export_fit(f.fit, P, ne, theta, var_robust, info);
   if (var_model) for (std::size_t j = 0; j < P * P; ++j) var_model[j] = f.var_model.n == P ? f.var_model.a[j] : std::numeric_limits<double>::quiet_NaN();
   if (n_support) *n_support = static_cast<int>(m.n_support());
+  return 0;
+} catch (...) { return -9; }
+
+int sc_subdist_var_ipcw(int n, int p, const double* time, const int* cause, const double* X, int interest,
+                        int alpha_free, double alpha_value, int baseline, int n_knots, const double* knots,
+                        const double* theta, const double* var_model, double* var) try {
+  DirectSpec s;
+  if (int rc = one_spec(p, alpha_free, alpha_value, baseline, n_knots, knots, s)) return rc;
+  if (int rc = check_subdist(n, p, time, cause, X, interest, s)) return rc;
+  if (!theta || !var_model || !var) return -1;
+  const std::size_t P = s.nparam();
+  if (!finite_all(theta, P) || !finite_all(var_model, P * P)) return -2;
+  std::vector<int> c12(n);
+  for (int i = 0; i < n; ++i) c12[i] = cause[i] == 0 ? 0 : (cause[i] == interest ? 1 : 2);
+  SubdistCIFModel m(n, time, c12.data(), X, s, 1, 0);
+  Mat M;
+  if (!m.meat_ipcw(std::vector<double>(theta, theta + P), M)) return -4;
+  std::vector<double> AM(P * P, 0.0);
+  for (std::size_t a = 0; a < P; ++a) for (std::size_t b = 0; b < P; ++b) { double v = 0.0; for (std::size_t c = 0; c < P; ++c) v += var_model[a * P + c] * M(c, b); AM[a * P + b] = v; }
+  for (std::size_t a = 0; a < P; ++a) for (std::size_t b = 0; b < P; ++b) { double v = 0.0; for (std::size_t c = 0; c < P; ++c) v += AM[a * P + c] * var_model[c * P + b]; var[a * P + b] = v; }
   return 0;
 } catch (...) { return -9; }
 

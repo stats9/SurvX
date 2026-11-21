@@ -8,8 +8,8 @@ and Fine (2006, 2007):
 a generalized odds-rate model in which \eqn{\alpha_k \to 0} gives proportional subdistribution
 hazards (the Fine-Gray model with a parametric baseline) and \eqn{\alpha_k = 1} proportional odds
 of the cumulative incidence. Three estimators are available: the full likelihood of all causes,
-a weighted estimator for one cause, and a constrained model for two causes whose incidences add up
-to one.
+a weighted estimator for one cause, and a constrained model for two or more causes whose
+incidences add up to one.
 
 \strong{Use it when} smooth, parametric cumulative incidences are wanted (extrapolation, the
 long-term incidence \eqn{F_k(\infty)}, health-economic models), when the effect is better described
@@ -21,8 +21,9 @@ on the odds scale, or when all causes are to be modelled together with coherent 
 directcif(formula, data, baseline = "gompertz", link = "PH",
     estimation = c("joint", "weighted", "constrained"), cause = 1L,
     cond = c("logistic", "weibull", "loglogistic", "lognormal"), df = 3L,
-    knots = NULL, constraint = FALSE, censoring_grid = 0L, init = NULL,
-    max_iter = 500L, tol = 1e-10)
+    knots = NULL, constraint = FALSE, censoring_grid = 0L,
+    variance = c("ipcw", "robust", "model"), init = NULL, max_iter = 500L,
+    tol = 1e-10)
 }
 \arguments{
 \item{formula}{\code{Event(time, status) ~ covariates} (or \code{~ 1}); status 0 = censored,
@@ -38,12 +39,15 @@ directcif(formula, data, baseline = "gompertz", link = "PH",
   cause.}
 \item{estimation}{\code{"joint"} (default): all causes by the full likelihood. \code{"weighted"}:
   the cause of interest alone, with censoring weights as in Fine and Gray, so that no model for
-  the other causes is needed. \code{"constrained"}: two causes whose incidences add up to one at
-  infinity (Shi, Cheng and Jeong 2013). See Details.}
+  the other causes is needed. \code{"constrained"}: all causes, with incidences that add up to one
+  at infinity for every covariate value (Shi, Cheng and Jeong 2013 for two causes; extended here to
+  any number of causes). See Details.}
 \item{cause}{the cause of interest for \code{"weighted"} and \code{"constrained"}.}
-\item{cond}{\code{"constrained"} only: the distribution \eqn{G} of the time to the competing
-  event given that it occurs: \code{"logistic"} (modified logistic, as in the paper),
-  \code{"weibull"}, \code{"loglogistic"} or \code{"lognormal"}.}
+\item{cond}{\code{"constrained"} only: the distribution \eqn{G_k} of the time to a competing
+  event given that it occurs: \code{"logistic"} (modified logistic, as in Shi et al.; default),
+  \code{"weibull"}, \code{"loglogistic"} or \code{"lognormal"}. One value for all competing
+  causes, or one per competing cause (in the order of the cause codes, the cause of interest left
+  out).}
 \item{df}{degrees of freedom of the spline baseline.}
 \item{knots}{optional list with the knots (log time, boundary knots first and last) of every
   cause, for the spline baseline.}
@@ -53,6 +57,12 @@ directcif(formula, data, baseline = "gompertz", link = "PH",
   most this many support points (0 = exact). With the PH link the exact fit is linear in the
   sample size; with other links its cost grows with the number of competing events times the
   number of support points (a few seconds at \eqn{n = 10000}), and a grid can shorten it.}
+\item{variance}{\code{"weighted"} only: the standard errors. \code{"ipcw"} (default): sandwich
+  variance that includes the effect of estimating the censoring distribution (see Details).
+  \code{"robust"}: sandwich variance with the censoring distribution treated as known.
+  \code{"model"}: inverse information of the weighted pseudo-likelihood. All three matrices are
+  kept in \code{fit@diagnostics} (\code{vcov_ipcw}, \code{vcov_robust}) and
+  \code{fit@vcov_model}. Ignored for the other estimators.}
 \item{init}{optional starting values on the estimation scale.}
 \item{max_iter, tol}{iteration limit and convergence tolerance.}
 }
@@ -66,13 +76,27 @@ directcif(formula, data, baseline = "gompertz", link = "PH",
   \item{\code{"weighted"}}{the cause of interest alone. Subjects who fail from a competing cause
     enter through the Kaplan-Meier estimate of the censoring distribution, as in Fine and Gray
     (1999), so no model for the other causes is needed (Geskus 2011; Lambert, Wilkes and
-    Crowther 2017). Standard errors are from the sandwich estimator with one score per subject;
-    the estimation of the censoring distribution is ignored. \code{logLik} is a weighted
+    Crowther 2017). The weights depend on the Kaplan-Meier estimate of the censoring
+    distribution, and by default (\code{variance = "ipcw"}) the standard errors account for it:
+    the sandwich estimator uses, for every subject, the derivative of the total score with respect
+    to a case weight of that subject with the Kaplan-Meier estimate recomputed (the infinitesimal
+    jackknife), the discrete form of the correction term of Fine and Gray (1999, Sec. 3.2). It is
+    computed on the exact censoring distribution also when \code{censoring_grid > 0}. The
+    correction mostly concerns the baseline parameters, and with them the predicted and long-term
+    incidences; for the regression coefficients it is usually small. \code{logLik} is a weighted
     pseudo-likelihood: use it only to compare links or baselines of weighted fits.}
-  \item{\code{"constrained"}}{two causes with asymptotes that add up to one (Shi, Cheng and Jeong
-    2013): the cause of interest as above and \eqn{F_2(t \mid z) = \{1 - F_1(\infty \mid z)\} G(t)}.
-    Needs a baseline with a plateau for the cause of interest (not \code{"weibull"}, not
-    \code{"spline"}). Appropriate when every subject eventually fails from one of the two causes.}
+  \item{\code{"constrained"}}{causes with asymptotes that add up to one. With two causes this is
+    the model of Shi, Cheng and Jeong (2013): the cause of interest as above and
+    \eqn{F_2(t \mid z) = \{1 - F_1(\infty \mid z)\} G(t)}. With \eqn{K \ge 3} causes the
+    remaining long-run risk is shared among the competing causes by a multinomial logit,
+    \deqn{F_k(t \mid z) = \{1 - F_1(\infty \mid z)\}\, \pi_k(z)\, G_k(t), \qquad
+      \pi_k(z) = \frac{\exp(\gamma_k + \delta_k^\top z)}{\sum_{j} \exp(\gamma_j + \delta_j^\top z)},}
+    with the first competing cause as reference (\eqn{\gamma = 0, \delta = 0}), so that
+    \eqn{\sum_k F_k(\infty \mid z) = 1} for every \eqn{z}. The cause of interest keeps the direct
+    regression model and its interpretation; the share of each competing cause can depend on the
+    covariates, in the manner of the mixture model of Larson and Dinse (1985); \eqn{G_k} has no
+    covariates. Needs a baseline with a plateau for the cause of interest (not \code{"weibull"},
+    not \code{"spline"}). Appropriate when every subject eventually fails from one of the causes.}
 }
 }
 \subsection{Baseline families}{
@@ -113,6 +137,12 @@ are flagged and their standard errors should not be used.
     effect on the incidence itself.}
   \item{Baseline parameters}{describe the incidence at \eqn{z = 0}; centre continuous covariates
     so that this is a typical subject.}
+  \item{Shares (constrained model, three or more causes)}{\code{share_} coefficients of cause
+    \eqn{k}: \eqn{e^{\delta}} is an \strong{odds ratio of failing from cause \eqn{k} rather than
+    from the reference competing cause}, among subjects who do not fail from the cause of interest;
+    \code{share_(Intercept)} is that log odds at \eqn{z = 0}. The effect of a covariate on the
+    incidence of a competing cause combines its effect on the cause of interest (through
+    \eqn{1 - F_1(\infty \mid z)}) and on the share; \code{predict()} gives the incidences.}
 }
 The long-term incidence \code{predict(fit, newdata, times = Inf)} is often the most useful
 summary with plateau families. A sentence for a report: \emph{"In a direct Gompertz model for
@@ -139,6 +169,16 @@ validation suite (\url{https://github.com/stats9/SurvX}, directory \code{validat
 replications, \eqn{n} = 200 to 1000, PH and PO links, all three estimators) the standard errors
 matched the empirical standard deviation (ratio 0.93 to 1.04) and the 95\% intervals covered 93.2
 to 95.8\%. On \eqn{n = 10000}, a joint fit takes about 0.6 s and a weighted fit 0.1 s.
+The variance with the censoring term (\code{variance = "ipcw"}) agrees with an independent
+implementation of the formula to \eqn{10^{-10}} for every baseline family and link, and with the
+exact infinitesimal jackknife, the numerical derivative of the estimate with respect to case
+weights with the Kaplan-Meier estimate recomputed, to the accuracy of the numerical derivative.
+The constrained model with \eqn{K \ge 3} causes reproduces the two-cause model exactly for
+\eqn{K = 2}; its log-likelihood agrees with independent code to \eqn{10^{-12}}, its score and
+information with numerical differentiation to \eqn{10^{-9}}; in 300 simulated data sets with
+three causes (\eqn{n = 800}) the bias of every parameter was below 0.01, the ratio of mean
+standard error to empirical standard deviation 0.94 to 1.03, and the coverage of the 95\%
+intervals 93.7 to 95.7\%.
 }
 \value{
 An S7 object of class \code{DirectCIFFit}. Coefficients are named \code{"<cause>:<term>"};
@@ -168,6 +208,9 @@ three-parameter logistic function. Int J Biostat 5(1), Article 29.
 
 Shi H, Cheng Y, Jeong J-H (2013) Constrained parametric model for simultaneous inference of two
 cumulative incidence functions. Biom J 55:82-96.
+
+Larson MG, Dinse GE (1985) A mixture model for the regression analysis of competing risks data.
+J R Stat Soc C 34:201-211.
 
 Haile SR, Jeong J-H, Chen X, Cheng Y (2016) A 3-parameter Gompertz distribution for survival data
 with competing risks, with an application to breast cancer data. J Appl Stat 43:2239-2253.
@@ -218,4 +261,12 @@ directcif(Event(time, status) ~ x, d, estimation = "weighted", cause = 1)
 fc <- directcif(Event(time, status) ~ x, d, estimation = "constrained", cause = 1, cond = "weibull")
 nd <- data.frame(x = 0:1)
 predict(fc, nd, times = Inf, cause = 1) + predict(fc, nd, times = Inf, cause = 2)
+
+## 5. three causes: the competing causes share the remaining long-run risk
+d3 <- d
+d3$status[d3$status == 2 & runif(n) < 0.4] <- 3
+f3 <- directcif(Event(time, status) ~ x, d3, estimation = "constrained", cause = 1,
+                cond = "weibull")
+f3
+rowSums(sapply(1:3, function(k) predict(f3, nd, times = Inf, cause = k)))
 }

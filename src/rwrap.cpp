@@ -103,6 +103,9 @@ void SX_subdist_fit(int* n, int* p, double* time, int* cause, double* X, int* in
                        *has_init ? init : nullptr, *max_iter, *tol, theta, var_robust, var_model, &f, n_support);
   put(f, info_d, info_i);
 }
+void SX_subdist_var_ipcw(int* n, int* p, double* time, int* cause, double* X, int* interest, int* alpha_free, double* alpha_value, int* baseline, int* n_knots, double* knots, double* theta, double* var_model, double* var, int* rc) {
+  *rc = sc_subdist_var_ipcw(*n, *p, time, cause, X, *interest, *alpha_free, *alpha_value, *baseline, *n_knots, knots, theta, var_model, var);
+}
 void SX_constrained_fit(int* n, int* p, double* time, int* cause, double* X, int* alpha_free, double* alpha_value, int* baseline, int* family, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc) {
   sc_fit_info f = sc_fit_info();
   *rc = sc_constrained_fit(*n, *p, time, cause, X, *alpha_free, *alpha_value, *baseline, *family, *has_init ? init : nullptr, *max_iter, *tol, theta, var, &f);
@@ -111,6 +114,15 @@ void SX_constrained_fit(int* n, int* p, double* time, int* cause, double* X, int
 void SX_constrained_predict(int* p, int* alpha_free, double* alpha_value, int* baseline, int* family, double* theta, int* has_var, double* var, int* k, int* n_new, double* Xnew, int* nt, double* times, double* out_cif, double* out_se, int* rc) {
   *rc = sc_constrained_predict(*p, *alpha_free, *alpha_value, *baseline, *family, theta, *has_var ? var : nullptr, *k, *n_new, Xnew, *nt, times,
                                out_cif, *has_var ? out_se : nullptr);
+}
+void SX_constrainedK_fit(int* n, int* p, double* time, int* cause, double* X, int* K, int* alpha_free, double* alpha_value, int* baseline, int* family, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc) {
+  sc_fit_info f = sc_fit_info();
+  *rc = sc_constrainedK_fit(*n, *p, time, cause, X, *K, *alpha_free, *alpha_value, *baseline, family, *has_init ? init : nullptr, *max_iter, *tol, theta, var, &f);
+  put(f, info_d, info_i);
+}
+void SX_constrainedK_predict(int* p, int* K, int* alpha_free, double* alpha_value, int* baseline, int* family, double* theta, int* has_var, double* var, int* k, int* average, int* n_new, double* Xnew, int* nt, double* times, double* out_cif, double* out_se, int* rc) {
+  *rc = sc_constrainedK_predict(*p, *K, *alpha_free, *alpha_value, *baseline, family, theta, *has_var ? var : nullptr, *k, *average, *n_new, Xnew, *nt, times,
+                                out_cif, *has_var ? out_se : nullptr);
 }
 void SX_direct_predict_mean(int* p, int* K, int* alpha_free, double* alpha_value, int* baseline, int* n_knots, double* knots, double* theta, int* has_var, double* var, int* k, int* n_new, double* Xnew, int* nt, double* times, double* out_cif, double* out_se, int* rc) {
   *rc = sc_directcif_predict_mean(*p, *K, alpha_free, alpha_value, baseline, n_knots, knots, theta, *has_var ? var : nullptr, *k, *n_new, Xnew, *nt, times,

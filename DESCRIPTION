@@ -1,7 +1,7 @@
 Package: SurvX
 Type: Package
 Title: Survival, Competing Risks and Cure Regression Models
-Version: 1.0.0
+Version: 1.0.0.9000
 Authors@R: c(
     person("Habib", "Ezzatabadipour", email = "habibezati@outlook.com", role = c("aut", "cre")),
     person("Robert", "Gray", role = "cph",

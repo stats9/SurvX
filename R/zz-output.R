@@ -162,8 +162,9 @@ S7::method(estimates, CSCFit) <- function(object, level = 0.95, ...) {
 S7::method(estimates, DirectCIFFit) <- function(object, level = 0.95, ...) {
   ix <- object@index
   scale <- ifelse(ix$role == "beta", vapply(ix$cause, function(k) .link_scale(.link_of_cause(object, k)), character(1)),
-                  ifelse(ix$role == "alpha", "alpha of the generalized odds rate link", "estimation scale"))
-  .est_frame(ix$cause, ix$term, ix$role, scale, object@coefficients, .se_of(object), level, ix$role == "beta")
+                  ifelse(ix$role == "alpha", "alpha of the generalized odds rate link",
+                         ifelse(ix$role == "share_beta", "odds ratio of the share of this cause", "estimation scale")))
+  .est_frame(ix$cause, ix$term, ix$role, scale, object@coefficients, .se_of(object), level, ix$role %in% c("beta", "share_beta"))
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -361,19 +362,40 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
   est_text <- switch(x@estimation,
     joint = "joint likelihood of all causes (Jeong & Fine 2006, 2007)",
     weighted = paste0("weighted likelihood for cause ", x@interest, " alone, censoring weights as in Fine & Gray (1999)"),
-    constrained = "two causes with long-run risks adding up to one (Shi, Cheng & Jeong 2013)")
+    constrained = if (x@K > 2L) paste0(x@K, " causes with long-run risks adding up to one (Shi, Cheng & Jeong 2013, ",
+                                        "extended with multinomial shares of the competing causes)")
+                  else "two causes with long-run risks adding up to one (Shi, Cheng & Jeong 2013)")
   cnt <- table(factor(x@status, levels = 0:x@K))
   out <- c("Direct parametric regression for the cumulative incidence function",
            paste0("  Estimation: ", est_text),
            paste0("  Subjects: ", x@n, "   censored: ", cnt[[1L]], "   ",
                   paste0("cause ", seq_len(x@K), ": ", as.integer(cnt[-1L]), collapse = "   ")))
-  if (x@estimation == "weighted") out <- c(out, "  Standard errors: sandwich, one score per subject")
+  if (x@estimation == "weighted")
+    out <- c(out, paste0("  Standard errors: ", switch(x@diagnostics$variance %||% "robust",
+      ipcw = "sandwich with the term for the estimated censoring distribution",
+      robust = "sandwich, censoring distribution treated as known",
+      model = "inverse information of the pseudo-likelihood (censoring distribution treated as known)")))
   tables <- list()
   for (k in unique(x@index$cause)) {
     ek <- e[e$cause == k, , drop = FALSE]
-    if (all(ek$role == "conditional")) {
-      out <- c(out, "", paste0("Cause ", k, ": cumulative incidence = (1 - long-run risk of cause ", x@interest, ") x G(t)"),
-               paste0("  G: ", x@cond, " distribution of the time to a cause ", k, " event; no covariates"))
+    if (all(ek$role %in% c("conditional", "share", "share_beta"))) {
+      oth <- setdiff(seq_len(x@K), x@interest)
+      cj <- x@cond[min(match(k, oth), length(x@cond))]
+      if (x@K > 2L) {
+        out <- c(out, "", paste0("Cause ", k, ": cumulative incidence = (1 - long-run risk of cause ", x@interest, ") x share(z) x G(t)"),
+                 paste0("  G: ", cj, " distribution of the time to a cause ", k, " event; no covariates"))
+        es <- ek[ek$role == "share_beta", , drop = FALSE]
+        if (k == oth[1L]) out <- c(out, "  Share: reference cause of the multinomial shares")
+        else if (nrow(es)) {
+          es$term <- sub("^share_", "", es$term)
+          out <- c(out, paste0("  Effect of covariates on the share (odds of cause ", k, " rather than cause ", oth[1L],
+                               " among subjects who do not fail from cause ", x@interest, "): OR"),
+                   .effect_lines(es, "OR", level, x@xlevels))
+        }
+      } else
+        out <- c(out, "", paste0("Cause ", k, ": cumulative incidence = (1 - long-run risk of cause ", x@interest, ") x G(t)"),
+                 paste0("  G: ", cj, " distribution of the time to a cause ", k, " event; no covariates"))
+      ek <- ek[ek$role == "conditional", , drop = FALSE]
       pl <- .typical_risk(x, k, Inf, level)
       if (!is.null(pl)) out <- c(out, sprintf("  Long-run risk at typical covariate values: %s (%s CI %s)", .num(pl$risk, 3L), .pct(level), .ci_text(pl$lower, pl$upper, 3L)))
       if (detail) {
@@ -434,7 +456,7 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
              "  estimation = \"weighted\" or \"constrained\".")
   out <- c(out, .status_lines(x@converged, x@flags))
   if (detail) {
-    links <- unique(vapply(unique(x@index$cause[x@index$role != "conditional"]), function(k) .link_of_cause(x, k), character(1)))
+    links <- unique(vapply(unique(x@index$cause[!x@index$role %in% c("conditional", "share", "share_beta")]), function(k) .link_of_cause(x, k), character(1)))
     out <- c(out, "", "How to read the effects")
     if ("PH" %in% links) out <- c(out, "  sHR > 1: higher cumulative incidence of this cause at every time; its size is not a ratio of risks.")
     if ("PO" %in% links) out <- c(out, "  OR: ratio of the odds F/(1 - F) of having had the event by time t; the same at every time.")

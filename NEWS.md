@@ -1,3 +1,19 @@
+# SurvX (development version)
+
+* `directcif(estimation = "weighted")`: new argument `variance`. The default, `"ipcw"`, is a
+  sandwich variance that includes the effect of estimating the censoring distribution (the exact
+  influence of each subject with the Kaplan-Meier estimate recomputed; the discrete form of the
+  Fine-Gray correction term). `"robust"` gives the previous standard errors (censoring
+  distribution treated as known), `"model"` the inverse information. The correction mostly
+  shrinks the standard errors of the baseline parameters and of the predicted incidences; for
+  the regression coefficients it is usually small. All three matrices are kept in the fit.
+* `directcif(estimation = "constrained")` now takes any number of causes. With K >= 3 the
+  cause of interest keeps the direct model of Shi, Cheng & Jeong (2013) and the remaining
+  long-run risk is shared among the competing causes by a multinomial logit with covariates
+  (`share_` coefficients, odds ratios of one competing cause against the first); the long-term
+  incidences add up to one for every covariate value. `cond` may give one distribution per
+  competing cause. K = 2 is unchanged.
+
 # SurvX 1.0.0
 
 First release on CRAN.

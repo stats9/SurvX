@@ -60,6 +60,7 @@ class SubdistCIFModel : public DirectCIFModel {
         const double atrisk = static_cast<double>(n - a) - de;
         const double Gn = G * (1.0 - dc / atrisk);
         ct.push_back(time[ord[a]]); mass.push_back(G - Gn);
+        kc_.push_back(time[ord[a]]); kR_.push_back(atrisk); kD_.push_back(dc); kG_.push_back(Gn);
         G = Gn;
       }
       a = b;
@@ -76,6 +77,7 @@ class SubdistCIFModel : public DirectCIFModel {
       ct.swap(gt); mass.swap(gm);
     }
     if (G > 1e-14) { ct.push_back(tmax_); mass.push_back(G); }      // mass beyond the last censoring time
+    grid_ = grid > 0 && ct.size() != kc_.size();
     ct_ = ct; mass_ = mass;
     const std::size_t m = ct_.size();
     std::vector<double> suffix(m + 1, 0.0);
@@ -117,6 +119,118 @@ class SubdistCIFModel : public DirectCIFModel {
       e.g.assign(P, 0.0);
       if (!contribution(th, i, e, false)) return false;
       for (std::size_t a = 0; a < P; ++a) for (std::size_t b = 0; b < P; ++b) M(a, b) += e.g[a] * e.g[b];
+    }
+    return true;
+  }
+
+  // sum_i (s_i + psi_i)(s_i + psi_i)': the score of subject i plus the effect of subject i on the
+  // estimated censoring distribution, i.e. the exact derivative of the total score with respect
+  // to a case weight of subject i with the Kaplan-Meier estimate of G recomputed with that
+  // weight (infinitesimal jackknife). With r indexing the censoring times c_r, R_r the number at
+  // risk for censoring and D_r the number censored at c_r, h_r = log(1 - D_r / R_r):
+  //   psi_i = sum_r Q_r dh_r/dv_i,  dh_r/dv_i = 1(i in R_r) D_r / {R_r (R_r - D_r)} - 1(i censored at c_r) / (R_r - D_r),
+  //   Q_r   = sum_{k competing, T_k <= c_r} sum_{r' >= r} {G(c_r') / G(T_k-)} (b_k,r'+1 - b_k,r'),
+  // b_k,r = d log{1 - F(c_r; z_k)} / d theta (b at the point beyond the last censoring time: the
+  // largest observed time, which carries the remaining mass). This is the discrete form of the
+  // Fine & Gray (1999, Sec. 3.2) correction term. Available for the exact censoring
+  // distribution (grid = 0); returns false otherwise or outside the support.
+  bool meat_ipcw(const std::vector<double>& th, Mat& M) const {
+    const std::size_t P = P_;
+    M = Mat(P);
+    M.zero();
+    if (grid_) return false;
+    const std::size_t mc = kc_.size(), mt = ct_.size();         // mt = mc + 1 if the tmax point exists
+    const bool spline = s_.baseline[0] == BASE_SPLINE;
+    const std::size_t o = off_[0], nb = nb_[0];
+    const bool af = s_.alpha_free[0] != 0;
+    const std::size_t ia = o + nb, b0 = o + nb + (af ? 1 : 0), p = s_.p;
+    const double a = alpha_of(th, 0);
+    // quantities at the support points that do not depend on the subject
+    std::vector<D2> U(mt, D2(0.0));
+    std::vector<double> sv(mt, 0.0), zc;
+    if (spline) {
+      zc.assign(mt * nb, 0.0);
+      std::vector<double> dz(nb);
+      for (std::size_t j = 0; j < mt; ++j) {
+        rcs_basis(s_.knots[0], std::log(ct_[j]), &zc[j * nb], dz.data());
+        double v = 0.0;
+        for (std::size_t k = 0; k < nb; ++k) v += th[o + k] * zc[j * nb + k];
+        sv[j] = v;
+      }
+    } else {
+      D2 q[3];
+      std::vector<double> z, dz;
+      locals<D2>(th, 0, 1.0, nullptr, nullptr, q, z, dz);
+      const D2 al = D2::variable(3, a);
+      for (std::size_t j = 0; j < mt; ++j) if (base_u<D2>(s_.baseline[0], ct_[j], q, al, U[j], nullptr) != 0 || !std::isfinite(U[j].v)) return false;
+    }
+    // G(c_r) after the censoring at c_r, r = 0..mc-1
+    std::vector<double> Q(mc * P, 0.0), b(P), bn(P), acc(P);
+    auto grad_logS = [&](std::size_t j, const double* x, double E, double* g) -> bool {
+      std::fill(g, g + P, 0.0);
+      double hd[6];
+      if (spline) {
+        const double w = E * std::exp(sv[j]);
+        if (!(a * w > -1.0) || !std::isfinite(w)) return false;
+        h_derivs(w, a, hd);
+        for (std::size_t k = 0; k < nb; ++k) g[o + k] = -hd[1] * w * zc[j * nb + k];
+        if (af) g[ia] = -hd[3];
+        for (std::size_t r = 0; r < p; ++r) g[b0 + r] = -hd[1] * w * x[r];
+      } else {
+        const D2& u = U[j];
+        const double w = E * u.v;
+        if (!(a * w > -1.0) || !std::isfinite(w)) return false;
+        h_derivs(w, a, hd);
+        for (std::size_t k = 0; k < nb; ++k) g[o + k] = -hd[1] * E * u.g[k];
+        if (af) g[ia] = -(hd[1] * E * u.g[3] + hd[3]);
+        for (std::size_t r = 0; r < p; ++r) g[b0 + r] = -hd[1] * w * x[r];
+      }
+      return true;
+    };
+    for (std::size_t i = 0; i < n_; ++i) {
+      if (kind_[i] != 2) continue;
+      const std::size_t f = static_cast<std::size_t>(std::lower_bound(kc_.begin(), kc_.end(), time_[i]) - kc_.begin());
+      if (f >= mc) continue;
+      const double Gprev = f == 0 ? 1.0 : kG_[f - 1];
+      if (!(Gprev > 0.0)) continue;
+      const double* x = X_ + i * p;
+      const double E = std::exp(eta_of(th, 0, x));
+      // b at the point after the last censoring time (tmax), or zero if G reaches 0
+      if (mt > mc) { if (!grad_logS(mc, x, E, bn.data())) return false; } else std::fill(bn.begin(), bn.end(), 0.0);
+      std::fill(acc.begin(), acc.end(), 0.0);
+      for (std::size_t r = mc; r-- > f;) {
+        if (!grad_logS(r, x, E, b.data())) return false;
+        const double rho = kG_[r] / Gprev;
+        double* Qr = &Q[r * P];
+        for (std::size_t c = 0; c < P; ++c) { acc[c] += rho * (bn[c] - b[c]); Qr[c] += acc[c]; }
+        b.swap(bn);
+      }
+    }
+    // prefix sums of Q_r D_r / {R_r (R_r - D_r)} over the censoring times
+    std::vector<double> pre((mc + 1) * P, 0.0);
+    for (std::size_t r = 0; r < mc; ++r) {
+      const double RD = kR_[r] - kD_[r];
+      const double c1 = RD > 0.0 ? kD_[r] / (kR_[r] * RD) : 0.0;
+      for (std::size_t c = 0; c < P; ++c) pre[(r + 1) * P + c] = pre[r * P + c] + c1 * Q[r * P + c];
+    }
+    Eval e;
+    e.H = Mat(P);
+    prepare(th);
+    std::vector<double> sc(P);
+    for (std::size_t i = 0; i < n_; ++i) {
+      e.ll = 0.0;
+      e.g.assign(P, 0.0);
+      if (!contribution(th, i, e, false)) return false;
+      const std::size_t r = static_cast<std::size_t>(std::lower_bound(kc_.begin(), kc_.end(), time_[i]) - kc_.begin());
+      for (std::size_t c = 0; c < P; ++c) sc[c] = e.g[c] + pre[r * P + c];      // c_r < T_i
+      if (kind_[i] == 0 && r < mc && kc_[r] == time_[i]) {                       // censored at c_r: in R_r and censored
+        const double RD = kR_[r] - kD_[r];
+        if (RD > 0.0) {
+          const double c1 = kD_[r] / (kR_[r] * RD) - 1.0 / RD;
+          for (std::size_t c = 0; c < P; ++c) sc[c] += c1 * Q[r * P + c];
+        }
+      }
+      for (std::size_t aa = 0; aa < P; ++aa) for (std::size_t bb = 0; bb < P; ++bb) M(aa, bb) += sc[aa] * sc[bb];
     }
     return true;
   }
@@ -421,6 +535,8 @@ class SubdistCIFModel : public DirectCIFModel {
   std::vector<std::size_t> first_;        // competing events: first support point >= T_i
   std::vector<double> denom_;             // competing events: G(T_i-)
   std::vector<double> ct_, mass_;         // support and masses of the estimated censoring distribution
+  std::vector<double> kc_, kR_, kD_, kG_; // exact Kaplan-Meier of censoring: times, at risk, censored, G after
+  bool grid_ = false;                     // the support was coarsened
 };
 
 struct SubdistFit {
@@ -660,6 +776,277 @@ inline FitResult constrained_fit(const ConstrainedCIFModel& m, std::size_t n, co
   std::vector<int> role = direct_roles(s);
   role.push_back(0); role.push_back(0);
   return staged_fit(m, init ? *init : constrained_start(n, time, cause, s, m.family()), role, init != nullptr, false, max_iter, tol,
+                    [&s](std::vector<double>& v) { v[base_level_index(s.baseline[0])] -= 0.5; });
+}
+
+// ---------------------------------------------------------------------------
+// 3. Constrained model for K >= 2 causes (extension of Shi, Cheng & Jeong 2013).
+//
+//   F_1(t; z) : direct model with a plateau p_1(z) = F_1(infinity; z) < 1 (directcif.hpp),
+//   F_k(t; z) = {1 - p_1(z)} pi_k(z) G_k(t),   k = 2, ..., K,
+//   pi_k(z)   = exp(l_k) / sum_{j=2..K} exp(l_j),  l_2 = 0,  l_k = gamma_k + delta_k' z (k >= 3),
+//
+// so that sum_k F_k(infinity; z) = 1 for every z: the cause of interest keeps the direct
+// regression model of Shi et al. (effects on its cumulative incidence), and the remaining
+// long-run risk is shared among the competing causes by a multinomial logit, each with its own
+// distribution G_k of the time to the event given that it occurs (no covariates, as in Shi et
+// al.). With K = 2, pi_2 = 1 and the model is that of ConstrainedCIFModel.
+// Parameters: block of cause 1 (DirectSpec), then (a_k, b_k) of G_k for k = 2..K, then
+// (gamma_k, delta_k) for k = 3..K.
+// Likelihood: f_1(t) for cause 1 events; {1 - p_1} pi_k g_k(t) for cause k events;
+// S = 1 - F_1(t) - {1 - p_1} sum_k pi_k G_k(t) for censored observations.
+// ---------------------------------------------------------------------------
+class ConstrainedKModel : public DirectCIFModel {
+ public:
+  // cause: 0 = censored, 1 = modelled directly, 2..K = competing causes; family[k-2] for G_k.
+  ConstrainedKModel(std::size_t n, const double* time, const int* cause, const double* X, const DirectSpec& spec,
+                    int K, const std::vector<int>& family)
+      : DirectCIFModel(n, time, cause, X, spec), K_(K), fam_(family), P1_(spec.nparam()) {
+    PG_ = P1_ + 2 * static_cast<std::size_t>(K_ - 1);
+    PT_ = PG_ + static_cast<std::size_t>(K_ - 2) * (1 + spec.p);
+  }
+  std::size_t nparam() const { return PT_; }
+  int K() const { return K_; }
+  std::size_t gpos(int k) const { return P1_ + 2 * static_cast<std::size_t>(k - 2); }               // a_k, b_k
+  std::size_t lpos(int k) const { return PG_ + static_cast<std::size_t>(k - 3) * (1 + s_.p); }     // gamma_k, delta_k
+  bool feasible_in_range(const std::vector<double>&) const { return true; }
+
+  // shares pi_k, k = 2..K (index k - 2)
+  void shares(const std::vector<double>& th, const double* x, std::vector<double>& pi) const {
+    pi.assign(static_cast<std::size_t>(K_ - 1), 0.0);
+    std::vector<double> l(static_cast<std::size_t>(K_ - 1), 0.0);
+    double mx = 0.0;
+    for (int k = 3; k <= K_; ++k) {
+      const std::size_t o = lpos(k);
+      double v = th[o];
+      for (std::size_t r = 0; r < s_.p; ++r) v += th[o + 1 + r] * x[r];
+      l[k - 2] = v; mx = std::fmax(mx, v);
+    }
+    double sum = 0.0;
+    for (std::size_t j = 0; j < l.size(); ++j) { pi[j] = std::exp(l[j] - mx); sum += pi[j]; }
+    for (double& v : pi) v /= sum;
+  }
+
+  double cifk(const std::vector<double>& th, int k, const double* x, double t) const {
+    if (t <= 0.0) return 0.0;
+    if (k == 1) return cif(th, 0, x, t);
+    const double q = 1.0 - cif(th, 0, x, std::numeric_limits<double>::infinity());
+    std::vector<double> pi;
+    shares(th, x, pi);
+    double G = 1.0;
+    cond_Gg<double>(fam_[k - 2], t, th[gpos(k)], th[gpos(k) + 1], G, nullptr);
+    return q * pi[k - 2] * G;
+  }
+  double cifk_grad(const std::vector<double>& th, int k, const double* x, double t, std::vector<double>& grad) const {
+    grad.assign(PT_, 0.0);
+    if (t <= 0.0) return 0.0;
+    std::vector<double> g1;
+    if (k == 1) {
+      const double F = cif_grad(th, 0, x, t, g1);
+      for (std::size_t j = 0; j < P1_; ++j) grad[j] = g1[j];
+      return F;
+    }
+    const double Finf = cif_grad(th, 0, x, std::numeric_limits<double>::infinity(), g1);
+    const double q = 1.0 - Finf;
+    std::vector<double> pi;
+    shares(th, x, pi);
+    D2 G;
+    const std::size_t o = gpos(k);
+    cond_Gg<D2>(fam_[k - 2], t, D2::variable(0, th[o]), D2::variable(1, th[o + 1]), G, nullptr);
+    const double pk = pi[k - 2];
+    for (std::size_t j = 0; j < P1_; ++j) grad[j] = -g1[j] * pk * G.v;
+    grad[o] = q * pk * G.g[0];
+    grad[o + 1] = q * pk * G.g[1];
+    for (int j = 3; j <= K_; ++j) {                          // d pi_k / d l_j = pi_k (1{k=j} - pi_j)
+      const double dl = q * G.v * pk * ((k == j ? 1.0 : 0.0) - pi[j - 2]);
+      const std::size_t oj = lpos(j);
+      grad[oj] += dl;
+      for (std::size_t r = 0; r < s_.p; ++r) grad[oj + 1 + r] += dl * x[r];
+    }
+    return q * pk * G.v;
+  }
+
+  void eval(const std::vector<double>& th, Eval& out, bool need_hess) const {
+    const std::size_t P = PT_, p = s_.p, Kc = static_cast<std::size_t>(K_ - 1);
+    const double inf = std::numeric_limits<double>::infinity();
+    out.ll = 0.0;
+    out.g.assign(P, 0.0);
+    if (out.H.n != P) out.H = Mat(P);
+    out.H.zero();
+    std::vector<double> z, dz, gS(P), pi, HS(need_hess ? P * P : 0);
+    std::vector<Term> t1;
+    D2 q[3], lf, Ft, Finf;
+    std::vector<D2> G(Kc), logg(Kc);
+    // d l_j / d theta: l_j = gamma_j + delta_j' x  (j = 3..K)
+    auto lidx = [&](int j, std::size_t r) { return lpos(j) + r; };   // r = 0: gamma, r >= 1: delta_{r-1}
+    for (std::size_t i = 0; i < n_; ++i) {
+      const double* x = X_ + i * p;
+      const double t = time_[i];
+      const int c = cause_[i];
+      const D2 al = D2::variable(3, alpha_of(th, 0)), et = D2::variable(4, eta_of(th, 0, x));
+      locals<D2>(th, 0, t, nullptr, nullptr, q, z, dz);
+      make_terms(0, x, z.data(), dz.data(), t1);
+      auto lcoef = [&](std::size_t r) { return r == 0 ? 1.0 : x[r - 1]; };
+      if (c == 1) {
+        if (!direct_Ff<D2>(s_.baseline[0], t, q, al, et, nullptr, &lf) || !std::isfinite(lf.v)) { bad(out); return; }
+        out.ll += lf.v;
+        add_terms(t1, lf, 1.0, out, need_hess, nullptr);
+        continue;
+      }
+      if (c == 0 && !(t > 0.0)) continue;                  // censored at time 0
+      if (!direct_Ff<D2>(s_.baseline[0], inf, q, al, et, &Finf, nullptr)) { bad(out); return; }
+      const double qv = 1.0 - Finf.v;
+      if (!(qv > 0.0)) { bad(out); return; }
+      shares(th, x, pi);
+      if (c >= 2) {                                         // log(1 - p_1) + log pi_c + log g_c(t)
+        const int k = c;
+        const std::size_t o = gpos(k);
+        cond_Gg<D2>(fam_[k - 2], t, D2::variable(0, th[o]), D2::variable(1, th[o + 1]), G[0], &logg[0]);
+        if (!std::isfinite(logg[0].v) || !(pi[k - 2] > 0.0)) { bad(out); return; }
+        const D2 lq = chain(Finf, std::log(qv), -1.0 / qv, -1.0 / (qv * qv));
+        out.ll += lq.v + std::log(pi[k - 2]) + logg[0].v;
+        add_terms(t1, lq, 1.0, out, need_hess, nullptr);
+        out.g[o] += logg[0].g[0]; out.g[o + 1] += logg[0].g[1];
+        if (need_hess) {
+          out.H(o, o) += logg[0].h[0][0]; out.H(o + 1, o) += logg[0].h[1][0]; out.H(o + 1, o + 1) += logg[0].h[1][1];
+        }
+        for (int j = 3; j <= K_; ++j) {                     // d log pi_k / d l_j = 1{k=j} - pi_j
+          const double dj = (k == j ? 1.0 : 0.0) - pi[j - 2];
+          for (std::size_t r = 0; r <= p; ++r) out.g[lidx(j, r)] += dj * lcoef(r);
+          if (!need_hess) continue;
+          for (int m = 3; m <= j; ++m) {                    // d2 / dl_j dl_m = -pi_j (1{j=m} - pi_m)
+            const double hjm = -pi[j - 2] * ((j == m ? 1.0 : 0.0) - pi[m - 2]);
+            for (std::size_t r = 0; r <= p; ++r)
+              for (std::size_t u = 0; u <= p; ++u) {
+                const std::size_t a = lidx(j, r), b = lidx(m, u);
+                if (b <= a) out.H(a, b) += hjm * lcoef(r) * lcoef(u);
+              }
+          }
+        }
+        continue;
+      }
+      // censored: S = 1 - F_1(t) - q M,  M = sum_k pi_k G_k(t)
+      if (!direct_Ff<D2>(s_.baseline[0], t, q, al, et, &Ft, nullptr)) { bad(out); return; }
+      double M = 0.0;
+      for (int k = 2; k <= K_; ++k) {
+        const std::size_t o = gpos(k);
+        cond_Gg<D2>(fam_[k - 2], t, D2::variable(0, th[o]), D2::variable(1, th[o + 1]), G[k - 2], nullptr);
+        M += pi[k - 2] * G[k - 2].v;
+      }
+      const double S = 1.0 - Ft.v - qv * M;
+      if (!(S > 0.0)) { bad(out); return; }
+      out.ll += std::log(S);
+      // gradient of S
+      std::fill(gS.begin(), gS.end(), 0.0);
+      for (const Term& e : t1) gS[e.idx] += (-Ft.g[e.loc] + M * Finf.g[e.loc]) * e.coef;
+      std::vector<double> dMl(Kc, 0.0);                      // dM / dl_j (index j - 2)
+      for (int j = 3; j <= K_; ++j) {
+        double s = 0.0;
+        for (int k = 2; k <= K_; ++k) s += G[k - 2].v * pi[k - 2] * ((k == j ? 1.0 : 0.0) - pi[j - 2]);
+        dMl[j - 2] = s;
+      }
+      for (int k = 2; k <= K_; ++k) {
+        const std::size_t o = gpos(k);
+        gS[o] = -qv * pi[k - 2] * G[k - 2].g[0];
+        gS[o + 1] = -qv * pi[k - 2] * G[k - 2].g[1];
+      }
+      for (int j = 3; j <= K_; ++j) for (std::size_t r = 0; r <= p; ++r) gS[lidx(j, r)] += -qv * dMl[j - 2] * lcoef(r);
+      for (std::size_t a = 0; a < P; ++a) out.g[a] += gS[a] / S;
+      if (!need_hess) continue;
+      std::fill(HS.begin(), HS.end(), 0.0);
+      auto H = [&](std::size_t a, std::size_t b) -> double& { return a >= b ? HS[a * P + b] : HS[b * P + a]; };
+      // block 1: -H_Ft + M H_Finf
+      for (const Term& e : t1) for (const Term& f : t1)
+        if (f.idx <= e.idx) H(e.idx, f.idx) += e.coef * f.coef * (-Ft.h[e.loc][f.loc] + M * Finf.h[e.loc][f.loc]);
+      // dFinf as a parameter vector
+      std::vector<double> dFi(P1_, 0.0);
+      for (const Term& e : t1) dFi[e.idx] += Finf.g[e.loc] * e.coef;
+      for (int k = 2; k <= K_; ++k) {
+        const std::size_t o = gpos(k);
+        const double pk = pi[k - 2];
+        const D2& Gk = G[k - 2];
+        // G_k block: -q pi_k H_Gk
+        H(o, o) += -qv * pk * Gk.h[0][0]; H(o + 1, o) += -qv * pk * Gk.h[1][0]; H(o + 1, o + 1) += -qv * pk * Gk.h[1][1];
+        // block 1 x G_k: dFinf pi_k dG_k
+        for (std::size_t j = 0; j < P1_; ++j) { H(o, j) += dFi[j] * pk * Gk.g[0]; H(o + 1, j) += dFi[j] * pk * Gk.g[1]; }
+        // G_k x l_j: -q dG_k dpi_k/dl_j
+        for (int j = 3; j <= K_; ++j) {
+          const double dp = pk * ((k == j ? 1.0 : 0.0) - pi[j - 2]);
+          for (std::size_t r = 0; r <= p; ++r) {
+            H(lidx(j, r), o) += -qv * Gk.g[0] * dp * lcoef(r);
+            H(lidx(j, r), o + 1) += -qv * Gk.g[1] * dp * lcoef(r);
+          }
+        }
+      }
+      for (int j = 3; j <= K_; ++j) {
+        // block 1 x l_j: dFinf dM/dl_j
+        for (std::size_t r = 0; r <= p; ++r) for (std::size_t a = 0; a < P1_; ++a) H(lidx(j, r), a) += dFi[a] * dMl[j - 2] * lcoef(r);
+        // l_j x l_m: -q sum_k G_k d2 pi_k / dl_j dl_m
+        for (int m = 3; m <= j; ++m) {
+          double s = 0.0;
+          for (int k = 2; k <= K_; ++k) {
+            const double ej = (k == j ? 1.0 : 0.0) - pi[j - 2], em = (k == m ? 1.0 : 0.0) - pi[m - 2];
+            s += G[k - 2].v * pi[k - 2] * (ej * em - pi[j - 2] * ((j == m ? 1.0 : 0.0) - pi[m - 2]));
+          }
+          for (std::size_t r = 0; r <= p; ++r)
+            for (std::size_t u = 0; u <= p; ++u) {
+              const std::size_t a = lidx(j, r), b = lidx(m, u);
+              if (b <= a) H(a, b) += -qv * s * lcoef(r) * lcoef(u);
+              else if (j != m) H(b, a) += -qv * s * lcoef(r) * lcoef(u);
+            }
+        }
+      }
+      // log S: H_S / S - gS gS' / S^2  (lower triangle)
+      for (std::size_t a = 0; a < P; ++a)
+        for (std::size_t b = 0; b <= a; ++b) out.H(a, b) += HS[a * P + b] / S - gS[a] * gS[b] / (S * S);
+    }
+    if (!std::isfinite(out.ll)) { bad(out); return; }
+    if (need_hess)
+      for (std::size_t r = 0; r < P; ++r)
+        for (std::size_t cc = 0; cc <= r; ++cc) { out.H(r, cc) = -out.H(r, cc); out.H(cc, r) = out.H(r, cc); }
+  }
+
+ private:
+  int K_;
+  std::vector<int> fam_;
+  std::size_t P1_, PG_ = 0, PT_ = 0;
+};
+
+inline std::vector<int> constrainedK_roles(const DirectSpec& s, int K) {
+  std::vector<int> role = direct_roles(s);
+  for (int k = 2; k <= K; ++k) { role.push_back(0); role.push_back(0); }
+  for (int k = 3; k <= K; ++k) { role.push_back(0); for (std::size_t r = 0; r < s.p; ++r) role.push_back(1); }
+  return role;
+}
+
+// Start values: cause 1 block and every G_k as in constrained_start (cause k recoded to 2); the
+// logits from the observed shares of the competing events.
+inline std::vector<double> constrainedK_start(std::size_t n, const double* time, const int* cause, const DirectSpec& s,
+                                              int K, const std::vector<int>& family) {
+  std::vector<int> c2(cause, cause + n);
+  for (int& v : c2) if (v >= 2) v = 2;
+  std::vector<double> th = constrained_start(n, time, c2.data(), s, family[0]);
+  th.resize(s.nparam());
+  std::vector<double> cnt(static_cast<std::size_t>(K + 1), 0.0);
+  for (std::size_t i = 0; i < n; ++i) if (cause[i] >= 1 && cause[i] <= K) cnt[static_cast<std::size_t>(cause[i])] += 1.0;
+  for (int k = 2; k <= K; ++k) {
+    std::vector<int> ck(n);
+    for (std::size_t i = 0; i < n; ++i) ck[i] = cause[i] == 1 ? 1 : (cause[i] == k ? 2 : 0);
+    const std::vector<double> tk = constrained_start(n, time, ck.data(), s, family[k - 2]);
+    th.push_back(tk[tk.size() - 2]); th.push_back(tk[tk.size() - 1]);
+  }
+  for (int k = 3; k <= K; ++k) {
+    th.push_back(std::log(std::fmax(cnt[k], 0.5) / std::fmax(cnt[2], 0.5)));
+    for (std::size_t r = 0; r < s.p; ++r) th.push_back(0.0);
+  }
+  return th;
+}
+
+inline FitResult constrainedK_fit(const ConstrainedKModel& m, std::size_t n, const double* time, const int* cause,
+                                  const std::vector<int>& family, const std::vector<double>* init, int max_iter, double tol) {
+  const DirectSpec& s = m.spec();
+  return staged_fit(m, init ? *init : constrainedK_start(n, time, cause, s, m.K(), family), constrainedK_roles(s, m.K()),
+                    init != nullptr, false, max_iter, tol,
                     [&s](std::vector<double>& v) { v[base_level_index(s.baseline[0])] -= 0.5; });
 }
 

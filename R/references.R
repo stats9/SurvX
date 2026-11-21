@@ -110,7 +110,8 @@
   parsurv = c("kalbfleisch2002", "lawless2003", "klein2003", "royston_parmar2002", "friedman1982", "prentice1974",
               "cox2007", "casella2002", "akaike1974", "schwarz1978", "levenberg1944", "marquardt1963"),
   directcif = c("jeong_fine2006", "jeong_fine2007", "dabrowska1988", "casella2002", "akaike1974",
-                "levenberg1944", "marquardt1963"),
+                "levenberg1944", "marquardt1963", "fine_gray1999", "geskus2011", "lambert2017", "shi2013",
+                "larson1985"),
   cure = c("boag1949", "berkson1952", "farewell1982", "yakovlev1996", "chen1999", "lambert2007", "maller1996", "amico2018",
            "kalbfleisch2002", "casella2002"),
   residuals = c("cox_snell1968", "schoenfeld1982", "therneau1990", "grambsch1994"),
@@ -155,7 +156,7 @@
     k <- switch(x@estimation,
                 joint = c("jeong_fine2006", "jeong_fine2007"),
                 weighted = c("jeong_fine2007", "fine_gray1999", "geskus2011", "lambert2017", "white1982"),
-                constrained = c("shi2013", "cheng2009"))
+                constrained = c("shi2013", "cheng2009", if (x@K > 2L) "larson1985"))
     b <- unique(x@baseline)
     k <- c(k, if (any(b == "gompertz3")) "haile2016", if (any(b == "logistic3")) "cheng2009",
            if (any(b == "spline")) "royston_parmar2002", if (any(startsWith(b, "mix_"))) "larson1985",

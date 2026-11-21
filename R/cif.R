@@ -82,7 +82,8 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
   k <- if (is.null(cause)) fit@interest else cause
   kn <- if (fit@baseline[1L] == "spline" && k == fit@interest) fit@knots[[1L]] else NULL
   .directcif_core(fit@model_call, f, fit@baseline[1L], .link_arg(fit, 1L), est, as.integer(k),
-                  if (is.na(fit@cond)) "logistic" else fit@cond, 3L, kn, FALSE, 0L, NULL, 500L, 1e-10)
+                  if (all(is.na(fit@cond))) "logistic" else fit@cond, 3L, kn, FALSE, 0L, NULL, 500L, 1e-10,
+                  variance = fit@diagnostics$variance %||% "ipcw")
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -121,7 +122,12 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
     if (is.null(rows)) {                               # average over the subjects
       Xn <- f@X; nn <- nrow(Xn); nt <- length(times); p <- ncol(Xn)
       v <- if (usevar) as.double(f@vcov) else double(1)
-      r <- if (f@estimation == "constrained")
+      r <- if (f@estimation == "constrained" && f@K > 2L)
+        .C("SX_constrainedK_predict", as.integer(p), f@K, f@alpha_free, as.double(f@alpha_value), f@base_code,
+           as.integer(unname(.cond_codes[f@cond])), as.double(f@coefficients), as.integer(usevar), v,
+           .constrained_index(f, kk), 1L, as.integer(nn), .rm(Xn), as.integer(nt), as.double(times),
+           cif = double(nt), se = double(nt), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+      else if (f@estimation == "constrained")
         .C("SX_constrained_predict_mean", as.integer(p), f@alpha_free, as.double(f@alpha_value), f@base_code,
            as.integer(.cond_codes[[f@cond]]), as.double(f@coefficients), as.integer(usevar), v,
            if (kk == f@interest) 1L else 2L, as.integer(nn), .rm(Xn), as.integer(nt), as.double(times),
