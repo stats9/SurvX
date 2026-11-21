@@ -744,12 +744,15 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
     e <- u$effects[u$effects$column == col, , drop = FALSE]
     cv <- u$curve[u$curve$column == col, , drop = FALSE]
     first <- e[1L, ]; last <- e[nrow(e), ]
-    shape <- {
-      s <- sign(cv$log_hr); cross <- which(diff(s) != 0)
-      if (length(cross)) paste0("changes direction near t = ", format(signif(cv$time[cross[1L] + 1L], 2L)))
+    clear <- function(r) r$lower > 1 || r$upper < 1          # interval excludes 1
+    shape <- if (sign(first$log_hr) != sign(last$log_hr) && clear(first) && clear(last)) {
+      inr <- cv[cv$time >= first$time & cv$time <= last$time, , drop = FALSE]
+      cross <- which(diff(sign(inr$log_hr)) != 0)
+      paste0("changes direction (from ", if (first$log_hr > 0) "above" else "below", " 1 to ", if (last$log_hr > 0) "above" else "below",
+             " 1)", if (length(cross)) paste0(" near t = ", format(signif(inr$time[cross[1L] + 1L], 2L))) else "")
+    } else if (abs(last$log_hr - first$log_hr) < 0.05) "hardly changes between these times"
       else if (abs(last$log_hr) < abs(first$log_hr)) "moves towards 1 (the effect weakens)"
       else "moves away from 1 (the effect strengthens)"
-    }
     out <- c(out, paste0("- ", .te_pretty(x, col), " (", m$basis$label, "): ", rn, " ", .num(first$hr, 2L), " (", .ci_text(first$lower, first$upper),
                          ") at t = ", format(first$time), ", ", .num(last$hr, 2L), " (", .ci_text(last$lower, last$upper), ") at t = ",
                          format(last$time), "; the ", rn, " ", shape, "."))
@@ -813,8 +816,18 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
       bt <- x@bootstrap[[match(u$label, names(x@units))]]
       if (!is.null(bt$freq)) {
         fq <- bt$freq[bt$freq$term %in% u$screening$term, , drop = FALSE]
+        fq <- fq[order(match(fq$term, u$screening$term), -fq$share), , drop = FALSE]
         ft <- data.frame(term = .te_pretty(x, fq$term), form = fq$form, `chosen in` = paste0(round(100 * fq$share), "%"), check.names = FALSE)
         out <- c(out, "", paste0("Stability of the choice (", bt$ok, " of ", bt$B, " bootstrap samples)"), .table_lines(ft))
+        top <- tapply(fq$share, fq$term, max)
+        tvs <- names(u$selected)[u$selected != "constant"]
+        unst <- intersect(names(top)[top < 0.5], tvs)
+        cst <- vapply(tvs, function(tm) sum(fq$share[fq$term == tm & fq$form != "constant"]), numeric(1))
+        if (length(tvs)) out <- c(out, paste0("  A time-varying effect was found in ", paste0(round(100 * cst), "%", collapse = ", "),
+                                              " of the samples for ", paste(.te_pretty(x, tvs), collapse = ", "), "."))
+        if (length(unst)) out <- c(out, paste0("  The form is not well determined for ", paste(.te_pretty(x, unst), collapse = ", "),
+                                               " (no form chosen in half of the samples): report the hazard ratios at a few times, ",
+                                               "with the bootstrap intervals, rather than the form."))
       } else out <- c(out, "", paste0("Bootstrap: only ", bt$ok, " of ", bt$B, " samples could be analysed; no stability results"))
     }
     if (length(u$notes)) out <- c(out, "", paste0("Note: ", u$notes))
@@ -897,11 +910,10 @@ S7::method(plot, TimeEffects) <- function(x, term = NULL, cause = NULL, residual
       pts <- list(t = rt[keep], y = ry[keep])
       if (length(pts$t) > 1000L) { s <- seq(1L, length(pts$t), length.out = 1000L); pts <- list(t = pts$t[s], y = pts$y[s]) }
     }
-    yl <- range(c(lo, hi), na.rm = TRUE)
-    if (!is.null(pts)) {
-      q <- stats::quantile(pts$y, c(0.05, 0.95), names = FALSE)
-      yl <- range(c(yl, if (scale == "ratio") exp(q) else q))
-    }
+    # the range of the curve and its band, widened by half on the log scale; residuals outside it are clipped
+    lr <- range(log(c(cv$lower, cv$upper, exp(u$constant$coefficients[[cn]]))), na.rm = TRUE)
+    lr <- lr + c(-0.5, 0.5) * max(diff(lr), 0.1)
+    yl <- if (scale == "ratio") exp(lr) else lr
     graphics::plot(cv$time, y, type = "n", ylim = yl, log = if (scale == "ratio") "y" else "", xlab = "Time",
                    ylab = if (scale == "ratio") rn else paste0("log ", rn), ...)
     if (!is.null(pts)) graphics::points(pts$t, if (scale == "ratio") exp(pts$y) else pts$y, pch = 16, cex = 0.4, col = "grey75")
@@ -1042,9 +1054,10 @@ S7::method(report, TimeEffects) <- function(x, file = "time_effects_report.html"
             "<h2>Tables</h2>", tables,
             if (length(figs)) c("<h2>Figures</h2>", "<p>Solid line and band: the chosen form with its pointwise confidence band; dashed: the constant (proportional hazards) fit; grey points: scaled Schoenfeld residuals.</p>", figs),
             "<h2>Methods</h2>", methods,
-            "<div class='note'><p><b>Cautions.</b> The forms were chosen from the same data, so the model-based intervals do not include that choice",
-            if (is.null(x@bootstrap)) "; rerun with <code>bootstrap = 200</code> for intervals and a stability check that do." else ".",
-            " A non-significant test is not evidence of proportional hazards when there are few events.</p></div>",
+            paste0("<div class='note'><p><b>Cautions.</b> The forms were chosen from the same data, so the model-based intervals do not include that choice",
+                   if (is.null(x@bootstrap)) "; rerun with <code>bootstrap = 200</code> for intervals and a stability check that do." else
+                     "; the bootstrap intervals and selection frequencies do.",
+                   " A non-significant test is not evidence of proportional hazards when there are few events.</p></div>"),
             "<h2>Code</h2>", paste0("<pre>", esc(code), "</pre>"),
             "<h2>References</h2>", paste0("<p>", esc(refs), "</p>"),
             "</body></html>")

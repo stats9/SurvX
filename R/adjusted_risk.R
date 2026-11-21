@@ -489,11 +489,11 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
   r <- x@risk[x@risk$method == m1 & x@risk$time == tl, , drop = FALSE]
   cc <- x@contrast[x@contrast$method == m1 & x@contrast$time == tl, , drop = FALSE]
   out <- c(out, "Reading:",
-           paste0("- At t = ", format(tl), ", had everyone received ", r$level, ", the ", if (x@kind == "single") "risk" else "cumulative incidence",
-                  " would have been ", .num(100 * r$risk, 1L), "%", collapse = NULL))
+           paste0("- At t = ", format(tl), ", had everyone had ", x@treatment, " = ", r$level, ", the ",
+                  if (x@kind == "single") "risk" else "cumulative incidence", " would have been ", .num(100 * r$risk, 1L), "%.", collapse = NULL))
   for (i in seq_len(nrow(cc))) {
     sig <- if (x@B > 0L && is.finite(cc$lower[i])) {
-      if (cc$lower[i] > 0 || cc$upper[i] < 0) " (the interval excludes no difference)" else " (the interval includes no difference)"
+      if (cc$lower[i] > 0 || cc$upper[i] < 0) "; the interval excludes 0" else "; the interval includes 0, so no difference is shown"
     } else ""
     out <- c(out, paste0("- ", cc$level[i], " vs ", cc$reference[i], ": ", if (cc$difference[i] >= 0) "+" else "",
                          .num(100 * cc$difference[i], 1L), " percentage points", if (x@B > 0L) paste0(" (", lv, " CI ",
@@ -502,9 +502,12 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
   if (identical(x@method, "both")) {
     g <- x@risk[x@risk$method == "gformula", ]; w <- x@risk[x@risk$method == "ipw", ]
     dmax <- max(abs(g$risk - w$risk[match(paste(g$level, g$time), paste(w$level, w$time))]), na.rm = TRUE)
-    out <- c(out, paste0("- The two methods differ by at most ", .num(100 * dmax, 1L), " percentage points",
-                         if (dmax < 0.02) ": the conclusion does not hinge on the outcome or the treatment model."
-                         else ": they rely on different models (outcome vs treatment); a large difference suggests that one is misspecified."))
+    noadj <- identical(attr(stats::terms(x@ps_formula), "term.labels"), character(0))
+    out <- c(out, paste0("- The two methods differ by at most ", .num(100 * dmax, 1L), " percentage points: ",
+                         if (dmax < 0.02) "they agree, so the conclusion does not hinge on the outcome or the treatment model."
+                         else if (dmax < 0.05) "they agree reasonably; the methods rest on different models (outcome vs treatment)."
+                         else "a notable difference; the methods rest on different models, so check both (ph_test(), time_effects(), balance)."),
+             if (noadj) "- There are no other covariates, so IPW is the unadjusted Kaplan-Meier / Aalen-Johansen estimate by group; a difference from the g-formula reflects the fit of the outcome model (for example proportional hazards).")
   }
   if (!is.null(x@ps)) {
     wt <- x@ps$weights
