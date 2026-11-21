@@ -77,11 +77,11 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
   if (est == "joint") {
     kn <- if (any(fit@baseline == "spline")) fit@knots else NULL
     links <- lapply(seq_len(fit@K), function(k) .link_arg(fit, k))
-    return(.directcif_core(fit@call, f, fit@baseline, links, "joint", 1L, "logistic", 3L, kn, fit@constraint, 0L, NULL, 500L, 1e-10))
+    return(.directcif_core(fit@model_call, f, fit@baseline, links, "joint", 1L, "logistic", 3L, kn, fit@constraint, 0L, NULL, 500L, 1e-10))
   }
   k <- if (is.null(cause)) fit@interest else cause
   kn <- if (fit@baseline[1L] == "spline" && k == fit@interest) fit@knots[[1L]] else NULL
-  .directcif_core(fit@call, f, fit@baseline[1L], .link_arg(fit, 1L), est, as.integer(k),
+  .directcif_core(fit@model_call, f, fit@baseline[1L], .link_arg(fit, 1L), est, as.integer(k),
                   if (is.na(fit@cond)) "logistic" else fit@cond, 3L, kn, FALSE, 0L, NULL, 500L, 1e-10)
 }
 
@@ -294,7 +294,7 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
 .refit_parcsc <- function(fit) {
   f <- list(time = fit@time, status = fit@status, X = matrix(0, fit@n, 0L), terms = stats::terms(stats::as.formula("~ 1")),
             xlevels = list(), contrasts = NULL, entry = fit@entry)
-  .pcsc(fit@call, f, fit@dist, fit@scale, 200L, 1e-10, kn_list = lapply(fit@models, function(m) m@knots))
+  .pcsc(fit@model_call, f, fit@dist, fit@scale, 200L, 1e-10, kn_list = lapply(fit@models, function(m) m@knots))
 }
 
 .aj_frame <- function(time, status, level) {

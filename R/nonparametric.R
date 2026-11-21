@@ -257,7 +257,7 @@ km <- function(formula, data, level = 0.95) {
                                        stringsAsFactors = FALSE))
   }
   test <- if (nlevels(f$group) > 1L) logrank_test(f$time, f$status, f$group) else NULL
-  KMFit(call = cl, curves = curves, counts = counts, test = test, level = level, time = f$time, status = f$status, group = f$group)
+  KMFit(model_call = cl, curves = curves, counts = counts, test = test, level = level, time = f$time, status = f$status, group = f$group)
 }
 
 #' Aalen-Johansen estimate of the cumulative incidence with competing risks
@@ -393,7 +393,7 @@ aj <- function(formula, data, level = 0.95) {
       else data.frame(cause = j, statistic = g$statistic, df = g$df, p.value = g$p.value)
     }))
   }
-  AJFit(call = cl, curves = curves, K = as.integer(K), counts = counts, tests = tests, level = level,
+  AJFit(model_call = cl, curves = curves, K = as.integer(K), counts = counts, tests = tests, level = level,
         time = f$time, status = f$status, group = f$group)
 }
 

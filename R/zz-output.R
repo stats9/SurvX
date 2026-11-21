@@ -465,7 +465,7 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
 
 .summary_fit <- function(object, level = 0.95, ...) {
   r <- .render(object, level, TRUE)
-  FitSummary(call = object@call, coefficients = estimates(object, level = level), tables = r$tables, text = r$text)
+  FitSummary(model_call = object@model_call, coefficients = estimates(object, level = level), tables = r$tables, text = r$text)
 }
 
 S7::method(print, SurvXFit) <- .print_fit
@@ -529,7 +529,7 @@ S7::method(summary, KMFit) <- function(object, times = NULL, ...) {
   }
   if (!is.null(object@test))
     text <- c(text, "", sprintf("Log-rank test: chi-square = %.2f on %d df, p = %s", object@test$statistic, object@test$df, .pval(object@test$p.value)))
-  FitSummary(call = object@call, coefficients = object@counts, tables = tabs, text = text)
+  FitSummary(model_call = object@model_call, coefficients = object@counts, tables = tabs, text = text)
 }
 
 S7::method(as.data.frame, KMFit) <- function(x, ...) {
@@ -581,7 +581,7 @@ S7::method(summary, AJFit) <- function(object, times = NULL, ...) {
     names(tt) <- c("cause", "chi-square", "df", "p")
     text <- c(text, "", "Gray's test for equal cumulative incidence across groups", .table_lines(tt))
   }
-  FitSummary(call = object@call, coefficients = object@counts, tables = tabs, text = text)
+  FitSummary(model_call = object@model_call, coefficients = object@counts, tables = tabs, text = text)
 }
 
 S7::method(as.data.frame, AJFit) <- function(x, ...) {
@@ -747,8 +747,8 @@ S7::method(plot, CoxFit) <- function(x, newdata = NULL, times = NULL, xlab = "Ti
 # ----------------------------------------------------------------------------------------------
 # further S3 generics, so that update(), model.matrix() and friends work as for lm() or coxph()
 # ----------------------------------------------------------------------------------------------
-S7::method(getCall, SurvXFit) <- function(x, ...) x@call
-S7::method(getCall, CSCFit) <- function(x, ...) x@call
+S7::method(getCall, SurvXFit) <- function(x, ...) x@model_call
+S7::method(getCall, CSCFit) <- function(x, ...) x@model_call
 S7::method(terms, SurvXFit) <- function(x, ...) x@terms
 S7::method(terms, CSCFit) <- function(x, ...) x@terms
 S7::method(model.matrix, SurvXFit) <- function(object, ...) object@X

@@ -287,7 +287,7 @@ directcif <- function(formula, data, baseline = "gompertz", link = "PH",
   .sx_rc(r$rc, "directcif")
   dg <- list(n_exceed_range = r$diag[1L], max_sum_range = r$diag[2L], n_exceed_inf = r$diag[3L],
              max_sum_inf = r$diag[4L], first_crossing_time = r$diag[5L], grad_maxabs = r$info_d[3L])
-  DirectCIFFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
+  DirectCIFFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
                coefficients = stats::setNames(r$theta, nm), vcov = matrix(r$var, P, P, dimnames = list(nm, nm)),
                loglik = r$info_d[2L], n = n, nevent = as.integer(sum(f$status > 0L)), iterations = r$info_i[1L],
                converged = as.logical(r$info_i[2L]), flags = r$info_i[3L], time = f$time, status = f$status, X = f$X,
@@ -356,7 +356,7 @@ directcif <- function(formula, data, baseline = "gompertz", link = "PH",
   }
   dg <- list(n_exceed_range = 0, max_sum_range = NA_real_, n_exceed_inf = 0, max_sum_inf = NA_real_,
              first_crossing_time = NA_real_, grad_maxabs = r$info_d[3L], n_support = nsup)
-  DirectCIFFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
+  DirectCIFFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
                coefficients = stats::setNames(r$theta, nm), vcov = matrix(r$var, P, P, dimnames = list(nm, nm)),
                loglik = r$info_d[2L], n = n, nevent = nev, iterations = r$info_i[1L],
                converged = as.logical(r$info_i[2L]), flags = r$info_i[3L], time = f$time, status = f$status, X = f$X,

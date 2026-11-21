@@ -3,7 +3,7 @@
 #' @noRd
 SurvXFit <- S7::new_class("SurvXFit", package = "SurvX", abstract = TRUE,
   properties = list(
-    call = S7::class_any,
+    model_call = S7::class_any,
     terms = S7::class_any,
     xlevels = S7::class_any,
     contrasts = S7::class_any,
@@ -68,7 +68,7 @@ DirectCIFFit <- S7::new_class("DirectCIFFit", parent = SurvXFit, package = "Surv
 
 CSCFit <- S7::new_class("CSCFit", package = "SurvX",
   properties = list(
-    call = S7::class_any,
+    model_call = S7::class_any,
     terms = S7::class_any,
     xlevels = S7::class_any,
     contrasts = S7::class_any,
@@ -90,7 +90,7 @@ CSCFit <- S7::new_class("CSCFit", package = "SurvX",
 
 KMFit <- S7::new_class("KMFit", package = "SurvX",
   properties = list(
-    call = S7::class_any,
+    model_call = S7::class_any,
     curves = S7::class_list,
     counts = S7::class_any,
     test = S7::class_any,
@@ -102,7 +102,7 @@ KMFit <- S7::new_class("KMFit", package = "SurvX",
 
 AJFit <- S7::new_class("AJFit", package = "SurvX",
   properties = list(
-    call = S7::class_any,
+    model_call = S7::class_any,
     curves = S7::class_list,
     K = S7::class_integer,
     counts = S7::class_any,
@@ -116,7 +116,7 @@ AJFit <- S7::new_class("AJFit", package = "SurvX",
 # what summary() returns: a table that can be used in further computations and the text shown by print()
 FitSummary <- S7::new_class("FitSummary", package = "SurvX",
   properties = list(
-    call = S7::class_any,
+    model_call = S7::class_any,
     coefficients = S7::class_any,
     tables = S7::class_list,
     text = S7::class_character
@@ -124,7 +124,7 @@ FitSummary <- S7::new_class("FitSummary", package = "SurvX",
 
 ModelComparison <- S7::new_class("ModelComparison", package = "SurvX",
   properties = list(
-    call = S7::class_any,
+    model_call = S7::class_any,
     table = S7::class_any,
     fit = S7::class_any,
     folds = S7::class_integer,
@@ -147,7 +147,7 @@ ParSurvFit <- S7::new_class("ParSurvFit", parent = SurvXFit, package = "SurvX",
 # parametric cause-specific hazards: one ParSurvFit per cause
 ParCSCFit <- S7::new_class("ParCSCFit", package = "SurvX",
   properties = list(
-    call = S7::class_any,
+    model_call = S7::class_any,
     terms = S7::class_any,
     xlevels = S7::class_any,
     contrasts = S7::class_any,
@@ -165,7 +165,7 @@ ParCSCFit <- S7::new_class("ParCSCFit", package = "SurvX",
 # non-parametric hazard: Nelson-Aalen cumulative hazard and kernel-smoothed hazard by group and cause
 HazardFit <- S7::new_class("HazardFit", package = "SurvX",
   properties = list(
-    call = S7::class_any,
+    model_call = S7::class_any,
     cumhaz = S7::class_list,
     hazard = S7::class_list,
     bandwidth = S7::class_any,

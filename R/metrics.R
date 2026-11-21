@@ -270,7 +270,7 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
                                    flags = if (ok) 0 else 1, folds_not_converged = res$failed[m]))
     }
   }
-  ModelComparison(call = cl, table = tab, fit = fit, folds = as.integer(folds), cause = as.integer(cause))
+  ModelComparison(model_call = cl, table = tab, fit = fit, folds = as.integer(folds), cause = as.integer(cause))
 }
 
 #' Cross-validated comparison of any set of models
@@ -359,7 +359,7 @@ cv_compare <- function(formula, data, models, times, cause = 1L, folds = 5L, see
                   else if (is_par) ft@converged else NA,
       folds_failed = res$failed[m]))
   }
-  ModelComparison(call = cl, table = tab, fit = fit, folds = as.integer(folds), cause = as.integer(cause))
+  ModelComparison(model_call = cl, table = tab, fit = fit, folds = as.integer(folds), cause = as.integer(cause))
 }
 
 # Apparent and K-fold cross-validated measures of a named list of fitting functions; fold: the fold of

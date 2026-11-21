@@ -223,7 +223,7 @@ fg <- function(formula, data, cause = 1L, variance = c("robust", "model", "boots
     .sx_rc(r$rc, "fg")
     nm <- colnames(f$X)
     vm <- matrix(r$var_model, p, p, dimnames = list(nm, nm)); vr <- matrix(r$var_robust, p, p, dimnames = list(nm, nm))
-    FineGrayFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
+    FineGrayFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
                 coefficients = stats::setNames(r$beta, nm), vcov = if (variance == "model") vm else vr,
                 loglik = r$info_d[2L], n = n, nevent = r$info_i[4L], iterations = r$info_i[1L],
                 converged = as.logical(r$info_i[2L]), flags = r$info_i[3L],
@@ -317,7 +317,7 @@ fg <- function(formula, data, cause = 1L, variance = c("robust", "model", "boots
   r <- .cox_fit(e$stop, e$status, Xe, e$w, "breslow", max_iter, tol, e$start, NULL)
   vm <- r$vcov
   vr <- .cox_robust(r, e$stop, e$status, Xe, e$w, "breslow", e$start, NULL, e$id)
-  FineGrayFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
+  FineGrayFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
               coefficients = r$coefficients, vcov = if (variance == "model") vm else vr,
               loglik = r$loglik, n = length(f$time), nevent = as.integer(sum(f$status == cause)), iterations = r$iterations,
               converged = r$converged, flags = r$flags,
@@ -547,7 +547,7 @@ csc <- function(formula, data, ties = c("efron", "breslow"), product_limit = TRU
     m
   })
   names(models) <- paste0("cause", seq_len(K))
-  CSCFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts, models = models, K = as.integer(K),
+  CSCFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts, models = models, K = as.integer(K),
          ties = ties, product_limit = isTRUE(product_limit), n = length(f$time), time = f$time, status = f$status, X = f$X,
          entry = f$entry, strata = f$strata, strata_levels = f$strata_levels, strata_vars = f$strata_vars,
          cluster = f$cluster, robust = robust)

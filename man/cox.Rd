@@ -184,7 +184,7 @@ and the 95\% intervals covered 93.4 to 96.1\%. A fit on \eqn{n = 10000} takes ab
 An S7 object of class \code{CoxFit}. Its main slots (read with \code{@}): \code{coefficients},
 \code{vcov} (robust when requested), \code{vcov_model}, \code{loglik}, \code{loglik_null} (no
 covariates), \code{n} (rows used), \code{nevent}, \code{iterations}, \code{converged},
-\code{ties}, \code{robust}, \code{strata_levels}, \code{call}.
+\code{ties}, \code{robust}, \code{strata_levels}, \code{model_call} (also \code{getCall(fit)}).
 
 Methods:
 \tabular{ll}{

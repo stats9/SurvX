@@ -25,6 +25,10 @@
   assumptions and how to check them, messages and their remedies, the agreement with reference
   packages, and references grouped by what they are used for.
 * New help page `?SurvX` with a table from research questions to functions.
+* Compatibility with S7 1.0.0: the property holding the call of a fit is now `model_call` (S7 1.0.0
+  does not keep a property named `call`, which broke `update()` and `getCall()`), and the package
+  calls `S7_on_build()` when it is built, as S7 1.0.0 requires for methods of generics from other
+  packages. `getCall(fit)` and `update(fit, ...)` work as before.
 
 # SurvX 0.9.1
 

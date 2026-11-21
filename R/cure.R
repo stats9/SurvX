@@ -191,7 +191,7 @@ cure <- function(formula, data, cure = NULL, baseline = "weibull", scale = NULL,
   Xc <- Xc[, colnames(Xc) != "(Intercept)", drop = FALSE]
   kn <- .par_knots(dist, f$time, f$status, df, knots, cuts)
   r <- .cure_fit(f$time, f$status, f$entry, f$X, Xc, dist, scale, kn, type == "mixture", init, max_iter, tol)
-  CureFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
+  CureFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
           coefficients = r$theta, vcov = r$var, loglik = r$loglik, n = length(f$time),
           nevent = as.integer(r$nevent), iterations = as.integer(r$iterations), converged = isTRUE(r$converged),
           flags = as.integer(r$flags), time = f$time, status = f$status, X = f$X,
@@ -278,7 +278,7 @@ S7::method(residuals, CureFit) <- function(object, type = c("martingale", "devia
 # the latency part as a parametric survival fit (for the baseline table)
 .cure_latency <- function(x) {
   L <- x@n_latency; i <- seq_len(L)
-  ParSurvFit(call = x@call, terms = x@terms, xlevels = x@xlevels, contrasts = x@contrasts,
+  ParSurvFit(model_call = x@model_call, terms = x@terms, xlevels = x@xlevels, contrasts = x@contrasts,
              coefficients = x@coefficients[i], vcov = x@vcov[i, i, drop = FALSE], loglik = x@loglik, n = x@n,
              nevent = x@nevent, iterations = x@iterations, converged = x@converged, flags = x@flags,
              time = x@time, status = x@status, X = x@X, dist = x@dist, scale = x@scale, dist_code = x@dist_code,
@@ -354,7 +354,7 @@ S7::method(print, CureFit) <- function(x, level = 0.95, ...) {
 }
 
 S7::method(summary, CureFit) <- function(object, level = 0.95, ...) {
-  FitSummary(call = object@call, coefficients = estimates(object, level = level), tables = list(),
+  FitSummary(model_call = object@model_call, coefficients = estimates(object, level = level), tables = list(),
              text = c(.render_cure(object, level, TRUE), "", .method_lines(.method_keys(object))))
 }
 

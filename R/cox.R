@@ -171,7 +171,7 @@
 #' An S7 object of class \code{CoxFit}. Its main slots (read with \code{@}): \code{coefficients},
 #' \code{vcov} (robust when requested), \code{vcov_model}, \code{loglik}, \code{loglik_null} (no
 #' covariates), \code{n} (rows used), \code{nevent}, \code{iterations}, \code{converged},
-#' \code{ties}, \code{robust}, \code{strata_levels}, \code{call}.
+#' \code{ties}, \code{robust}, \code{strata_levels}, \code{model_call} (also \code{getCall(fit)}).
 #'
 #' Methods:
 #' \tabular{ll}{
@@ -300,7 +300,7 @@ cox <- function(formula, data, ties = c("efron", "breslow"), weights = NULL, rob
     vm <- r$vcov
     if (robust) r$vcov <- .cox_robust(r, f$time, f$status, f$X, weights, ties, f$entry, f$strata, f$cluster)
   }
-  CoxFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
+  CoxFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
          coefficients = r$coefficients, vcov = r$vcov, loglik = r$loglik, n = n, nevent = r$nevent,
          iterations = r$iterations, converged = r$converged, flags = r$flags,
          time = f$time, status = f$status, X = f$X, ties = ties, weights = weights, loglik_null = r$loglik_null,

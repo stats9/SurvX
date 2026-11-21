@@ -99,7 +99,7 @@
   r <- .par_fit(f$time, status01, f$entry, f$X, dist, scale, init, max_iter, tol, kn)
   ln <- if (ncol(f$X)) tryCatch(.par_fit(f$time, status01, f$entry, f$X[, 0L, drop = FALSE], dist, scale, NULL, max_iter, tol, kn)$loglik,
                                 error = function(e) NA_real_) else r$loglik
-  ParSurvFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
+  ParSurvFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
              coefficients = r$theta, vcov = r$var, loglik = r$loglik, n = length(f$time),
              nevent = as.integer(r$nevent), iterations = as.integer(r$iterations), converged = isTRUE(r$converged),
              flags = as.integer(r$flags), time = f$time, status = as.integer(status01), X = f$X,
@@ -362,7 +362,7 @@ parsurv <- function(formula, data, baseline = "weibull", scale = NULL, df = 3L, 
                            df, knots, cuts, if (is.null(kn_list)) NULL else kn_list[[k]]),
              error = function(e) stop("cause ", k, ": ", conditionMessage(e), call. = FALSE)))
   names(models) <- paste0("cause", seq_len(K))
-  ParCSCFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts, models = models,
+  ParCSCFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts, models = models,
             K = as.integer(K), dist = unname(dist), scale = unname(sc), n = length(f$time), time = f$time,
             status = f$status, entry = f$entry, X = f$X)
 }
@@ -463,7 +463,7 @@ S7::method(logLik, ParCSCFit) <- function(object, ...) {
 }
 S7::method(confint, ParCSCFit) <- function(object, parm, level = 0.95, ...) lapply(object@models, function(m) confint(m, level = level))
 S7::method(formula, ParCSCFit) <- function(x, ...) stats::formula(x@terms)
-S7::method(getCall, ParCSCFit) <- function(x, ...) x@call
+S7::method(getCall, ParCSCFit) <- function(x, ...) x@model_call
 S7::method(terms, ParCSCFit) <- function(x, ...) x@terms
 S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
 
@@ -635,7 +635,7 @@ S7::method(print, ParCSCFit) <- function(x, level = 0.95, ...) {
   invisible(x)
 }
 S7::method(summary, ParCSCFit) <- function(object, level = 0.95, ...) {
-  FitSummary(call = object@call, coefficients = estimates(object, level = level), tables = list(),
+  FitSummary(model_call = object@model_call, coefficients = estimates(object, level = level), tables = list(),
              text = c(.render_parcsc(object, level, TRUE), "", .method_lines(.method_keys(object))))
 }
 
@@ -781,7 +781,7 @@ hazard_np <- function(formula, data, smooth = TRUE, bw = NULL, boundary = TRUE, 
       bws <- rbind(bws, data.frame(group = g, cause = k, bandwidth = kf$bw, events = sum(inc$d)))
     }
   }
-  HazardFit(call = cl, cumhaz = cum, hazard = haz, bandwidth = bws, K = as.integer(K), level = level,
+  HazardFit(model_call = cl, cumhaz = cum, hazard = haz, bandwidth = bws, K = as.integer(K), level = level,
             time = f$time, status = f$status, group = f$group)
 }
 

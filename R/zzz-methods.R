@@ -22,3 +22,7 @@ S7::method(estimates, CureFit) <- function(object, level = 0.95, ...) {
                ifelse(role == "cure", "log odds ratio of being cured", ifelse(role == "cure_baseline", "logit of the cured fraction", nm)))
   .est_frame(NA_integer_, nm, role, sc, est, .se_of(object), level, role %in% c("beta", "cure"))
 }
+
+# S7 >= 1.0.0: remove the placeholders that `method<-` leaves in the namespace for external generics
+# (run when the package is built; older S7 versions do not have, or need, this hook)
+if ("S7_on_build" %in% getNamespaceExports("S7")) getExportedValue("S7", "S7_on_build")()
