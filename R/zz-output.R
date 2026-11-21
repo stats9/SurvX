@@ -369,7 +369,8 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
   out <- c("Direct parametric regression for the cumulative incidence function",
            paste0("  Estimation: ", est_text),
            paste0("  Subjects: ", x@n, "   censored: ", cnt[[1L]], "   ",
-                  paste0("cause ", seq_len(x@K), ": ", as.integer(cnt[-1L]), collapse = "   ")))
+                  paste0("cause ", seq_len(x@K), ": ", as.integer(cnt[-1L]), collapse = "   ")),
+           if (.is_ic(x)) sub("^  Subjects: [0-9]+   ", "  Observed as: ", .ic_count_line(x@interval$type)))
   if (x@estimation == "weighted")
     out <- c(out, paste0("  Standard errors: ", switch(x@diagnostics$variance %||% "robust",
       ipcw = "sandwich with the term for the estimated censoring distribution",

@@ -235,6 +235,13 @@ class DirectCIFModel {
   }
   const DirectSpec& spec() const { return s_; }
   std::size_t nparam() const { return P_; }
+  // Interval censoring: an event of cause c_i known only to lie in (time_i, time2_i], time2_i > time_i
+  // (time_i = 0: left censoring), contributes F_c(time2_i) - F_c(time_i); time2_i = time_i is an exact
+  // time and censored subjects (cause 0) contribute 1 - sum_k F_k(time_i) as before.
+  void set_time2(const double* t2) {
+    time2_ = t2;
+    if (t2) for (std::size_t i = 0; i < n_; ++i) if (std::isfinite(t2[i])) tmax_ = std::fmax(tmax_, t2[i]);
+  }
   double tmax() const { return tmax_; }
 
   // CIF of cause k (0-based) for covariate row x at time t (t may be +infinity). 1 outside the support.
@@ -267,14 +274,45 @@ class DirectCIFModel {
     if (out.H.n != P) out.H = Mat(P);
     out.H.zero();
     std::vector<D2> F(K);
-    std::vector<double> gs(P), z, dz;
-    std::vector<Term> terms;
+    std::vector<double> gs(P), gsL(P), z, dz;
+    std::vector<Term> terms, termsL;
     D2 lf, q[3];
     for (std::size_t i = 0; i < n_; ++i) {
       const double* x = X_ + i * s_.p;
       const double t = time_[i];
       const int c = cause_[i];
-      if (c >= 1) {
+      if (c >= 1 && time2_ && time2_[i] > t) {
+        const int k = c - 1;
+        const double Rt = time2_[i];
+        locals<D2>(th, k, Rt, nullptr, nullptr, q, z, dz);
+        D2 FR, FL;
+        if (!direct_Ff<D2>(s_.baseline[k], Rt, q, D2::variable(3, alpha_of(th, k)), D2::variable(4, eta_of(th, k, x)), &FR, nullptr)) { bad(out); return; }
+        make_terms(k, x, z.data(), dz.data(), terms);
+        double FLv = 0.0;
+        const bool hasL = t > 0.0;
+        if (hasL) {
+          const double* zr = zrow_[k].empty() ? nullptr : &zrow_[k][i * nb_[k]];
+          const double* dr = dzrow_[k].empty() ? nullptr : &dzrow_[k][i * nb_[k]];
+          locals<D2>(th, k, t, zr, dr, q, z, dz);
+          if (!direct_Ff<D2>(s_.baseline[k], t, q, D2::variable(3, alpha_of(th, k)), D2::variable(4, eta_of(th, k, x)), &FL, nullptr)) { bad(out); return; }
+          make_terms(k, x, zr ? zr : z.data(), dr ? dr : dz.data(), termsL);
+          FLv = FL.v;
+        }
+        const double Dv = FR.v - FLv;
+        if (!(Dv > 0.0) || !std::isfinite(Dv)) { bad(out); return; }
+        out.ll += std::log(Dv);
+        std::fill(gs.begin(), gs.end(), 0.0);
+        std::fill(gsL.begin(), gsL.end(), 0.0);
+        add_terms(terms, FR, 1.0 / Dv, out, need_hess, gs.data());
+        if (hasL) add_terms(termsL, FL, -1.0 / Dv, out, need_hess, gsL.data());
+        if (need_hess)                                 // -(grad D)(grad D)^T / D^2
+          for (std::size_t a = 0; a < P; ++a) {
+            const double da = gs[a] - gsL[a];
+            if (da == 0.0) continue;
+            const double ga = da / (Dv * Dv);
+            for (std::size_t b = 0; b <= a; ++b) out.H(a, b) -= ga * (gs[b] - gsL[b]);
+          }
+      } else if (c >= 1) {
         const int k = c - 1;
         const double* zr = zrow_[k].empty() ? nullptr : &zrow_[k][i * nb_[k]];
         const double* dr = dzrow_[k].empty() ? nullptr : &dzrow_[k][i * nb_[k]];
@@ -392,6 +430,7 @@ class DirectCIFModel {
   const double* time_;
   const int* cause_;
   const double* X_;
+  const double* time2_ = nullptr;
   DirectSpec s_;
   std::size_t P_;
   std::vector<std::size_t> off_, nb_;

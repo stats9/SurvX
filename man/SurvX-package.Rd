@@ -21,6 +21,7 @@ reference packages (see the \code{Validation} section of each help page).
   Is the hazard ratio constant over time? \tab \code{\link{ph_test}} \cr
   How does an effect change over time? \tab \code{\link{time_effects}} \cr
   Adjusted absolute risks and causal contrasts \tab \code{\link{adjusted_risk}} \cr
+  Event times known only between two visits (interval censoring) \tab \code{\link{Interval}}, \code{\link{turnbull}}, \code{\link{parsurv}}, \code{\link{directcif}} \cr
   How do covariates change the rate of each cause? \tab \code{\link{csc}} \cr
   How do covariates change the risk (cumulative incidence) of one cause? \tab \code{\link{fg}},
     \code{\link{directcif}} \cr

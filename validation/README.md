@@ -67,3 +67,13 @@ Settings (`make_config()` in `R/00_common.R`): `sim_R` replications (quick 100, 
 `speed_max_seconds` (a method slower than this is not run at larger n), `acc_reps`, `cores`, `seed`.
 
 Results go to `validation_results/<date-time>/`. The folder is not part of the package build.
+
+## Quick checks of new functions
+
+Short scripts, run from the repository root after `R CMD INSTALL .`, that print every result next
+to the established package and write a text file and a PDF of the figures:
+
+| Script | Functions | Compared with |
+|---|---|---|
+| `check_time_effects.R` | `time_effects()`, `adjusted_risk()` | `survival::coxph(tt = )` |
+| `check_interval.R` | `Interval()`, `turnbull()`, `parsurv()` and `directcif()` with interval-censored data | `survival::survreg(type = "interval2")`, `interval::icfit`/`ictest`, `icenReg::ic_np`, `flexsurv::flexsurvreg` (when installed) |

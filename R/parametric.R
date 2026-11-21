@@ -128,8 +128,9 @@
 #'   \item part of the population will never have the event: \code{\link{cure}}.
 #' }
 #' @param formula \code{Event(time, status) ~ covariates} with status 0/1;
-#'   \code{Event(time, status, entry = entry)} for delayed entry (left truncation). Covariates as
-#'   in \code{\link[stats]{lm}}.
+#'   \code{Event(time, status, entry = entry)} for delayed entry (left truncation);
+#'   \code{Interval(left, right) ~ covariates} for interval-censored times (see the section
+#'   Interval-censored data). Covariates as in \code{\link[stats]{lm}}.
 #' @param data a data frame. Rows with missing values in the variables of the formula are removed.
 #' @param baseline the distribution:
 #'   \tabular{lll}{
@@ -259,6 +260,18 @@
 #' \eqn{n} = 200 to 1000, with and without delayed entry) the 95\% intervals covered 92.9 to 96.3\%.
 #' On \eqn{n = 10000}, a Weibull fit takes about 0.02 s (\code{flexsurvreg}: 0.17 s), a
 #' generalized gamma fit 0.36 s (2.8 s) and a spline fit 0.03 s (\code{flexsurvspline}: 1.6 s).
+#' @section Interval-censored data:
+#' With \code{\link{Interval}(left, right)} on the left-hand side, every subject contributes
+#' \eqn{S(L) - S(R)} (an event between two visits), \eqn{1 - S(R)} (left censoring), \eqn{S(L)}
+#' (right censoring) or the density (an exact time) to the likelihood, for every family, with exact
+#' first and second derivatives (Lindsey and Ryan 1998; Sun 2006). The fit starts from the fit to the
+#' midpoints of the intervals, which is a starting value only. This is the parametric counterpart of
+#' \code{\link[survival]{survreg}} with \code{Surv(left, right, type = "interval2")} (and covers
+#' also the Gompertz, generalized gamma, Royston-Parmar and piecewise exponential models).
+#' \code{print()}, \code{predict()}, \code{AIC()}, \code{estimates()} work as usual; \code{plot()}
+#' and \code{\link{hazard_plot}} (survival or cumulative hazard) draw the Turnbull estimate
+#' (\code{\link{turnbull}}) as the non-parametric reference. Residuals are not defined for these data.
+#' Delayed entry cannot be combined with interval censoring.
 #' @return
 #' An S7 object of class \code{ParSurvFit}. Main slots: \code{coefficients}, \code{vcov},
 #' \code{loglik}, \code{baseline}, \code{scale}, \code{n}, \code{nevent}, \code{converged}, and the
@@ -307,6 +320,7 @@
 #'
 #' All references: \code{sx_references("parsurv")}.
 #' @seealso
+#' \code{\link{Interval}}, \code{\link{turnbull}} for interval-censored data;
 #' \code{\link{cox}}; \code{\link{csc}} with a parametric \code{baseline} for competing risks;
 #' \code{\link{cure}}; \code{\link{hazard_plot}}, \code{\link{hazard_np}} and \code{\link{dist_plot}}
 #' to check the fit; \code{\link{predict.SurvX}}.
@@ -345,10 +359,61 @@ parsurv <- function(formula, data, baseline = "weibull", scale = NULL, df = 3L, 
   cl <- match.call()
   dist <- .par_dist(baseline)
   scale <- .par_scale(dist, scale)
-  f <- .sx_frame(formula, data, entry_ok = TRUE)
+  f <- .sx_frame(formula, data, entry_ok = TRUE, what = "parsurv()", interval_ok = TRUE)
+  if (!is.null(f$time2)) {
+    if (any(f$status > 1L))
+      stop("parsurv() is for one event; for interval-censored competing risks use directcif()", call. = FALSE)
+    return(.parsurv_ic(cl, f, dist, scale, init, max_iter, tol, df, knots, cuts))
+  }
   if (any(f$status > 1L))
     stop("parsurv() is for one event (status 0/1); for competing risks use csc(..., baseline = \"", dist, "\")", call. = FALSE)
   .parsurv_core(cl, f, f$status, dist, scale, init, max_iter, tol, "the event", df, knots, cuts)
+}
+
+.par_fit_ic <- function(L, R, type, X, dist, scale, init, max_iter, tol, knots) {
+  n <- length(L); p <- ncol(X)
+  P <- 1L + p + .nshape(dist, knots)
+  r <- .C("SX_par_fit_ic", as.integer(n), as.integer(p), .par_dists[[dist]], as.integer(scale == "AFT"),
+          as.integer(length(knots)), if (length(knots)) as.double(knots) else double(1),
+          as.double(L), as.double(R), as.integer(type), .rm(X), as.double(init), as.integer(max_iter), as.double(tol),
+          theta = double(P), var = double(P * P), info_d = double(3), info_i = integer(4), rc = integer(1),
+          NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "parametric fit (interval-censored)")
+  nm <- c("(Intercept)", colnames(X), .shape_name(dist, scale, knots))
+  V <- matrix(r$var, P, P, byrow = TRUE, dimnames = list(nm, nm))
+  ok <- all(is.finite(r$theta)) && all(is.finite(diag(V))) && all(diag(V) >= 0) && is.finite(r$info_d[2L])
+  list(theta = stats::setNames(r$theta, nm), var = V,
+       loglik = r$info_d[2L], iterations = r$info_i[1L], converged = as.logical(r$info_i[2L]) && ok,
+       flags = r$info_i[3L], nevent = r$info_i[4L])
+}
+
+# interval-censored parametric fit: the likelihood is maximised from the fit to the midpoints of the
+# intervals (a start only; the estimates are those of the interval-censored likelihood)
+.parsurv_ic <- function(cl, f, dist, scale, init, max_iter, tol, df, knots, cuts) {
+  L <- f$time; R <- f$time2
+  type <- .ic_type(L, R)
+  if (!any(type > 0L)) stop("no events: every subject is right-censored", call. = FALSE)
+  mid <- .ic_mid(L, R)
+  ev <- as.integer(type > 0L)
+  kn <- .par_knots(dist, mid, ev, df, knots, cuts)
+  start_of <- function(X, given) {
+    if (!is.null(given)) return(as.double(given))
+    s0 <- tryCatch(.par_fit(mid, ev, NULL, X, dist, scale, NULL, max_iter, tol, kn), error = function(e) NULL)
+    if (is.null(s0) || !all(is.finite(s0$theta)))
+      stop("no starting values: the model could not be fitted to the midpoints of the intervals; give init", call. = FALSE)
+    unname(s0$theta)
+  }
+  r <- .par_fit_ic(L, R, type, f$X, dist, scale, start_of(f$X, init), max_iter, tol, kn)
+  X0 <- f$X[, 0L, drop = FALSE]
+  ln <- if (ncol(f$X)) tryCatch(.par_fit_ic(L, R, type, X0, dist, scale, start_of(X0, NULL), max_iter, tol, kn)$loglik,
+                                error = function(e) NA_real_) else r$loglik
+  ParSurvFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
+             coefficients = r$theta, vcov = r$var, loglik = r$loglik, n = length(L),
+             nevent = as.integer(r$nevent), iterations = as.integer(r$iterations), converged = isTRUE(r$converged),
+             flags = as.integer(r$flags), time = ifelse(is.finite(R), R, L), status = ev, X = f$X,
+             dist = dist, scale = scale, dist_code = .par_dists[[dist]], aft = as.integer(scale == "AFT"),
+             entry = NULL, loglik_null = ln, event_label = "the event", knots = kn,
+             interval = list(left = L, right = R, type = type))
 }
 
 .pcsc <- function(cl, f, baseline, scale, max_iter, tol, df = 3L, knots = NULL, cuts = NULL, kn_list = NULL) {
@@ -580,8 +645,9 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
   e <- estimates(x, level = level)
   cens <- sum(x@status == 0L)
   out <- c(paste0("Parametric survival regression: ", .par_model_label(x@dist, x@scale)),
-           paste0("  Subjects: ", x@n, "   events: ", x@nevent, "   censored: ", cens,
-                  if (!is.null(x@entry)) "   delayed entry: yes" else ""))
+           if (.is_ic(x)) .ic_count_line(x@interval$type)
+           else paste0("  Subjects: ", x@n, "   events: ", x@nevent, "   censored: ", cens,
+                       if (!is.null(x@entry)) "   delayed entry: yes" else ""))
   eb <- e[e$role == "beta", , drop = FALSE]
   if (nrow(eb)) {
     lab <- if (x@scale == "AFT") c("TR", "Effect of covariates: time ratio (TR)") else c("HR", "Effect of covariates: hazard ratio (HR)")
@@ -902,6 +968,7 @@ hazard_plot <- function(x, newdata = NULL, type = c("hazard", "cumhaz", "surviva
   if (!all(ok)) stop("hazard_plot() takes models fitted by parsurv() or csc() with a parametric baseline", call. = FALSE)
   if (is.null(names(models))) names(models) <- vapply(models, .par_name, character(1))
   ref <- models[[1L]]
+  ic <- .is_ic(ref)
   K <- if (S7::S7_inherits(ref, ParCSCFit)) ref@K else 1L
   causes <- if (type == "survival") 0L else if (is.null(cause)) seq_len(K) else as.integer(cause)
   tg <- if (is.null(times)) seq(0, max(ref@time), length.out = 201L) else sort(times)
@@ -926,7 +993,14 @@ hazard_plot <- function(x, newdata = NULL, type = c("hazard", "cumhaz", "surviva
   d <- do.call(rbind, curves)
   # reference: non-parametric estimate of all subjects
   refd <- NULL
-  if (reference) {
+  if (reference && ic && type != "hazard") {
+    # interval-censored data: the Turnbull estimate (survival, or minus its log)
+    tb <- .tb_fit(ref@interval$left, ref@interval$right)
+    sc <- .tb_steps(tb)
+    v <- if (type == "survival") sc$surv else -log(pmax(sc$surv, 1e-300))
+    ok <- is.finite(v) & (type == "survival" | sc$surv > 0)
+    refd <- data.frame(cause = 0L + (type != "survival"), time = sc$time[ok], value = v[ok], step = FALSE)
+  } else if (reference && !ic) {
     st <- if (S7::S7_inherits(ref, ParCSCFit)) ref@status else ref@status
     refd <- do.call(rbind, lapply(causes, function(k) {
       kk <- if (k == 0L) NULL else k
@@ -964,7 +1038,7 @@ hazard_plot <- function(x, newdata = NULL, type = c("hazard", "cumhaz", "surviva
       graphics::lines(dj$time, dj$value, col = col[j], lwd = lwd)
     }
     if (legend) {
-      lg <- c(lab, if (!is.null(rk) && nrow(rk)) "non-parametric (all subjects)")
+      lg <- c(lab, if (!is.null(rk) && nrow(rk)) if (ic) "Turnbull NPMLE (all subjects)" else "non-parametric (all subjects)")
       graphics::legend("topleft", legend = lg, col = c(col, "grey45")[seq_along(lg)], lwd = lwd,
                        lty = c(rep(1L, length(lab)), 2L)[seq_along(lg)], bty = "n")
     }

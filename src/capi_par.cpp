@@ -10,6 +10,7 @@
 #include "survcore/hazard.hpp"
 #include "survcore/parametric.hpp"
 #include "survcore/cure.hpp"
+#include "survcore/interval.hpp"
 
 using namespace survcore;
 
@@ -68,6 +69,57 @@ int sc_par_fit(int n, int p, int dist, int aft, int nk, const double* knots, con
     info->loglik_init = r.ll_init; info->loglik = r.ll; info->grad_maxabs = r.grad_maxabs;
     info->iterations = r.iterations; info->converged = r.converged; info->flags = r.flags; info->n_events = events;
   }
+  return 0;
+} catch (...) { return -9; }
+
+int sc_par_fit_ic(int n, int p, int dist, int aft, int nk, const double* knots, const double* time, const double* time2,
+                  const int* type, const double* X, const double* init, int max_iter, double tol, double* theta,
+                  double* var, sc_fit_info* info) try {
+  ParSpec sp;
+  if (n <= 0 || p < 0 || !time || !time2 || !type || !init || (p > 0 && !X) || !spec_of(dist, aft, p, nk, knots, sp)) return -1;
+  int events = 0;
+  for (int i = 0; i < n; ++i) {
+    const int ty = type[i];
+    if (ty < 0 || ty > 3) return -1;
+    if (ty == 3) { if (!std::isfinite(time2[i]) || !(time2[i] > 0.0)) return -2; }
+    else if (!std::isfinite(time[i]) || !(time[i] > 0.0)) return -2;
+    if (ty == 2 && (!std::isfinite(time2[i]) || !(time2[i] > time[i]))) return -2;
+    for (int j = 0; j < p; ++j) if (!std::isfinite(X[static_cast<std::size_t>(i) * p + j])) return -2;
+    if (ty) ++events;
+  }
+  if (!events) return -3;
+  ParData dat; dat.n = n; dat.time = time; dat.status = type; dat.X = X; dat.time2 = time2;
+  ParModel m{sp, dat};
+  FitResult r = par_newton(m, std::vector<double>(init, init + sp.npar()), max_iter, tol);
+  const std::size_t P = sp.npar();
+  for (std::size_t j = 0; j < P; ++j) theta[j] = r.beta[j];
+  if (var) for (std::size_t j = 0; j < P * P; ++j) var[j] = r.var.n == P ? r.var.a[j] : kNaN;
+  if (info) {
+    info->loglik_init = r.ll_init; info->loglik = r.ll; info->grad_maxabs = r.grad_maxabs;
+    info->iterations = r.iterations; info->converged = r.converged; info->flags = r.flags; info->n_events = events;
+  }
+  return 0;
+} catch (...) { return -9; }
+
+// Turnbull NPMLE: n_int receives the number of innermost intervals m (lo, hi, mass need room for n
+// entries, m <= n); a, b the 0-based block of innermost intervals of every subject; w case weights
+// (null: all one); info_d = (loglik, kkt), info_i = (iterations, converged)
+int sc_turnbull(int n, const double* L, const double* R, const double* w, int max_iter, double tol, int* n_int,
+                double* lo, double* hi, double* mass, int* a, int* b, double* info_d, int* info_i) try {
+  if (n <= 0 || !L || !R || !n_int || !lo || !hi || !mass) return -1;
+  for (int i = 0; i < n; ++i) {
+    if (!std::isfinite(L[i]) || L[i] < 0.0 || std::isnan(R[i]) || R[i] < L[i] || (R[i] == L[i] && !std::isfinite(R[i]))) return -2;
+    if (w && (!std::isfinite(w[i]) || w[i] < 0.0)) return -2;
+  }
+  const TurnbullSupport s = turnbull_support(n, L, R);
+  const TurnbullResult r = turnbull_fit(s, w, max_iter, tol);
+  const int J = static_cast<int>(s.lo.size());
+  if (J > n) return -9;
+  *n_int = J;
+  for (int j = 0; j < J; ++j) { lo[j] = s.lo[j]; hi[j] = s.hi[j]; mass[j] = r.p.empty() ? kNaN : r.p[j]; }
+  if (a && b) for (int i = 0; i < n; ++i) { a[i] = s.a[i]; b[i] = s.b[i]; }
+  if (info_d) { info_d[0] = r.loglik; info_d[1] = r.kkt; }
+  if (info_i) { info_i[0] = r.iterations; info_i[1] = r.converged ? 1 : 0; }
   return 0;
 } catch (...) { return -9; }
 

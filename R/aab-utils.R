@@ -33,7 +33,8 @@
          "or remove 'entry' from Event()", call. = FALSE)
 }
 
-.sx_frame <- function(formula, data, entry_ok = FALSE, what = "this function", specials_ok = FALSE, tt_ok = FALSE) {
+.sx_frame <- function(formula, data, entry_ok = FALSE, what = "this function", specials_ok = FALSE, tt_ok = FALSE,
+                      interval_ok = FALSE) {
   if (missing(data) || is.null(data)) data <- environment(formula)
   # strata(), cluster() and tt() are read from the formula by SurvX itself (see .sx_specials_env), so
   # they work without survival and are never mistaken for ordinary covariates
@@ -47,8 +48,20 @@
   environment(tt0) <- .sx_specials_env(environment(formula))
   mf <- stats::model.frame(tt0, data = data, na.action = stats::na.omit)
   y <- mf[[1L]]
-  if (!inherits(y, "SurvXEvent")) stop("the left-hand side of the formula must be Event(time, status)", call. = FALSE)
-  if (!entry_ok) .no_entry(y, what)
+  is_ic <- inherits(y, "SurvXInterval")
+  if (is_ic) {
+    if (!interval_ok)
+      stop(what, " does not support interval-censored outcomes (Interval()); use turnbull(), parsurv() or directcif()",
+           call. = FALSE)
+    # rows with left = 0 and right = Inf carry no information
+    yy <- unclass(y)
+    keep <- !(yy[, 1L] == 0 & !is.finite(yy[, 2L]))
+    if (!all(keep)) { tk <- attr(mf, "terms"); mf <- mf[keep, , drop = FALSE]; attr(mf, "terms") <- tk; y <- mf[[1L]] }
+    if (!nrow(mf)) stop("no informative rows: every subject has left = 0 and right = Inf", call. = FALSE)
+  } else if (!inherits(y, "SurvXEvent")) {
+    stop("the left-hand side of the formula must be Event(time, status)", if (interval_ok) " or Interval(left, right)", call. = FALSE)
+  }
+  if (!entry_ok && !is_ic) .no_entry(y, what)
   tt <- attr(mf, "terms")
   strata <- NULL; strata_levels <- NULL; strata_vars <- NULL; cluster <- NULL; cluster_var <- NULL
   if (has_sp) {
@@ -93,9 +106,10 @@
     tt_cols <- which(attr(X, "assign") %in% tt_terms)
   }
   y <- unclass(y)
-  list(time = as.double(y[, 1L]), status = as.integer(round(y[, 2L])), X = X, terms = tt,
+  list(time = as.double(y[, 1L]), status = as.integer(round(y[, if (is_ic) 3L else 2L])), X = X, terms = tt,
        xlevels = stats::.getXlevels(tt, mf), contrasts = ctr, mf = mf,
-       entry = if (ncol(y) >= 3L) as.double(y[, 3L]) else NULL,
+       entry = if (!is_ic && ncol(y) >= 3L) as.double(y[, 3L]) else NULL,
+       time2 = if (is_ic) as.double(y[, 2L]) else NULL,
        strata = strata, strata_levels = strata_levels, strata_vars = strata_vars,
        cluster = cluster, cluster_var = cluster_var, tt_cols = tt_cols)
 }
@@ -142,6 +156,8 @@
   if (missing(data) || is.null(data)) data <- environment(formula)
   mf <- stats::model.frame(formula, data = data, na.action = stats::na.omit)
   y <- mf[[1L]]
+  if (inherits(y, "SurvXInterval"))
+    stop(what, " needs exact or right-censored times; for interval-censored data (Interval()) use turnbull()", call. = FALSE)
   if (!inherits(y, "SurvXEvent")) stop("the left-hand side of the formula must be Event(time, status)", call. = FALSE)
   if (!entry_ok) .no_entry(y, what)
   y <- unclass(y)

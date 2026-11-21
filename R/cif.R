@@ -64,7 +64,9 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
 }
 
 .frame_of <- function(fit, without_covariates) {
-  list(time = fit@time, status = fit@status,
+  ic <- .is_ic(fit)
+  list(time = if (ic) fit@interval$left else fit@time, status = fit@status,
+       time2 = if (ic) fit@interval$right else NULL,
        X = if (without_covariates) matrix(0, fit@n, 0L) else fit@X,
        terms = if (without_covariates) stats::terms(stats::as.formula("~ 1")) else fit@terms,
        xlevels = if (without_covariates) list() else fit@xlevels,
@@ -506,6 +508,12 @@ cif_plot <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
   if (layout == "stacked") conf.int <- FALSE
   d <- cif_data(x, newdata = newdata, cause = cause, type = type, times = times, conf.int = conf.int, level = level,
                 B = B, seed = seed, interval = interval)
+  ref0 <- if (is.list(x) && !S7::S7_inherits(x)) x[[1L]] else x
+  if (.is_ic(ref0)) {
+    # interval-censored data: neither numbers at risk nor the Aalen-Johansen reference are defined
+    risk.table <- FALSE
+    if (isTRUE(reference)) stop("reference = TRUE (Aalen-Johansen) is not available for interval-censored data", call. = FALSE)
+  }
   if (isTRUE(reference)) {
     ref <- if (is.list(x) && !S7::S7_inherits(x)) x[[1L]] else x
     a <- .aj_frame(ref@time, ref@status, level)

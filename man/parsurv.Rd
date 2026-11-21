@@ -26,8 +26,9 @@ parsurv(formula, data, baseline = "weibull", scale = NULL, df = 3L, knots = NULL
 }
 \arguments{
 \item{formula}{\code{Event(time, status) ~ covariates} with status 0/1;
-  \code{Event(time, status, entry = entry)} for delayed entry (left truncation). Covariates as
-  in \code{\link[stats]{lm}}.}
+  \code{Event(time, status, entry = entry)} for delayed entry (left truncation);
+  \code{Interval(left, right) ~ covariates} for interval-censored times (see the section
+  Interval-censored data). Covariates as in \code{\link[stats]{lm}}.}
 \item{data}{a data frame. Rows with missing values in the variables of the formula are removed.}
 \item{baseline}{the distribution:
   \tabular{lll}{
@@ -212,7 +213,21 @@ Akaike H (1974). A new look at the statistical model identification. IEEE Transa
 
 All references: \code{sx_references("parsurv")}.
 }
+\section{Interval-censored data}{
+With \code{\link{Interval}(left, right)} on the left-hand side, every subject contributes
+\eqn{S(L) - S(R)} (an event between two visits), \eqn{1 - S(R)} (left censoring), \eqn{S(L)}
+(right censoring) or the density (an exact time) to the likelihood, for every family, with exact
+first and second derivatives (Lindsey and Ryan 1998; Sun 2006). The fit starts from the fit to the
+midpoints of the intervals, which is a starting value only. This is the parametric counterpart of
+\code{\link[survival]{survreg}} with \code{Surv(left, right, type = "interval2")} (and covers
+also the Gompertz, generalized gamma, Royston-Parmar and piecewise exponential models).
+\code{print()}, \code{predict()}, \code{AIC()}, \code{estimates()} work as usual; \code{plot()}
+and \code{\link{hazard_plot}} (survival or cumulative hazard) draw the Turnbull estimate
+(\code{\link{turnbull}}) as the non-parametric reference. Residuals are not defined for these data.
+Delayed entry cannot be combined with interval censoring.
+}
 \seealso{
+\code{\link{Interval}}, \code{\link{turnbull}} for interval-censored data;
 \code{\link{cox}}; \code{\link{csc}} with a parametric \code{baseline} for competing risks;
 \code{\link{cure}}; \code{\link{hazard_plot}}, \code{\link{hazard_np}} and \code{\link{dist_plot}}
 to check the fit; \code{\link{predict.SurvX}}.

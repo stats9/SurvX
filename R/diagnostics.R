@@ -77,6 +77,7 @@
 }
 
 .par_resid <- function(m, type) {
+  .no_ic(m, "residuals()", "compare the fit with the Turnbull estimate: hazard_plot(fit, type = \"survival\")")
   Xn <- m@X; n <- m@n
   Ht <- vapply(seq_len(n), function(i) .par_predict_X(m, Xn[i, , drop = FALSE], m@time[i], "cumhaz", FALSE, 0.95)[1L, 1L], numeric(1))
   if (!is.null(m@entry)) Ht <- Ht - vapply(seq_len(n), function(i)

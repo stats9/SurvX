@@ -122,6 +122,18 @@ int sc_directcif_fit(int n, int p, int K, const double* time, const int* cause, 
                      const int* n_knots, const double* knots, int constraint,
                      const double* init, int max_iter, double tol,
                      double* theta, double* var, sc_fit_info* info, double* diag);
+/* Interval-censored data (survcore/directcif.hpp, DirectCIFModel::set_time2): an event of cause
+ * cause_i in (time_i, time2_i]; time2_i = time_i an exact time, time_i = 0 left censoring; censored
+ * subjects (cause 0) at time_i, time2 ignored. Other arguments as sc_directcif_fit. */
+int sc_directcif_fit_ic(int n, int p, int K, const double* time, const double* time2, const int* cause, const double* X,
+                        const int* alpha_free, const double* alpha_value, const int* baseline,
+                        const int* n_knots, const double* knots, int constraint,
+                        const double* init, int max_iter, double tol,
+                        double* theta, double* var, sc_fit_info* info, double* diag);
+int sc_directcif_eval_ic(int n, int p, int K, const double* time, const double* time2, const int* cause, const double* X,
+                         const int* alpha_free, const double* alpha_value, const int* baseline,
+                         const int* n_knots, const double* knots, const double* theta,
+                         double* loglik, double* grad, double* info_matrix);
 int sc_directcif_eval(int n, int p, int K, const double* time, const int* cause, const double* X,
                       const int* alpha_free, const double* alpha_value, const int* baseline,
                       const int* n_knots, const double* knots, const double* theta,
@@ -257,6 +269,15 @@ int sc_cure_predict(int dist, int aft, int nk, const double* knots, int pl, int 
 int sc_par_fit(int n, int p, int dist, int aft, int nk, const double* knots, const double* entry, const double* time,
                const int* status, const double* X, const double* init, int max_iter, double tol, double* theta,
                double* var, sc_fit_info* info);
+/* Interval censoring (survcore/parametric.hpp, par_local_ic): type 0 right-censored at time, 1 exact
+ * at time, 2 in (time, time2], 3 left-censored in (0, time2]. init is required (a start from the fit to
+ * the midpoints). */
+int sc_par_fit_ic(int n, int p, int dist, int aft, int nk, const double* knots, const double* time, const double* time2,
+                  const int* type, const double* X, const double* init, int max_iter, double tol, double* theta,
+                  double* var, sc_fit_info* info);
+/* Turnbull NPMLE of a survival function from interval-censored data (survcore/interval.hpp). */
+int sc_turnbull(int n, const double* L, const double* R, const double* w, int max_iter, double tol, int* n_int,
+                double* lo, double* hi, double* mass, int* a, int* b, double* info_d, int* info_i);
 /* type: 0 survival, 1 hazard, 2 cumulative hazard, 3 quantile (times = probabilities), 4 restricted
  * mean (times = tau). average = 1: mean over the rows of Xnew (nt outputs), else n_new x nt row-major.
  * out_se by the delta method; null var gives NaN. */

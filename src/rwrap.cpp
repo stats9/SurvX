@@ -163,4 +163,21 @@ void SX_cv_folds(int* n, int* folds, int* seed, int* out, int* rc) {
 void SX_kernel_hazard(int* m, double* et, double* d, double* Y, double* bw, int* boundary, int* nx, double* x, double* out_h, double* out_se, double* bw_used, int* rc) {
   *rc = sc_kernel_hazard(*m, et, d, Y, *bw, *boundary, *nx, x, out_h, out_se, bw_used);
 }
+void SX_par_fit_ic(int* n, int* p, int* dist, int* aft, int* nk, double* knots, double* time, double* time2, int* type, double* X, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc) {
+  sc_fit_info f = sc_fit_info();
+  *rc = sc_par_fit_ic(*n, *p, *dist, *aft, *nk, knots, time, time2, type, X, init, *max_iter, *tol, theta, var, &f);
+  put(f, info_d, info_i);
+}
+void SX_direct_fit_ic(int* n, int* p, int* K, double* time, double* time2, int* cause, double* X, int* alpha_free, double* alpha_value, int* baseline, int* n_knots, double* knots, int* constraint, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, double* diag, int* rc) {
+  sc_fit_info f = sc_fit_info();
+  *rc = sc_directcif_fit_ic(*n, *p, *K, time, time2, cause, X, alpha_free, alpha_value, baseline, n_knots, knots, *constraint,
+                            *has_init ? init : nullptr, *max_iter, *tol, theta, var, &f, diag);
+  put(f, info_d, info_i);
+}
+void SX_direct_eval_ic(int* n, int* p, int* K, double* time, double* time2, int* cause, double* X, int* alpha_free, double* alpha_value, int* baseline, int* n_knots, double* knots, double* theta, double* loglik, double* grad, double* info_matrix, int* rc) {
+  *rc = sc_directcif_eval_ic(*n, *p, *K, time, time2, cause, X, alpha_free, alpha_value, baseline, n_knots, knots, theta, loglik, grad, info_matrix);
+}
+void SX_turnbull(int* n, double* L, double* R, int* has_w, double* w, int* max_iter, double* tol, int* n_int, double* lo, double* hi, double* mass, int* a, int* b, double* info_d, int* info_i, int* rc) {
+  *rc = sc_turnbull(*n, L, R, *has_w ? w : nullptr, *max_iter, *tol, n_int, lo, hi, mass, a, b, info_d, info_i);
+}
 }  // extern "C"

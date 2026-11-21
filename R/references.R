@@ -103,6 +103,15 @@
   austin_stuart2015 = c("Austin & Stuart (2015)", "Austin PC, Stuart EA (2015). Moving towards best practice when using inverse probability of treatment weighting (IPTW) using the propensity score to estimate causal treatment effects in observational studies. Statistics in Medicine 34:3661-3679."),
   hernan_robins2020 = c("Hernan & Robins (2020)", "Hernan MA, Robins JM (2020). Causal Inference: What If. Chapman and Hall/CRC, Boca Raton."),
   ozenne2020 = c("Ozenne et al. (2020)", "Ozenne BMH, Scheike TH, Staerk L, Gerds TA (2020). On the estimation of average treatment effects with right-censored time to event outcome and competing risks. Biometrical Journal 62:751-763."),
+  turnbull1976 = c("Turnbull (1976)", "Turnbull BW (1976). The empirical distribution function with arbitrarily grouped, censored and truncated data. Journal of the Royal Statistical Society, Series B 38:290-295."),
+  peto1973 = c("Peto (1973)", "Peto R (1973). Experimental survival curves for interval-censored data. Applied Statistics 22:86-91."),
+  gentleman_geyer1994 = c("Gentleman & Geyer (1994)", "Gentleman R, Geyer CJ (1994). Maximum likelihood for interval censored data: consistency and computation. Biometrika 81:618-623."),
+  varadhan_roland2008 = c("Varadhan & Roland (2008)", "Varadhan R, Roland C (2008). Simple and globally convergent methods for accelerating the convergence of any EM algorithm. Scandinavian Journal of Statistics 35:335-353."),
+  finkelstein1986 = c("Finkelstein (1986)", "Finkelstein DM (1986). A proportional hazards model for interval-censored failure time data. Biometrics 42:845-854."),
+  fay_shaw2010 = c("Fay & Shaw (2010)", "Fay MP, Shaw PA (2010). Exact and asymptotic weighted logrank tests for interval censored data: the interval R package. Journal of Statistical Software 36(2):1-34."),
+  lindsey_ryan1998 = c("Lindsey & Ryan (1998)", "Lindsey JC, Ryan LM (1998). Tutorial in biostatistics: methods for interval-censored data. Statistics in Medicine 17:219-238."),
+  sun2006 = c("Sun (2006)", "Sun J (2006). The Statistical Analysis of Interval-censored Failure Time Data. Springer, New York."),
+  hudgens2001 = c("Hudgens et al. (2001)", "Hudgens MG, Satten GA, Longini IM (2001). Nonparametric maximum likelihood estimation for competing risks survival data subject to interval censoring and truncation. Biometrics 57:74-80."),
   buchholz2011 = c("Buchholz & Sauerbrei (2011)", "Buchholz A, Sauerbrei W (2011). Comparison of procedures to assess non-linear and time-varying effects in multivariable models for survival data. Biometrical Journal 53:308-331.")
 )
 
@@ -119,15 +128,18 @@
   fg = c("fine_gray1999", "geskus2011", "white1982", "lin_wei1989", "efron1993", "kawaguchi2021", "latouche2013", "austin_fine2017"),
   csc = c("prentice1978", "cox1972", "breslow1974", "efron1977", "benichou1990", "kalbfleisch2002", "andersen_gill1982", "lin_wei1989",
           "latouche2013", "andersen2012", "hinchliffe2013", "lawless2003"),
-  parsurv = c("kalbfleisch2002", "lawless2003", "klein2003", "royston_parmar2002", "friedman1982", "prentice1974",
+  parsurv = c("lindsey_ryan1998", "sun2006", "kalbfleisch2002", "lawless2003", "klein2003", "royston_parmar2002", "friedman1982", "prentice1974",
               "cox2007", "casella2002", "akaike1974", "schwarz1978", "levenberg1944", "marquardt1963"),
-  directcif = c("jeong_fine2006", "jeong_fine2007", "dabrowska1988", "casella2002", "akaike1974",
+  directcif = c("hudgens2001", "jeong_fine2006", "jeong_fine2007", "dabrowska1988", "casella2002", "akaike1974",
                 "levenberg1944", "marquardt1963", "fine_gray1999", "geskus2011", "lambert2017", "shi2013",
                 "larson1985"),
   cure = c("boag1949", "berkson1952", "farewell1982", "yakovlev1996", "chen1999", "lambert2007", "maller1996", "amico2018",
            "kalbfleisch2002", "casella2002"),
   residuals = c("cox_snell1968", "schoenfeld1982", "therneau1990", "grambsch1994"),
   ph_test = c("grambsch1994", "therneau2000", "schoenfeld1982"),
+  turnbull = c("turnbull1976", "peto1973", "gentleman_geyer1994", "varadhan_roland2008", "finkelstein1986", "fay_shaw2010",
+               "efron1993", "sun2006"),
+  Interval = c("turnbull1976", "lindsey_ryan1998", "sun2006"),
   adjusted_risk = c("robins1986", "hernan_robins2020", "cole_hernan2004", "neumann2016", "austin_stuart2015", "ozenne2020", "efron1993"),
   time_effects = c("grambsch1994", "therneau2000", "holm1979", "hess1994", "gray1992", "akaike1974", "schwarz1978",
                    "buchholz2011", "fine_gray1999", "geskus2011", "lin_wei1989", "efron1993"),
@@ -166,7 +178,7 @@
     k <- c(if (S7::S7_inherits(x, ParCSCFit)) c("prentice1978", "hinchliffe2013"), "kalbfleisch2002", "lawless2003",
            if (any(d == "rp")) "royston_parmar2002", if (any(d == "pwexp")) "friedman1982",
            if (any(d == "gengamma")) c("prentice1974", "cox2007"),
-           if (!is.null(x@entry)) "klein2003", "casella2002")
+           if (!is.null(x@entry)) "klein2003", if (.is_ic(x)) c("lindsey_ryan1998", "sun2006"), "casella2002")
     return(k)
   }
   if (S7::S7_inherits(x, DirectCIFFit)) {
@@ -177,7 +189,7 @@
     b <- unique(x@baseline)
     k <- c(k, if (any(b == "gompertz3")) "haile2016", if (any(b == "logistic3")) "cheng2009",
            if (any(b == "spline")) "royston_parmar2002", if (any(startsWith(b, "mix_"))) "larson1985",
-           if (any(!x@link %in% c("PH", "PO"))) "dabrowska1988", "casella2002")
+           if (any(!x@link %in% c("PH", "PO"))) "dabrowska1988", if (.is_ic(x)) c("hudgens2001", "sun2006"), "casella2002")
     return(k)
   }
   if (S7::S7_inherits(x, KMFit)) return(c("kaplan_meier1958", "greenwood1926", "brookmeyer1982", if (!is.null(x@test)) "mantel1966"))
@@ -189,6 +201,9 @@
   if (S7::S7_inherits(x, AdjustedRisk))
     return(c(if (x@method != "ipw") "robins1986", if (x@method != "gformula") c("cole_hernan2004", if (x@kind == "competing") "neumann2016", "austin_stuart2015"),
              "hernan_robins2020", if (x@B > 0L) "efron1993"))
+  if (S7::S7_inherits(x, TurnbullFit))
+    return(c("turnbull1976", "peto1973", "varadhan_roland2008", "gentleman_geyer1994",
+             if (!is.null(x@test)) c("finkelstein1986", "fay_shaw2010"), if (x@B > 0L) "efron1993"))
   if (S7::S7_inherits(x, TimeEffects)) {
     s <- x@settings; f <- x@forms
     return(c("grambsch1994", "therneau2000", if (s$screen == "holm") "holm1979", if ("spline" %in% f) c("hess1994", "gray1992"),

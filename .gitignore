@@ -31,3 +31,4 @@ validation/validation_results/
 # outputs of validation/check_time_effects.R
 check_time_effects*
 check_adjusted_risk*
+check_interval*

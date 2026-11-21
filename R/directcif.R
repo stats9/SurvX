@@ -44,7 +44,9 @@
 #' \strong{Use something else when} no assumption on the shape of the incidence is wanted:
 #' \code{\link{fg}}; or the question is about rates: \code{\link{csc}}.
 #' @param formula \code{Event(time, status) ~ covariates} (or \code{~ 1}); status 0 = censored,
-#'   1, 2, ..., K = cause. Delayed entry is not supported.
+#'   1, 2, ..., K = cause. Delayed entry is not supported. For interval-censored times,
+#'   \code{Interval(left, right, cause = cause) ~ covariates} (see the section Interval-censored
+#'   data).
 #' @param data a data frame. Rows with missing values are removed.
 #' @param baseline the baseline family, one for all causes or one per cause (see Details):
 #'   \code{"gompertz"} (default), \code{"gompertz3"}, \code{"weibull"}, \code{"mix_weibull"},
@@ -192,6 +194,17 @@
 #' three causes (\eqn{n = 800}) the bias of every parameter was below 0.01, the ratio of mean
 #' standard error to empirical standard deviation 0.94 to 1.03, and the coverage of the 95\%
 #' intervals 93.7 to 95.7\%.
+#' @section Interval-censored data:
+#' When the time of the event is only known to lie between two visits but its type is known
+#' (\code{\link{Interval}(left, right, cause = )}), the joint likelihood uses
+#' \eqn{F_k(R) - F_k(L)} for an event of cause \eqn{k} in \eqn{(L, R]} (\eqn{F_k(R)} when
+#' \eqn{L = 0}), \eqn{1 - \sum_k F_k(L)} for a subject event-free at the last visit \eqn{L} and the
+#' density for exact times (Hudgens, Satten and Longini 2001 for the likelihood; the direct parametric
+#' models of Jeong and Fine 2006, 2007 for \eqn{F_k}). Only \code{estimation = "joint"} is available
+#' (the weighted and constrained estimators need exact times). The fit starts from the fit to the
+#' midpoints of the intervals. Predictions, \code{estimates()} and \code{\link{cif_plot}} work as
+#' usual; the Aalen-Johansen reference and the numbers at risk are not drawn, as they are not defined
+#' for these data.
 #' @return
 #' An S7 object of class \code{DirectCIFFit}. Coefficients are named \code{"<cause>:<term>"};
 #' \code{fit@diagnostics} reports how many subjects have fitted incidences adding up to more than 1.
@@ -244,6 +257,7 @@
 #'
 #' All references: \code{sx_references("directcif")}.
 #' @seealso
+#' \code{\link{Interval}}, \code{\link{turnbull}};
 #' \code{\link{fg}} (semi-parametric Fine-Gray), \code{\link{csc}}, \code{\link{aj}},
 #' \code{\link{cif_plot}}, \code{\link{predict.SurvX}}.
 #' @examples
@@ -288,7 +302,7 @@ directcif <- function(formula, data, baseline = "gompertz", link = "PH",
   estimation <- match.arg(estimation); variance <- match.arg(variance)
   cond <- if (missing(cond)) "logistic"
           else vapply(cond, match.arg, character(1), choices = c("logistic", "weibull", "loglogistic", "lognormal"), USE.NAMES = FALSE)
-  f <- .sx_frame(formula, data, what = "directcif()")
+  f <- .sx_frame(formula, data, what = "directcif()", interval_ok = TRUE)
   .directcif_core(cl, f, baseline, link, estimation, as.integer(cause), cond, df, knots, constraint, censoring_grid, init, max_iter, tol,
                   variance = variance)
 }
@@ -300,6 +314,11 @@ directcif <- function(formula, data, baseline = "gompertz", link = "PH",
   if (K < 1L) stop("no events", call. = FALSE)
   bad <- setdiff(baseline, names(.base_codes))
   if (length(bad)) stop("unknown baseline: ", paste(bad, collapse = ", "), "; choose from ", paste(names(.base_codes), collapse = ", "), call. = FALSE)
+  ic <- !is.null(f$time2)
+  if (ic && estimation != "joint")
+    stop("interval-censored data (Interval()) are fitted with estimation = \"joint\" (the full likelihood); ",
+         "the weighted and constrained estimators need exact event times", call. = FALSE)
+  tk <- if (ic) .ic_mid(f$time, f$time2) else f$time       # times for knots and starting values
   if (estimation != "joint")
     return(.directcif_single(cl, f, estimation, as.integer(cause), cond, baseline, link, df, knots, censoring_grid, init, max_iter, tol,
                              variance))
@@ -317,7 +336,7 @@ directcif <- function(formula, data, baseline = "gompertz", link = "PH",
     if (baseline[k] == "spline") {
       if (!is.null(knots)) kn[[k]] <- as.double(knots[[k]])
       else {
-        r <- .C("SX_direct_knots", as.integer(n), f$time, f$status, as.integer(k), as.integer(df),
+        r <- .C("SX_direct_knots", as.integer(n), as.double(tk), f$status, as.integer(k), as.integer(df),
                 knots = double(df + 1L), nk = integer(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
         .sx_rc(r$rc, "directcif (knots)")
         kn[[k]] <- r$knots[seq_len(r$nk)]
@@ -335,22 +354,41 @@ directcif <- function(formula, data, baseline = "gompertz", link = "PH",
   }
   P <- length(nm)
   if (!is.null(init) && length(init) != P) stop("init must have length ", P, call. = FALSE)
+  if (ic) {
+    # start: the fit to the midpoints of the intervals (unless init is given)
+    if (is.null(init)) {
+      r0 <- .C("SX_direct_fit", as.integer(n), as.integer(p), as.integer(K), as.double(tk), f$status, .rm(f$X),
+               as.integer(alpha_free), as.double(alpha_value), as.integer(code), nk, as.double(unlist(kn)),
+               as.integer(isTRUE(constraint)), 0L, double(P), as.integer(max_iter), as.double(tol), theta = double(P), var = double(P * P),
+               info_d = double(3), info_i = integer(4), diag = double(5), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+      if (r0$rc == 0L && all(is.finite(r0$theta)) && is.finite(r0$info_d[2L])) init <- r0$theta
+    }
+    r <- .C("SX_direct_fit_ic", as.integer(n), as.integer(p), as.integer(K), as.double(f$time), as.double(f$time2), f$status, .rm(f$X),
+            as.integer(alpha_free), as.double(alpha_value), as.integer(code), nk, as.double(unlist(kn)),
+            as.integer(isTRUE(constraint)), as.integer(!is.null(init)), if (is.null(init)) double(P) else as.double(init),
+            as.integer(max_iter), as.double(tol), theta = double(P), var = double(P * P),
+            info_d = double(3), info_i = integer(4), diag = double(5), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+    .sx_rc(r$rc, "directcif (interval-censored)")
+  } else {
   r <- .C("SX_direct_fit", as.integer(n), as.integer(p), as.integer(K), f$time, f$status, .rm(f$X),
           as.integer(alpha_free), as.double(alpha_value), as.integer(code), nk, as.double(unlist(kn)),
           as.integer(isTRUE(constraint)), as.integer(!is.null(init)), if (is.null(init)) double(P) else as.double(init),
           as.integer(max_iter), as.double(tol), theta = double(P), var = double(P * P),
           info_d = double(3), info_i = integer(4), diag = double(5), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
   .sx_rc(r$rc, "directcif")
+  }
   dg <- list(n_exceed_range = r$diag[1L], max_sum_range = r$diag[2L], n_exceed_inf = r$diag[3L],
              max_sum_inf = r$diag[4L], first_crossing_time = r$diag[5L], grad_maxabs = r$info_d[3L])
   DirectCIFFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
                coefficients = stats::setNames(r$theta, nm), vcov = matrix(r$var, P, P, dimnames = list(nm, nm)),
                loglik = r$info_d[2L], n = n, nevent = as.integer(sum(f$status > 0L)), iterations = r$info_i[1L],
-               converged = as.logical(r$info_i[2L]), flags = r$info_i[3L], time = f$time, status = f$status, X = f$X,
+               converged = as.logical(r$info_i[2L]), flags = r$info_i[3L],
+               time = if (ic) ifelse(is.finite(f$time2), f$time2, f$time) else f$time, status = f$status, X = f$X,
                K = as.integer(K), baseline = baseline, link = link_name, base_code = as.integer(code),
                alpha_free = as.integer(alpha_free), alpha_value = as.double(alpha_value), n_knots = nk, knots = kn,
                constraint = isTRUE(constraint), diagnostics = dg, index = index,
-               estimation = "joint", interest = NA_integer_, cond = NA_character_, vcov_model = NULL)
+               estimation = "joint", interest = NA_integer_, cond = NA_character_, vcov_model = NULL,
+               interval = if (ic) list(left = f$time, right = f$time2, type = .ic_type(f$time, f$time2)) else NULL)
 }
 
 # estimation = "weighted" or "constrained": one directly modelled cause

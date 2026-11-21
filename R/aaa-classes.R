@@ -63,7 +63,8 @@ DirectCIFFit <- S7::new_class("DirectCIFFit", parent = SurvXFit, package = "Surv
     estimation = S7::class_character,
     interest = S7::class_integer,
     cond = S7::class_character,
-    vcov_model = S7::class_any
+    vcov_model = S7::class_any,
+    interval = S7::class_any          # interval-censored data: list(left, right, type), or NULL
   ))
 
 CSCFit <- S7::new_class("CSCFit", package = "SurvX",
@@ -168,7 +169,8 @@ ParSurvFit <- S7::new_class("ParSurvFit", parent = SurvXFit, package = "SurvX",
     entry = S7::class_any,
     loglik_null = S7::class_numeric,
     event_label = S7::class_character,
-    knots = S7::class_numeric
+    knots = S7::class_numeric,
+    interval = S7::class_any          # interval-censored data: list(left, right, type), or NULL
   ))
 
 # parametric cause-specific hazards: one ParSurvFit per cause
@@ -204,6 +206,21 @@ HazardFit <- S7::new_class("HazardFit", package = "SurvX",
   ))
 
 # result of adjusted_risk(): risks by treatment value and their contrasts, by method
+TurnbullFit <- S7::new_class("TurnbullFit", package = "SurvX",
+  properties = list(
+    model_call = S7::class_any,
+    groups = S7::class_character,     # group labels ("all" without groups)
+    variable = S7::class_character,   # name of the grouping variable ("" without groups)
+    fits = S7::class_list,            # per group: innermost intervals, masses, algorithm summary, data
+    times = S7::class_numeric,        # time grid of the bootstrap bands
+    boot = S7::class_any,             # per group: B x length(times) matrix of survival, or NULL
+    B = S7::class_integer,
+    level = S7::class_numeric,
+    test = S7::class_any,             # logrank-type test with Finkelstein scores, or NULL
+    n = S7::class_integer,
+    print_times = S7::class_numeric
+  ))
+
 AdjustedRisk <- S7::new_class("AdjustedRisk", package = "SurvX",
   properties = list(
     model_call = S7::class_any,

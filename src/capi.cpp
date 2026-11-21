@@ -464,6 +464,59 @@ int sc_directcif_fit(int n, int p, int K, const double* time, const int* cause, 
   return 0;
 } catch (...) { return -9; }
 
+int sc_directcif_fit_ic(int n, int p, int K, const double* time, const double* time2, const int* cause, const double* X,
+                        const int* alpha_free, const double* alpha_value, const int* baseline,
+                        const int* n_knots, const double* knots, int constraint,
+                        const double* init, int max_iter, double tol,
+                        double* theta, double* var, sc_fit_info* info, double* diag) try {
+  DirectSpec s;
+  if (int rc = make_spec(p, K, alpha_free, alpha_value, baseline, n_knots, knots, s)) return rc;
+  if (!time || !time2 || !cause) return -1;
+  // midpoints of the intervals: the data-driven start and the checks of the common entry point
+  std::vector<double> mid(n);
+  for (int i = 0; i < n; ++i) {
+    if (!std::isfinite(time[i]) || time[i] < 0.0) return -2;
+    if (cause[i] > 0) {
+      if (!std::isfinite(time2[i]) || time2[i] < time[i] || !(time2[i] > 0.0)) return -2;
+      mid[i] = 0.5 * (time[i] + time2[i]);
+    } else {
+      if (!(time[i] > 0.0)) return -2;
+      mid[i] = time[i];
+    }
+  }
+  if (int rc = check_direct(n, p, K, mid.data(), cause, X, &s)) return rc;
+  if (!theta) return -1;
+  const std::size_t P = s.nparam();
+  DirectCIFModel m(n, time, cause, X, s);
+  m.set_time2(time2);
+  std::vector<double> st;
+  if (init) { if (!finite_all(init, P)) return -2; st.assign(init, init + P); }
+  const DirectFit f = direct_fit(m, n, mid.data(), cause, init ? &st : nullptr, constraint != 0, max_iter, tol);
+  int ne = 0;
+  for (int i = 0; i < n; ++i) ne += cause[i] != 0;
+  export_fit(f.fit, P, ne, theta, var, info);
+  if (diag) {
+    diag[0] = f.diag.n_exceed_range; diag[1] = f.diag.max_sum_range; diag[2] = f.diag.n_exceed_inf;
+    diag[3] = f.diag.max_sum_inf; diag[4] = f.diag.first_crossing_time;
+  }
+  return 0;
+} catch (...) { return -9; }
+
+int sc_directcif_eval_ic(int n, int p, int K, const double* time, const double* time2, const int* cause, const double* X,
+                         const int* alpha_free, const double* alpha_value, const int* baseline,
+                         const int* n_knots, const double* knots, const double* theta,
+                         double* loglik, double* grad, double* info_matrix) try {
+  DirectSpec s;
+  if (int rc = make_spec(p, K, alpha_free, alpha_value, baseline, n_knots, knots, s)) return rc;
+  if (!time || !time2 || !cause || !theta) return -1;
+  DirectCIFModel m(n, time, cause, X, s);
+  m.set_time2(time2);
+  Eval ev;
+  m.eval(std::vector<double>(theta, theta + s.nparam()), ev, true);
+  export_eval(ev, s.nparam(), loglik, grad, info_matrix);
+  return 0;
+} catch (...) { return -9; }
+
 int sc_directcif_eval(int n, int p, int K, const double* time, const int* cause, const double* X,
                       const int* alpha_free, const double* alpha_value, const int* baseline,
                       const int* n_knots, const double* knots, const double* theta,

@@ -184,6 +184,7 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
                           ps_formula = NULL, trim = 0, B = 200L, seed = 1L, level = 0.95, reference = NULL) {
   cl <- match.call()
   method <- match.arg(method)
+  if (S7::S7_inherits(fit)) .no_ic(fit, "adjusted_risk()")
   if (missing(data) || !is.data.frame(data)) stop("data: give the data frame the model was fitted to", call. = FALSE)
   if (missing(treatment) || !is.character(treatment) || length(treatment) != 1L || !treatment %in% names(data))
     stop("treatment: the name of a column of data, for example treatment = \"arm\"", call. = FALSE)

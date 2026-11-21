@@ -44,6 +44,10 @@ void SX_cure_fit(int* n, int* pl, int* pc, int* dist, int* aft, int* nk, double*
 void SX_cure_predict(int* dist, int* aft, int* nk, double* knots, int* pl, int* pc, int* mixture, double* theta, int* has_var, double* var, int* n_new, double* Xl, double* Xc, int* nt, double* times, int* type, int* average, double* out, double* out_se, int* rc);
 void SX_cv_folds(int* n, int* folds, int* seed, int* out, int* rc);
 void SX_kernel_hazard(int* m, double* et, double* d, double* Y, double* bw, int* boundary, int* nx, double* x, double* out_h, double* out_se, double* bw_used, int* rc);
+void SX_par_fit_ic(int* n, int* p, int* dist, int* aft, int* nk, double* knots, double* time, double* time2, int* type, double* X, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc);
+void SX_direct_fit_ic(int* n, int* p, int* K, double* time, double* time2, int* cause, double* X, int* alpha_free, double* alpha_value, int* baseline, int* n_knots, double* knots, int* constraint, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, double* diag, int* rc);
+void SX_direct_eval_ic(int* n, int* p, int* K, double* time, double* time2, int* cause, double* X, int* alpha_free, double* alpha_value, int* baseline, int* n_knots, double* knots, double* theta, double* loglik, double* grad, double* info_matrix, int* rc);
+void SX_turnbull(int* n, double* L, double* R, int* has_w, double* w, int* max_iter, double* tol, int* n_int, double* lo, double* hi, double* mass, int* a, int* b, double* info_d, int* info_i, int* rc);
 #ifdef __cplusplus
 }
 #endif

@@ -1,5 +1,24 @@
 # SurvX (development version)
 
+* Interval-censored data (the event is only known to lie between two visits):
+  * New `Interval(left, right, cause)` outcome: interval-, left- and right-censored and exact times
+    can be mixed in one data set.
+  * New `turnbull()`: the Turnbull non-parametric maximum likelihood estimate of the survival curve
+    (self-consistency algorithm with SQUAREM acceleration in compiled code, convergence checked on
+    the Kuhn-Tucker conditions), by group, with bootstrap bands, medians with intervals, the range
+    of survival values that the data leave unidentified within the innermost intervals, and a
+    logrank-type test with Finkelstein scores and permutational variance. `print()`, `summary()`,
+    `plot()`, `predict()`, `as.data.frame()`.
+  * `parsurv()` fits every family (exponential, Weibull, Gompertz, log-normal, log-logistic,
+    generalized gamma, Royston-Parmar spline, piecewise exponential; PH and AFT) to
+    `Interval()` outcomes by the full likelihood with exact derivatives; `plot()` and
+    `hazard_plot()` compare the fit with the Turnbull estimate.
+  * `directcif()` (joint estimation) fits direct parametric models for the cumulative incidence to
+    interval-censored competing risks data with a known cause, using `F_k(R) - F_k(L)`.
+  * Functions that need exact times (Kaplan-Meier, Cox, Fine-Gray, residuals, prediction metrics,
+    `adjusted_risk()`) stop with a message that points to these functions.
+* `time_effects()`: the stability summary now reads "celltype 89%, karno 89%".
+
 * New `adjusted_risk()`: adjusted absolute risks and causal contrasts between treatments, by
   standardisation of a fitted `cox()`, `fg()`, `csc()`, `directcif()`, `parsurv()`, `cure()` or
   `time_effects()` model (the g-formula) and/or by inverse probability of treatment weighting

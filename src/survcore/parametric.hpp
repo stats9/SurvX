@@ -435,13 +435,41 @@ inline void par_local_all(const ParSpec& sp, double entry, double t, int d, doub
   if (ns) { g[1] = o.ls; H[1] = H[q] = o.lus; H[q + 1] = o.lss; }
 }
 
-// the data of one fit; X row-major n x p, entry may be null
+// Interval-censored contribution log{S(L) - S(R)} (Turnbull 1976; Lindsey & Ryan 1998, Stat Med
+// 17:219-238), L = 0 meaning left censoring (S(0) = 1). With a = log S(L), b = log S(R) and r = e^(b - a):
+//   l = a + log(1 - r),  dl = (da - r db)/(1 - r),
+//   d2l = [(d2a + da da') - r (d2b + db db')]/(1 - r) - dl dl',
+// exact from the derivatives of log S at the two end points, so every family keeps its analytic (or,
+// for the generalized gamma, its numerical) derivatives.
+inline void par_local_ic(const ParSpec& sp, double L, double R, double u, const double* sh, double& l, double* g, double* H) {
+  const int q = 1 + sp.nshape();
+  std::vector<double> ga(q, 0.0), Ha(q * q, 0.0), gb(q, 0.0), Hb(q * q, 0.0);
+  double a = 0.0, b = 0.0;
+  if (L > 0.0) par_local_all(sp, 0.0, L, 0, u, sh, a, ga.data(), Ha.data());
+  par_local_all(sp, 0.0, R, 0, u, sh, b, gb.data(), Hb.data());
+  if (!std::isfinite(a) || !std::isfinite(b) || !(b < a)) {
+    l = -std::numeric_limits<double>::infinity();
+    for (int i = 0; i < q; ++i) { g[i] = 0.0; for (int j = 0; j < q; ++j) H[i * q + j] = 0.0; }
+    return;
+  }
+  const double r = std::exp(b - a), om = -std::expm1(b - a);
+  l = a + std::log(om);
+  for (int i = 0; i < q; ++i) g[i] = (ga[i] - r * gb[i]) / om;
+  for (int i = 0; i < q; ++i)
+    for (int j = 0; j < q; ++j)
+      H[i * q + j] = ((Ha[i * q + j] + ga[i] * ga[j]) - r * (Hb[i * q + j] + gb[i] * gb[j])) / om - g[i] * g[j];
+}
+
+// the data of one fit; X row-major n x p, entry may be null. With interval censoring (time2 not null)
+// status is the type of observation: 0 right-censored at time, 1 exact at time, 2 in (time, time2],
+// 3 left-censored in (0, time2]; entry must then be null.
 struct ParData {
   int n = 0;
   const double* entry = nullptr;
   const double* time = nullptr;
   const int* status = nullptr;
   const double* X = nullptr;
+  const double* time2 = nullptr;
 };
 
 inline double par_u(const ParSpec& sp, const double* xrow, const std::vector<double>& th) {
@@ -465,7 +493,10 @@ struct ParModel {
       const double* xr = dat.X + static_cast<std::size_t>(i) * p;
       x[0] = 1.0; for (int j = 0; j < p; ++j) x[j + 1] = xr[j];
       const double u = par_u(sp, xr, th);
-      par_local_all(sp, dat.entry ? dat.entry[i] : 0.0, dat.time[i], dat.status[i], u, sh, l, g.data(), H.data());
+      if (dat.time2 && dat.status[i] >= 2)
+        par_local_ic(sp, dat.status[i] == 3 ? 0.0 : dat.time[i], dat.time2[i], u, sh, l, g.data(), H.data());
+      else
+        par_local_all(sp, dat.entry ? dat.entry[i] : 0.0, dat.time[i], dat.status[i] ? 1 : 0, u, sh, l, g.data(), H.data());
       ev.ll += l;
       if (!std::isfinite(l)) continue;
       for (int a = 0; a <= p; ++a) ev.g[a] += g[0] * x[a];

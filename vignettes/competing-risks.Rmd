@@ -302,6 +302,25 @@ adjusted_risk(fg(Event(time, status) ~ education, data = fertility, cause = 1), 
               times = c(1, 2, 5), B = 0)
 ```
 
+## Interval-censored competing risks
+
+When the event and its type are found at a visit, the time is known only to lie between two
+visits. With `Interval(left, right, cause = )` the joint likelihood of the direct model uses
+$F_k(R) - F_k(L)$ for an event of cause $k$ between the visits and $1 - \sum_k F_k(L)$ for a
+subject event-free at the last visit $L$ (Hudgens, Satten and Longini 2001):
+
+```{r ic-cr}
+v <- 0.5                                      # visits every half time unit
+dic <- d
+dic$right <- ifelse(d$status > 0, ceiling(d$time / v) * v, Inf)   # first visit after the event
+dic$left  <- ifelse(d$status > 0, dic$right - v, d$time)          # the visit before it
+f_ic <- directcif(Interval(left, right, cause = status) ~ x + z, data = dic, baseline = "gompertz", link = "PH")
+cbind(interval = coef(f_ic), exact = coef(f_dir))
+```
+
+The estimates from the visit data are close to those from the exact times; treating the visit at
+which the event was found as the event time would shift the curves to the right.
+
 ## Coherence: do the CIFs add up?
 
 The CIFs of all causes must sum to at most one. The cause-specific Cox approach satisfies this
@@ -347,6 +366,8 @@ rowSums(sapply(1:3, function(k) predict(f_k3, nd, times = Inf, cause = k)))
 
 ## References
 
+- Hudgens MG, Satten GA, Longini IM (2001). Nonparametric maximum likelihood estimation for competing
+  risks survival data subject to interval censoring and truncation. *Biometrics* 57, 74-80.
 - Fine JP, Gray RJ (1999). A proportional hazards model for the subdistribution of a competing
   risk. *Journal of the American Statistical Association*, 94, 496-509.
 - Jeong JH, Fine J (2006). Direct parametric inference for the cumulative incidence function.

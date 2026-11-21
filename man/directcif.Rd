@@ -27,7 +27,9 @@ directcif(formula, data, baseline = "gompertz", link = "PH",
 }
 \arguments{
 \item{formula}{\code{Event(time, status) ~ covariates} (or \code{~ 1}); status 0 = censored,
-  1, 2, ..., K = cause. Delayed entry is not supported.}
+  1, 2, ..., K = cause. Delayed entry is not supported. For interval-censored times,
+  \code{Interval(left, right, cause = cause) ~ covariates} (see the section Interval-censored
+  data).}
 \item{data}{a data frame. Rows with missing values are removed.}
 \item{baseline}{the baseline family, one for all causes or one per cause (see Details):
   \code{"gompertz"} (default), \code{"gompertz3"}, \code{"weibull"}, \code{"mix_weibull"},
@@ -233,7 +235,20 @@ Stat Med 37:82-97.
 
 All references: \code{sx_references("directcif")}.
 }
+\section{Interval-censored data}{
+When the time of the event is only known to lie between two visits but its type is known
+(\code{\link{Interval}(left, right, cause = )}), the joint likelihood uses
+\eqn{F_k(R) - F_k(L)} for an event of cause \eqn{k} in \eqn{(L, R]} (\eqn{F_k(R)} when
+\eqn{L = 0}), \eqn{1 - \sum_k F_k(L)} for a subject event-free at the last visit \eqn{L} and the
+density for exact times (Hudgens, Satten and Longini 2001 for the likelihood; the direct parametric
+models of Jeong and Fine 2006, 2007 for \eqn{F_k}). Only \code{estimation = "joint"} is available
+(the weighted and constrained estimators need exact times). The fit starts from the fit to the
+midpoints of the intervals. Predictions, \code{estimates()} and \code{\link{cif_plot}} work as
+usual; the Aalen-Johansen reference and the numbers at risk are not drawn, as they are not defined
+for these data.
+}
 \seealso{
+\code{\link{Interval}}, \code{\link{turnbull}};
 \code{\link{fg}} (semi-parametric Fine-Gray), \code{\link{csc}}, \code{\link{aj}},
 \code{\link{cif_plot}}, \code{\link{predict.SurvX}}.
 }

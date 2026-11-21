@@ -823,8 +823,8 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
         tvs <- names(u$selected)[u$selected != "constant"]
         unst <- intersect(names(top)[top < 0.5], tvs)
         cst <- vapply(tvs, function(tm) sum(fq$share[fq$term == tm & fq$form != "constant"]), numeric(1))
-        if (length(tvs)) out <- c(out, paste0("  A time-varying effect was found in ", paste0(round(100 * cst), "%", collapse = ", "),
-                                              " of the samples for ", paste(.te_pretty(x, tvs), collapse = ", "), "."))
+        if (length(tvs)) out <- c(out, paste0("  Share of the samples with a time-varying effect: ",
+                                              paste0(.te_pretty(x, tvs), " ", round(100 * cst), "%", collapse = ", "), "."))
         if (length(unst)) out <- c(out, paste0("  The form is not well determined for ", paste(.te_pretty(x, unst), collapse = ", "),
                                                " (no form chosen in half of the samples): report the hazard ratios at a few times, ",
                                                "with the bootstrap intervals, rather than the form."))
