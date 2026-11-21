@@ -1,3 +1,31 @@
+# SurvX 0.9.2
+
+* `cox()`: time-varying coefficients with `tt()` terms and the new argument `tt`, a function of
+  time: `cox(Event(time, status) ~ x + tt(x), data, tt = function(t) log(t))` fits
+  log HR(t) = b + g x log(t). Rows are split at the event times, which reproduces
+  `survival::coxph(tt = )` (checked with Efron and Breslow ties and with strata); delayed entry and
+  `cluster()` work as in other Cox fits.
+  The print shows the hazard ratio at the quartiles of the event times, and the new function
+  `tt_effect(fit, times)` gives it, with confidence intervals, at any times.
+* `fg()`: `variance = "bootstrap"` (with `B` and `seed`) estimates the variance from bootstrap
+  samples of the subjects, so that the estimation of the censoring and truncation weights is taken
+  into account. With delayed entry the robust variance treats the Geskus weights as known and was
+  5-11% too small in the Monte Carlo study; the print of such fits now says so and points to the
+  bootstrap.
+* Bootstrap intervals of `cif_plot()` and `cif_data()` no longer change the random number stream of
+  the session.
+* `Event()` gains `timefix = TRUE`: times (and entry times) that differ only by floating-point
+  rounding are treated as tied, with the rule of `survival::aeqSurv()` used by `coxph()`,
+  `survfit()` and `survdiff()`. Before, such near-ties (a few per 10000 computed times) were kept
+  apart, and results could differ slightly from survival on large data sets.
+  `Event(..., timefix = FALSE)` keeps the times as they are, as cmprsk and prodlim do.
+  `logrank_test()` and `gray_test()` gain the same argument.
+* All help pages rewritten: when to use the function and what to use instead,
+  every argument with its default, the model, how to interpret and report the estimates, the
+  assumptions and how to check them, messages and their remedies, the agreement with reference
+  packages, and references grouped by what they are used for.
+* New help page `?SurvX` with a table from research questions to functions.
+
 # SurvX 0.9.1
 
 * The S3 class of `Event()` objects is now `"SurvXEvent"`: the former name `"Event"` was also used

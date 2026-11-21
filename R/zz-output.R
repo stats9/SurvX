@@ -93,17 +93,40 @@
 
 #' Estimates as a data frame
 #'
+#' @description
 #' All coefficients of a fitted model in one data frame, with standard errors, Wald confidence
 #' limits and tests, and for regression coefficients the exponentiated estimate (hazard ratio,
 #' subdistribution hazard ratio or odds ratio, see the column \code{scale}) with its limits.
-#'
 #' @param object a model fitted by \code{\link{cox}}, \code{\link{fg}}, \code{\link{csc}} or \code{\link{directcif}}.
 #' @param level confidence level.
 #' @param ... not used.
-#' @return a data frame with the columns \code{cause, term, role, scale, estimate, se, lower, upper,
+#' @details
+#' Standard errors are the square roots of the diagonal of the inverse observed information (for
+#' \code{fg()} the robust sandwich variance by default, for weighted direct models the sandwich with
+#' one score per subject). Limits are Wald intervals \eqn{\hat\beta \pm z_{1-(1-level)/2}\,SE} on
+#' the estimation scale, and \code{exp_*} columns are their exponentials; \code{p} is the two-sided
+#' Wald test of a zero coefficient.
+#' @section Interpreting the table:
+#' \code{estimate} and \code{se} are on the scale of estimation (log hazard ratio, log odds, log
+#' shape, ...); \code{exp_estimate} with \code{exp_lower} and \code{exp_upper} is the effect on the
+#' scale named in \code{scale} (hazard ratio, subdistribution hazard ratio, time ratio, odds ratio of
+#' cure, ...), the one to report. Confidence limits and p-values are Wald limits and tests; for small
+#' samples, compare nested models with a likelihood ratio test (\code{anova}-style: twice the
+#' difference of \code{logLik()}).
+#' @return
+#' a data frame with the columns \code{cause, term, role, scale, estimate, se, lower, upper,
 #'   z, p, exp_estimate, exp_lower, exp_upper}. \code{role} is \code{"beta"} for regression
 #'   coefficients; for direct models also \code{"baseline"}, \code{"alpha"} and \code{"conditional"}
 #'   (on the scale used for estimation; \code{summary()} shows them on the natural scale).
+#' @references
+#' Wald A (1943) Tests of statistical hypotheses concerning several parameters when the number of
+#'   observations is large. Transactions of the American Mathematical Society 54:426-482.
+#'
+#' Casella G, Berger RL (2002) Statistical Inference, 2nd ed. Duxbury, Section 10.3.
+#'
+#' White H (1982) Maximum likelihood estimation of misspecified models. Econometrica 50:1-25.
+#' @seealso
+#' \code{\link{SurvX-methods}} (print, summary, coef, confint), \code{\link{sx_references}}.
 #' @examples
 #' set.seed(4)
 #' d <- data.frame(time = rexp(200), status = rbinom(200, 1, 0.7), x = rnorm(200))
@@ -213,7 +236,8 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
            "Effect of covariates: hazard ratio (HR)",
            .effect_lines(e, "HR", level, x@xlevels),
            "",
-           .reading_lines(e, x@xlevels, "PH", "the event", level),
+           .tt_lines(x, level),
+           .reading_lines(e[!grepl("^tt\\(", e$term), , drop = FALSE], x@xlevels, "PH", "the event", level),
            "",
            sprintf("Fit: log partial likelihood %.2f | AIC %.2f | %d coefficients", x@loglik, -2 * x@loglik + 2 * df, df),
            sprintf("     likelihood ratio test against no covariates: chi-square %.2f on %d df, p %s", lr, df,
@@ -226,15 +250,29 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
   c(out, .status_lines(x@converged, x@flags))
 }
 
+# time-varying coefficients: what the tt() rows mean and the HR at the quartiles of the event times
+.tt_lines <- function(x, level) {
+  if (is.null(x@tt)) return(character(0))
+  te <- tt_effect(x, level = level)
+  tab <- data.frame(covariate = te$term, time = format(signif(te$time, 4)), HR = sprintf("%.3f", te$hr),
+                    ci = sprintf("%.3f to %.3f", te$lower, te$upper), stringsAsFactors = FALSE)
+  names(tab)[4] <- paste0(round(100 * level), "% CI")
+  c("Time-varying effects: tt(x) is the change of log HR of x per unit of g(t); HR of x at time t = exp(b_x + b_tt g(t)):",
+    .table_lines(tab), "(tt_effect(fit, times) for other times)", "")
+}
+
 .render_fg <- function(x, level, detail) {
   e <- estimates(x, level = level)
   out <- c(paste0("Fine-Gray regression for the cumulative incidence of cause ", x@cause),
            paste0("  Subjects: ", x@n, "   events of cause ", x@cause, ": ", x@nevent,
                   "   other events: ", sum(x@status != 0L & x@status != x@cause), "   censored: ", sum(x@status == 0L)),
            if (!is.null(x@entry)) "  Delayed entry: censoring and truncation weights of Geskus (2011)",
-           paste0("  Standard errors: ", if (x@variance != "robust") "model-based"
+           paste0("  Standard errors: ", if (x@variance == "model") "model-based"
+                  else if (x@variance == "bootstrap") paste0("bootstrap of the subjects (", attr(x@vcov_boot, "B"), " samples)")
                   else if (is.null(x@entry)) "robust sandwich (Fine & Gray 1999)"
                   else "robust sandwich over subjects (Lin & Wei 1989), weights taken as known"),
+           if (!is.null(x@entry) && x@variance == "robust")
+             "  Note: with delayed entry these standard errors can be too small; variance = \"bootstrap\" accounts for the weights",
            "",
            "Effect of covariates: subdistribution hazard ratio (sHR)",
            .effect_lines(e, "sHR", level, x@xlevels), "",
@@ -690,6 +728,7 @@ S7::method(plot, KMFit) <- function(x, conf.int = length(x@curves) == 1L, risk.t
 
 S7::method(plot, CoxFit) <- function(x, newdata = NULL, times = NULL, xlab = "Time", ylab = "Survival probability",
                                      col = NULL, lty = 1, lwd = 2, legend = TRUE, labels = NULL, ...) {
+  .no_tt(x, "plot()")
   if (is.null(times)) times <- sort(unique(c(0, x@time[x@status == 1L], max(x@time))))
   P <- stats::predict(x, newdata = newdata, times = times, type = "survival")
   if (is.null(newdata)) P <- matrix(colMeans(P), 1L)

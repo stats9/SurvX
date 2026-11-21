@@ -36,3 +36,20 @@ test_that("fg() with delayed entry agrees with survival::finegray + coxph", {
   expect_close(cd$cif, predict(f, SurvX:::.profile(f)$X |> as.data.frame(), times = cd$time)[1, ], 1e-8)
   with_null_device(expect_no_error(cif_plot(f, B = 10)))
 })
+
+test_that("fg(variance = 'bootstrap') is reproducible, leaves the RNG alone and is close to the robust variance", {
+  d <- sim_cr_entry(300, 59)
+  set.seed(123); u0 <- runif(1); set.seed(123)
+  f1 <- fg(Event(time, status, entry = entry) ~ x + z, d, variance = "bootstrap", B = 60, seed = 7)
+  expect_identical(runif(1), u0)                                   # the session's RNG stream is unchanged
+  f2 <- fg(Event(time, status, entry = entry) ~ x + z, d, variance = "bootstrap", B = 60, seed = 7)
+  expect_identical(vcov(f1), vcov(f2))
+  expect_identical(coef(f1), coef(fg(Event(time, status, entry = entry) ~ x + z, d)))
+  ratio <- sqrt(diag(vcov(f1))) / sqrt(diag(f1@vcov_robust))
+  expect_true(all(ratio > 0.6 & ratio < 1.8))
+  expect_output(print(f1), "bootstrap of the subjects")
+  # without delayed entry too
+  f3 <- fg(Event(time, status) ~ x + z, d, variance = "bootstrap", B = 60)
+  ratio3 <- sqrt(diag(vcov(f3))) / sqrt(diag(f3@vcov_robust))
+  expect_true(all(ratio3 > 0.6 & ratio3 < 1.6))
+})

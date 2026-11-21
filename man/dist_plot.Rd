@@ -32,6 +32,13 @@ For a fitted model, the Nelson-Aalen cumulative hazard of the Cox-Snell residual
 indicators) is plotted against the residuals. If the model fits, the residuals behave like a
 censored sample from the unit exponential distribution and the curve follows the line of identity.
 }
+\section{Interpreting the plot}{
+With a formula: look for the panel in which the points lie closest to a straight line; that
+distribution is a good candidate for \code{\link{parsurv}}. Parallel lines across groups in the
+Weibull panel indicate proportional hazards; in the log-logistic panel, proportional odds. With a
+fitted model: Cox-Snell residuals that follow the identity line support the model; a curve that
+bends away shows lack of fit, usually in the tail first.
+}
 \value{
 invisibly, the plotted data.
 }
@@ -43,6 +50,10 @@ Collett D (2015) Modelling Survival Data in Medical Research, 3rd ed. CRC Press,
 
 Cox DR, Snell EJ (1968) A general definition of residuals. Journal of the Royal Statistical Society,
   Series B 30:248-275.
+}
+\seealso{
+\code{\link{hazard_plot}}, \code{\link{hazard_np}}, \code{\link{residuals.SurvX}},
+\code{\link{parsurv}}.
 }
 \examples{
 set.seed(5)

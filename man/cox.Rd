@@ -23,7 +23,7 @@ change the rate at which the event happens.
 }
 \usage{
 cox(formula, data, ties = c("efron", "breslow"), weights = NULL, robust = FALSE,
-    max_iter = 50L, tol = 1e-10)
+    max_iter = 50L, tol = 1e-10, tt = NULL)
 }
 \arguments{
 \item{formula}{a formula with \code{\link{Event}()} on the left and the covariates on the right.
@@ -46,6 +46,10 @@ cox(formula, data, ties = c("efron", "breslow"), weights = NULL, robust = FALSE,
     \item \code{cluster(id)}: rows with the same \code{id} are correlated (several rows per
       subject in (start, stop] data, family members, recurrent events); the robust variance is
       then used.
+    \item \code{tt(x)}: a time-varying coefficient for the numeric covariate \code{x}, together
+      with the argument \code{tt}: \code{x + tt(x)} gives the log hazard ratio
+      \eqn{\beta + \gamma g(t)} at time \eqn{t}. Use it when \code{\link{ph_test}} shows that the
+      effect of \code{x} changes over time and that effect is of interest.
   }}
 \item{data}{a data frame containing the variables of the formula. Rows with a missing value in
   any of these variables are removed (the number of rows used is shown by \code{nobs()} and in the
@@ -64,6 +68,10 @@ cox(formula, data, ties = c("efron", "breslow"), weights = NULL, robust = FALSE,
   usually needs fewer than 10).}
 \item{tol}{convergence tolerance: iteration stops when the relative change of the log partial
   likelihood is below \code{tol}.}
+\item{tt}{the function of time \eqn{g(t)} of the \code{tt()} terms, for example
+  \code{function(t) log(t)} (an effect that changes linearly in log time; the usual first choice),
+  \code{function(t) t}, or \code{function(t) as.numeric(t > 2)} (a different effect after time
+  2). A list gives one function per \code{tt()} term. Needed only with \code{tt()} terms.}
 }
 \details{
 \subsection{The model}{
@@ -76,6 +84,15 @@ of tied event times, by Newton-Raphson with step halving. With \code{strata()}, 
 (Kalbfleisch and Prentice 2002, Section 4.4). With \code{entry}, row \eqn{i} is in the risk set at
 time \eqn{t} when \eqn{entry_i < t \le time_i}: the counting-process formulation of Andersen and
 Gill (1982), which covers left truncation and time-varying covariates.
+}
+\subsection{Time-varying coefficients}{
+With \code{tt()} terms the model is \eqn{h(t \mid x) = h_0(t)\exp\{\beta x + \gamma x g(t)\}}. Every
+row is split at the event times inside its follow-up, and the \code{tt()} column of each piece is
+\eqn{x\,g(t)} at the end of the piece; the partial likelihood of the split data is exactly that of
+the model, as in \code{survival::coxph(tt = )} (Therneau and Grambsch 2000, Chapter 6). With many
+distinct event times the split data can be large (about \eqn{n} times the number of events
+rows); rounding the times reduces it. \code{\link{tt_effect}} gives the hazard ratio at chosen
+times. Predictions, residuals and \code{ph_test()} are not defined for such models.
 }
 \subsection{Standard errors}{
 Model-based: the inverse of the observed information matrix. Robust: \eqn{V (\sum_c U_c
@@ -110,7 +127,11 @@ itself and predicted survival is \eqn{\exp\{-\hat H_0(t) e^{x^\top\hat\beta}\}}.
     baseline hazards.
   \item Proportional hazards means the HR is the same at every time. If \code{\link{ph_test}}
     rejects this, the printed HR is a weighted average of a time-varying effect; consider
-    \code{strata()} for that variable, a split of follow-up, or a time-varying coefficient.
+    \code{strata()} for that variable, or a time-varying coefficient with \code{tt()}.
+  \item With \code{x + tt(x)}, the row of \code{x} is the HR where \eqn{g(t) = 0} (at \eqn{t = 1}
+    for \eqn{g = \log}) and the row of \code{tt(x)} the factor by which that HR changes per unit
+    of \eqn{g(t)}; the print and \code{\link{tt_effect}} give the HR at chosen times, which is what
+    to report.
 }
 A sentence for a report: \emph{"In a Cox model adjusted for age and stage, treatment was
 associated with a 30\% lower hazard of death (HR 0.70, 95\% CI 0.55 to 0.89, p = 0.004)."}
@@ -148,12 +169,16 @@ The print gives the same reading for every covariate on its \code{Reading:} line
 }
 \section{Validation}{
 Agreement with \code{survival::coxph} (\pkg{survival} 3.8) in the validation suite of the package
-(\url{https://github.com/stats9/SurvX}, directory \code{validation}), over simulated data sets with
-and without ties, strata, (start, stop] rows, clusters and case weights, and the real data sets
-\code{lung}, \code{veteran} and \code{colon}: coefficients to \eqn{2 \times 10^{-9}}, model-based
-and robust variances to \eqn{2 \times 10^{-11}}, log partial likelihood to
-\eqn{2 \times 10^{-10}}, predicted survival (\code{survfit.coxph}) to \eqn{10^{-9}}, martingale,
-deviance and scaled Schoenfeld residuals to \eqn{10^{-8}} (largest absolute differences).
+(\url{https://github.com/stats9/SurvX}, directory \code{validation}), over 82 simulated and real data
+sets (\code{lung}, \code{veteran}, \code{colon}; up to \eqn{n = 20000}) with and without ties, strata,
+(start, stop] rows, clusters and case weights, 438 fits in all: coefficients to
+\eqn{7 \times 10^{-7}}, model-based and robust variances to \eqn{4 \times 10^{-9}}, log partial
+likelihood to a relative \eqn{4 \times 10^{-8}}; predicted survival (\code{survfit.coxph}),
+martingale, deviance and scaled Schoenfeld residuals to \eqn{10^{-8}}. In a Monte Carlo study (1000
+replications, \eqn{n} = 200, 500, 1000), with strata, delayed entry and time-varying covariates,
+the standard errors matched the empirical standard deviation of the estimates (ratio 0.95 to 1.05)
+and the 95\% intervals covered 93.4 to 96.1\%. A fit on \eqn{n = 10000} takes about 0.01 s
+(\code{coxph}: 0.03 s).
 }
 \value{
 An S7 object of class \code{CoxFit}. Its main slots (read with \code{@}): \code{coefficients},
@@ -176,6 +201,7 @@ Methods:
   \code{residuals(fit, type)} \tab martingale, deviance, Cox-Snell, Schoenfeld, scaled Schoenfeld
     (see \code{\link{residuals.SurvX}}) \cr
   \code{\link{ph_test}(fit)} \tab test of proportional hazards \cr
+  \code{\link{tt_effect}(fit, times)} \tab models with \code{tt()}: HR at chosen times \cr
   \code{\link{compare_models}}, \code{\link{brier_score}}, \code{\link{cv_compare}} \tab
     predictive performance \cr
 }
@@ -258,4 +284,11 @@ cox(Event(time, status, entry = entry) ~ treat + I(age / 10), d)
 ## 5. correlated rows: robust standard errors (two rows per family here)
 d$family <- rep(seq_len(n / 2), each = 2)
 cox(Event(time, status) ~ treat + I(age / 10) + cluster(family), d)
+
+## 6. an effect that changes over time: tt()
+d$new <- as.numeric(d$treat == "new")
+ft <- cox(Event(time, status) ~ new + tt(new) + I(age / 10) + strata(centre), d,
+          tt = function(t) log(t))
+ft                                     # HR of the new treatment at the quartiles of time
+tt_effect(ft, times = c(1, 5, 10))
 }

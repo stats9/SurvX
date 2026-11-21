@@ -3,7 +3,8 @@
 # bias, the empirical standard deviation of the estimates, the mean model-based standard error,
 # their ratio, the coverage of the 95% Wald interval, and the share of fits that converged.
 # For tests: rejection rate at the 5% level under the null (size) and under an alternative (power).
-# Coverage is judged against the Monte Carlo band 95% +/- 1.96 sqrt(0.95 * 0.05 / R).
+# Coverage is judged against the Monte Carlo band 95% +/- z sqrt(0.95 * 0.05 / R), with z = 2.576
+# (99%): with some 300 judged rows, a 95% band would mark about 15 rows by chance alone.
 
 # ---- extract estimates -------------------------------------------------------------------------------
 # rows of estimates(fit) for the given terms (and cause), as data.frame(term, est, se)
@@ -173,7 +174,11 @@ sim_one <- function(rep, n, seed) {
   add(res_rows("Fine-Gray", "fg (robust SE)", b1, attempt(fg(Event(time, status) ~ x1 + x2, d))))
   add(res_rows("Fine-Gray", "fg (model SE)", b1, attempt(fg(Event(time, status) ~ x1 + x2, d, variance = "model")), judged = FALSE))
   dl <- sim_truncated(n, sim_fg)
-  add(res_rows("Fine-Gray, left truncation", "fg, entry (Geskus)", b1, attempt(fg(Event(time, status, entry = entry) ~ x1 + x2, dl))))
+  # robust SE treats the Geskus weights as known (reported); the bootstrap of the subjects is judged
+  add(res_rows("Fine-Gray, left truncation", "fg, entry (Geskus): robust SE", b1,
+               attempt(fg(Event(time, status, entry = entry) ~ x1 + x2, dl)), judged = FALSE))
+  add(res_rows("Fine-Gray, left truncation", "fg, entry (Geskus): bootstrap SE (B = 100)", b1,
+               attempt(fg(Event(time, status, entry = entry) ~ x1 + x2, dl, variance = "bootstrap", B = 100L, seed = rep))))
   # direct PH model (Gompertz) on Fine-Gray data: misspecified baseline, reported for comparison
   add(res_rows("Fine-Gray", "directcif weighted, Gompertz PH (misspecified baseline)", b1,
                attempt(directcif(Event(time, status) ~ x1 + x2, d, estimation = "weighted")), cause = 1, role = "beta", judged = FALSE))
@@ -322,14 +327,14 @@ summarise_simulation <- function(raw) {
                emp_sd = if (is_rate) NA_real_ else emp_sd, mean_se = if (is_rate) NA_real_ else mean(se, na.rm = TRUE),
                se_ratio = if (is_rate) NA_real_ else mean(se, na.rm = TRUE) / emp_sd,
                coverage_pct = 100 * cover, rate_pct = if (is_rate) 100 * mean(est) else NA_real_,
-               mc_band = 100 * 1.959964 * sqrt(0.95 * 0.05 / sum(ok)), judged = s$judged[1], stringsAsFactors = FALSE)
+               mc_band = 100 * 2.575829 * sqrt(0.95 * 0.05 / sum(ok)), judged = s$judged[1], stringsAsFactors = FALSE)
   })
   sm <- do.call(rbind, out)
   band <- sm$mc_band
   # SE/SD is judged against its own Monte Carlo error, sqrt(1 / (2 (R - 1))), plus 5% for small-sample bias
-  sm$se_ratio_band <- 1.959964 * sqrt(1 / (2 * (sm$R - 1))) + 0.05
+  sm$se_ratio_band <- 2.575829 * sqrt(1 / (2 * (sm$R - 1))) + 0.05
   sm$verdict <- ifelse(!sm$judged, "reported",
-                ifelse(!is.na(sm$rate_pct), ifelse(abs(sm$rate_pct - 5) <= 100 * 1.959964 * sqrt(0.05 * 0.95 / sm$R), "OK", "CHECK"),
+                ifelse(!is.na(sm$rate_pct), ifelse(abs(sm$rate_pct - 5) <= 100 * 2.575829 * sqrt(0.05 * 0.95 / sm$R), "OK", "CHECK"),
                 ifelse(is.na(sm$coverage_pct), "reported",
                 ifelse(abs(sm$coverage_pct - 95) <= band & sm$converged_pct >= 99 &
                          (is.na(sm$se_ratio) | abs(sm$se_ratio - 1) <= sm$se_ratio_band), "OK", "CHECK"))))

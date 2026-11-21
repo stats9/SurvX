@@ -104,7 +104,7 @@ make_report <- function(cfg, out_dir) {
     latex_table(sim[sim$judged, setdiff(cols, c("verdict", "rate_pct"))], file.path(tab_dir, "simulation.tex"),
                 "Monte Carlo study: bias, empirical standard deviation (SD), mean standard error (SE), SE/SD and coverage of 95\\% intervals.", "tab:simulation")
     md <- c(md, "## 2. Statistical properties (Monte Carlo)", "",
-            "Coverage is judged OK when within the Monte Carlo band 95% +/- 1.96 sqrt(0.95 x 0.05 / R), at least 99% of fits converged and SE/SD is within 1 +/- (1.96 sqrt(1 / (2 (R - 1))) + 0.05), its Monte Carlo error plus 5%; test size within 5% +/- its Monte Carlo band. 'reported' rows are shown for comparison and not judged.", "",
+            "Coverage is judged OK when within the 99% Monte Carlo band 95% +/- 2.576 sqrt(0.95 x 0.05 / R) (a 99% band because some 300 rows are judged), at least 99% of fits converged and SE/SD is within 1 +/- (2.576 sqrt(1 / (2 (R - 1))) + 0.05), its Monte Carlo error plus 5%; test size within 5% +/- its 99% Monte Carlo band. 'reported' rows are shown for comparison and not judged.", "",
             md_table(sim[, cols]), "")
     tx("2. MONTE CARLO STUDY (bias, SD, SE, SE/SD, coverage %, test rejection %)", sim[, cols])
     chk <- sim[sim$verdict == "CHECK", ]

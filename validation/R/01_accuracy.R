@@ -58,20 +58,22 @@ acc_nonparametric <- function(d, label, group = "x1") {
 acc_competing_np <- function(d, label, group = "x1") {
   d$grp <- d[[group]]
   K <- max(d$status)
+  # cmprsk keeps times as they are; survival merges times that differ only by rounding (timefix)
   oa <- attempt(aj(Event(time, status) ~ grp, d))
+  oa0 <- attempt(aj(Event(time, status, timefix = FALSE) ~ grp, d))
   if (has("cmprsk")) {
     ra <- attempt(cmprsk::cuminc(d$time, d$status, d$grp))
-    if (!failed(oa) && !failed(ra)) {
+    if (!failed(oa0) && !failed(ra)) {
       tq <- event_quantiles(d)
       tp <- cmprsk::timepoints(ra, tq)
-      tabs <- summary(oa, times = tq)@tables
+      tabs <- summary(oa0, times = tq)@tables
       for (k in seq_len(K)) {
         ours <- unlist(lapply(names(tabs), function(l) tabs[[l]][[paste0("cif.", k)]]))
         refs <- unlist(lapply(names(tabs), function(l) tp$est[paste(l, k), ]))
         check("non-parametric", "aj", "cmprsk::cuminc", label, paste("CIF of cause", k), ours, refs)
       }
       check("non-parametric", "gray_test", "cmprsk::cuminc", label, "Gray test statistics (all causes)",
-            oa@tests$statistic, ra$Tests[, "stat"])
+            oa0@tests$statistic, ra$Tests[, "stat"])
     }
   }
   if (has("survival")) {
@@ -174,20 +176,35 @@ acc_cox_tv <- function(d, label) {
   invisible()
 }
 
+# time-varying coefficient x1 * log(t): cox(tt()) against coxph(tt = )
+acc_cox_tt <- function(d, label) {
+  if (!has("survival") || nrow(d) > 3000) return(invisible())     # the split data grow as n x events
+  for (ties in c("efron", "breslow")) {
+    o <- attempt(cox(Event(time, status) ~ x1 + x2 + tt(x1), d, ties = ties, tt = function(t) log(t)))
+    r <- attempt(survival::coxph(survival::Surv(time, status) ~ x1 + x2 + tt(x1), data = d, ties = ties,
+                                 tt = function(x, t, ...) x * log(t)))
+    tag <- paste0(label, " [tt(x1) = x1 log t, ", ties, "]")
+    check("Cox", "cox (tt)", "survival::coxph (tt)", tag, "coefficients", attempt(coef(o)), attempt(coef(r)))
+    check("Cox", "cox (tt)", "survival::coxph (tt)", tag, "variance", attempt(vcov(o)), attempt(vcov(r)))
+  }
+  invisible()
+}
+
 # ---- competing risks regression ----------------------------------------------------------------------
 acc_fg <- function(d, label, vars) {
   X <- stats::model.matrix(fml("~", vars), d)[, -1L, drop = FALSE]
   o <- attempt(fg(fml("Event(time, status)", vars), d))
+  o0 <- attempt(fg(fml("Event(time, status, timefix = FALSE)", vars), d))   # as crr: times kept as they are
   tq <- event_quantiles(d)
   if (has("cmprsk")) {
     # crr stops at a gradient tolerance of 1e-6 by default; a tight tolerance makes the comparison exact
     r <- attempt(cmprsk::crr(d$time, d$status, X, failcode = 1, cencode = 0, gtol = 1e-12, maxiter = 100))
-    check("Fine-Gray", "fg", "cmprsk::crr", label, "coefficients", attempt(coef(o)), attempt(r$coef))
-    check("Fine-Gray", "fg", "cmprsk::crr", label, "robust (Fine-Gray) variance", attempt(vcov(o)), attempt(r$var))
-    if (!failed(o) && !failed(r)) {
+    check("Fine-Gray", "fg", "cmprsk::crr", label, "coefficients", attempt(coef(o0)), attempt(r$coef))
+    check("Fine-Gray", "fg", "cmprsk::crr", label, "robust (Fine-Gray) variance", attempt(vcov(o0)), attempt(r$var))
+    if (!failed(o0) && !failed(r)) {
       pr <- attempt(stats::predict(r, X[1:5, , drop = FALSE]))
       refp <- attempt(t(sapply(tq, function(s) pr[max(which(pr[, 1] <= s)), -1])))
-      check("Fine-Gray", "predict(fg)", "cmprsk::predict.crr", label, "predicted CIF", attempt(t(predict(o, d[1:5, ], times = tq))), refp)
+      check("Fine-Gray", "predict(fg)", "cmprsk::predict.crr", label, "predicted CIF", attempt(t(predict(o0, d[1:5, ], times = tq))), refp)
     }
   }
   if (has("survival")) {
@@ -370,7 +387,7 @@ run_accuracy <- function(cfg) {
       d <- designs[[nm]](); vars <- grep("^x", names(d), value = TRUE); lab <- paste0(nm, " #", rep)
       acc_nonparametric(d, lab)
       acc_cox(d, lab, vars)
-      if (nm == "standard") acc_cox_tv(d, lab)
+      if (nm == "standard") { acc_cox_tv(d, lab); acc_cox_tt(d, lab) }
       acc_parametric(d, lab, vars)
     }
     for (nm in names(cr_designs)) {

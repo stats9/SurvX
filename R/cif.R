@@ -219,6 +219,7 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
 }
 
 .curves_boot_general <- function(fit, name, causes, rows, times, conf.int, level, B, seed, interval, adjust) {
+  rs <- .rng_save(); on.exit(.rng_restore(rs), add = TRUE)   # the session's random numbers are left unchanged
   is_csc <- S7::S7_inherits(fit, CSCFit)
   strat <- is_csc && !is.null(fit@strata)
   avg <- is.null(rows)
@@ -322,11 +323,41 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
 
 #' Cumulative incidence curves of fitted models
 #'
+#' @description
 #' Computes the cumulative incidence function of every cause for one or several models, at chosen
 #' covariate values, at typical covariate values, as the average over the sample, or from the same
 #' models fitted without covariates. \code{cif_plot()} draws the result; \code{cif_data()} returns it
 #' as a data frame for tables or other graphics.
-#'
+#' @param x a model fitted by \code{\link{directcif}}, \code{\link{fg}} or \code{\link{csc}} (Cox or parametric baseline), an
+#'   \code{\link{aj}} estimate, or a named list of these for a comparison.
+#' @param newdata data frame of covariate values, one curve per row.
+#' @param cause causes to show; default all.
+#' @param type \code{"profile"}, \code{"marginal"} or \code{"unadjusted"}; see Details.
+#' @param times time points; default a fine grid (direct models) or the event times (step functions).
+#' @param conf.int compute pointwise confidence intervals.
+#' @param level confidence level.
+#' @param B number of bootstrap samples for Fine-Gray and cause-specific Cox models.
+#' @param seed seed of the bootstrap (the same seed gives the same intervals).
+#' @param interval \code{"cloglog"} or \code{"percentile"} for bootstrap intervals.
+#' @param layout \code{"panels"} (one panel per cause), \code{"overlay"} (all causes in one panel) or
+#'   \code{"stacked"} (the cumulative incidences of the causes stacked on each other, with the
+#'   event-free probability on top; one panel per model and covariate profile).
+#' @param risk.table show the number of subjects at risk under the time axis.
+#' @param legend show the legend.
+#' @param caption show which covariate values were used.
+#' @param reference add the Aalen-Johansen estimate of the whole sample for comparison.
+#' @param mark.times time points at which the values of the curves are written on the plot.
+#' @param percent label the probability axis in percent.
+#' @param grid draw light horizontal grid lines.
+#' @param labels labels of the curves (model and profile combinations), in the order of the legend.
+#' @param cause.names names of the causes, e.g. \code{c("relapse", "death")}.
+#' @param col,lty,lwd colours, line types and width of the curves.
+#' @param xlab,ylab,main,xlim,ylim axis labels, title and limits.
+#' @param cex size of all text, relative to the device font (default 0.85). With
+#'   \code{engine = "ggplot2"} the theme's base size is \code{12 * cex} points.
+#' @param engine \code{"base"} (default, no dependencies) or \code{"ggplot2"} (returns a ggplot object;
+#'   the table of numbers at risk is not drawn).
+#' @param ... passed to \code{plot.default} (base engine).
 #' @details
 #' \describe{
 #'   \item{\code{type = "profile"} (default)}{one curve at typical covariate values: the mean of every
@@ -340,29 +371,36 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
 #' Curves of all causes are computed: a Fine-Gray model is refitted for every other cause and a
 #' weighted direct model is refitted for every other cause, with the same covariates.
 #'
-#' Pointwise confidence intervals: delta method for direct models and the Aalen-Johansen estimator,
+#' Pointwise confidence intervals: delta method for direct models, parametric cause-specific models and the Aalen-Johansen estimator,
 #' nonparametric bootstrap of the subjects for Fine-Gray and cause-specific Cox models (Efron and
 #' Tibshirani 1993); both on the complementary log-log scale, \eqn{F^{\exp(\pm z\,se/(F \log F))}},
 #' so that the limits stay in [0, 1]. \code{interval = "percentile"} gives bootstrap percentile limits instead.
-#'
-#' @param x a model fitted by \code{\link{directcif}}, \code{\link{fg}} or \code{\link{csc}} (Cox or parametric baseline), an
-#'   \code{\link{aj}} estimate, or a named list of these for a comparison.
-#' @param newdata data frame of covariate values, one curve per row.
-#' @param cause causes to show; default all.
-#' @param type \code{"profile"}, \code{"marginal"} or \code{"unadjusted"}; see Details.
-#' @param times time points; default a fine grid (direct models) or the event times (step functions).
-#' @param conf.int compute pointwise confidence intervals.
-#' @param level confidence level.
-#' @param B number of bootstrap samples for Fine-Gray and cause-specific Cox models.
-#' @param seed seed of the bootstrap (the same seed gives the same intervals).
-#' @param interval \code{"cloglog"} or \code{"percentile"} for bootstrap intervals.
-#' @return a data frame with the columns \code{model, cause, profile, time, cif, se, lower, upper, step,
+#' @section Interpreting the curves and intervals:
+#' \itemize{
+#'   \item A \emph{profile} curve is the risk of one kind of subject (the typical one, or the rows of
+#'     \code{newdata}); a \emph{marginal} curve is the average risk of the population of the data
+#'     (standardisation), the natural choice for comparing treatments "as if everybody had received
+#'     each"; an \emph{unadjusted} curve ignores the covariates and shows how the model compares with
+#'     the data.
+#'   \item The intervals are pointwise: each covers the true incidence at its own time with the stated
+#'     probability; they are not a band for the whole curve. Parametric models (\code{directcif},
+#'     parametric \code{csc}) use the delta method; Fine-Gray and Cox-baseline \code{csc} fits use the
+#'     bootstrap (\code{B} resamples of subjects, or of clusters with \code{cluster()}), with
+#'     \code{seed} for reproducibility.
+#'   \item \code{reference = TRUE} adds the Aalen-Johansen estimate: a model whose unadjusted curve
+#'     departs from it fits the data poorly.
+#' }
+#' @return
+#' a data frame with the columns \code{model, cause, profile, time, cif, se, lower, upper, step,
 #'   method}; attribute \code{"description"} says which covariate values were used.
 #' @references
 #' Jeong J-H, Fine JP (2006) J R Stat Soc C 55:187-200.
 #' Efron B, Tibshirani RJ (1993) An Introduction to the Bootstrap. Chapman and Hall, New York.
 #' Kalbfleisch JD, Prentice RL (2002) The Statistical Analysis of Failure Time Data, 2nd ed. Wiley,
 #'   Section 8.2 (cumulative incidence functions).
+#' @seealso
+#' \code{\link{aj}}, \code{\link{fg}}, \code{\link{csc}}, \code{\link{directcif}},
+#' \code{\link{predict.SurvX}}, \code{\link{hazard_plot}}.
 #' @examples
 #' set.seed(6)
 #' n <- 300
@@ -451,25 +489,6 @@ cif_data <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
 # ----------------------------------------------------------------------------------------------
 
 #' @rdname cif_data
-#' @param layout \code{"panels"} (one panel per cause), \code{"overlay"} (all causes in one panel) or
-#'   \code{"stacked"} (the cumulative incidences of the causes stacked on each other, with the
-#'   event-free probability on top; one panel per model and covariate profile).
-#' @param risk.table show the number of subjects at risk under the time axis.
-#' @param legend show the legend.
-#' @param caption show which covariate values were used.
-#' @param reference add the Aalen-Johansen estimate of the whole sample for comparison.
-#' @param mark.times time points at which the values of the curves are written on the plot.
-#' @param percent label the probability axis in percent.
-#' @param grid draw light horizontal grid lines.
-#' @param labels labels of the curves (model and profile combinations), in the order of the legend.
-#' @param cause.names names of the causes, e.g. \code{c("relapse", "death")}.
-#' @param col,lty,lwd colours, line types and width of the curves.
-#' @param xlab,ylab,main,xlim,ylim axis labels, title and limits.
-#' @param cex size of all text, relative to the device font (default 0.85). With
-#'   \code{engine = "ggplot2"} the theme's base size is \code{12 * cex} points.
-#' @param engine \code{"base"} (default, no dependencies) or \code{"ggplot2"} (returns a ggplot object;
-#'   the table of numbers at risk is not drawn).
-#' @param ... passed to \code{plot.default} (base engine).
 #' @export
 cif_plot <- function(x, newdata = NULL, cause = NULL, type = c("profile", "marginal", "unadjusted"),
                      layout = c("panels", "overlay", "stacked"), times = NULL, conf.int = TRUE, level = 0.95,

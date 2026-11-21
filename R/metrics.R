@@ -1,21 +1,110 @@
 #' Prediction performance at a time horizon
 #'
-#' Inverse-probability-of-censoring weighted Brier score with the index of prediction accuracy,
-#' time-dependent AUC, and grouped calibration, for predicted risks of one cause by time \code{t}.
-#'
-#' @param time,status follow-up time and status (0 = censored, 1..K = cause).
-#' @param risk predicted probability of the cause of interest by time \code{t}, one per subject.
-#' @param t time horizon.
+#' @description
+#' Measures how good predicted risks are at a time horizon \eqn{t}, for one event type or one cause
+#' with competing risks, under right censoring:
+#' \itemize{
+#'   \item \code{brier_score()}: the Brier score (mean squared error of the predicted risk) and the
+#'     index of prediction accuracy (IPA), which compares it with a model without covariates;
+#'   \item \code{auc_t()}: the time-dependent area under the ROC curve (discrimination: are
+#'     subjects who have the event by \eqn{t} given higher risks?);
+#'   \item \code{calibration()}: predicted against observed risk in risk groups (do predicted
+#'     risks of 20\% come true for 20\% of subjects?).
+#' }
+#' \strong{Use them} to validate a prediction model, ideally on new data or with cross-validation
+#' (\code{\link{compare_models}}, \code{\link{cv_compare}}), which call these functions.
+#' @param time,status follow-up time and status (0 = censored, 1..K = cause) of the subjects whose
+#'   risks are assessed.
+#' @param risk predicted probability of the event (or of the cause of interest) by time \code{t}, one
+#'   per subject: for example \code{predict(fit, newdata, times = t)} of a Fine-Gray or
+#'   cause-specific model, or \code{1 - predict(fit, newdata, times = t, type = "survival")} of a
+#'   survival model.
+#' @param t the time horizon (a single number).
 #' @param cause cause of interest.
 #' @param groups number of risk groups for calibration.
-#' @return \code{brier_score}: named vector with \code{brier}, \code{brier_null} (Aalen-Johansen
+#' @details
+#' \subsection{Brier score}{
+#' \eqn{BS(t) = n^{-1} \sum_i \hat W_i(t) \{I(T_i \le t, \mathrm{cause}_i = 1) - \hat r_i\}^2},
+#' with inverse-probability-of-censoring weights \eqn{\hat W_i(t)} from the Kaplan-Meier estimate of
+#' the censoring distribution: \eqn{1/\hat G(T_i-)} for subjects with an event (of any cause) by
+#' \eqn{t}, \eqn{1/\hat G(t)} for those still at risk, and 0 for those censored before \eqn{t}
+#' (Graf et al. 1999; Gerds and Schumacher 2006). The null model predicts the Aalen-Johansen
+#' (Kaplan-Meier) estimate for everybody, and \eqn{IPA = 1 - BS/BS_{null}} (Kattan and Gerds 2018).
+#' }
+#' \subsection{AUC}{
+#' The probability that a subject with the event of interest by \eqn{t} has a higher predicted risk
+#' than a subject without it, with the same weights; subjects with a competing event before \eqn{t}
+#' count as controls ("definition 2" of Blanche et al. 2013). Ties in the predicted risk count one
+#' half.
+#' }
+#' \subsection{Calibration}{
+#' Subjects are grouped by predicted risk (\code{groups} quantile groups); in each group the mean
+#' predicted risk is compared with the Aalen-Johansen estimate of the observed risk at \eqn{t}
+#' (Gerds, Andersen and Kattan 2014). The calibration error is the size-weighted mean absolute
+#' difference.
+#' }
+#' @section Interpreting the result:
+#' \itemize{
+#'   \item Brier score: 0 is perfect; a model that predicts 50\% for everybody scores 0.25. It
+#'     depends on how common the event is, so compare it with the null model: IPA > 0 means the
+#'     model is better than ignoring the covariates, IPA = 0.10 means 10\% of the null model's
+#'     error is removed. Negative IPA: the model is worse than no model.
+#'   \item AUC: 0.5 is no discrimination, 1 perfect; 0.7 to 0.8 is common for clinical models. AUC
+#'     ignores calibration: a model can rank well and still predict wrong risks.
+#'   \item Calibration: points near the diagonal (mean predicted = observed) and a small error.
+#' }
+#' Measured on the data used for fitting, all three are optimistic; use cross-validation or
+#' external data for an honest assessment.
+#' @section Validation:
+#' In the validation suite of the package (\url{https://github.com/stats9/SurvX}, directory
+#' \code{validation}), the Brier score, that of the null model and the AUC agree with
+#' \code{riskRegression::Score} to \eqn{2 \times 10^{-14}} on 82 data sets with and without competing
+#' risks. They are about 10 times faster than \code{Score} on \eqn{n = 10000}.
+#' @return
+#' \code{brier_score}: named vector with \code{brier}, \code{brier_null} (Aalen-Johansen
 #'   prediction for everyone) and \code{ipa = 1 - brier / brier_null}. \code{auc_t}: the AUC.
 #'   \code{calibration}: a data frame with mean predicted and observed (Aalen-Johansen) risk per
 #'   group; its attribute \code{"error"} is the size-weighted mean absolute difference.
-#' @references Graf E et al. (1999) Stat Med 18:2529-2545.
-#'   Gerds TA, Schumacher M (2006) Biom J 48:1029-1040.
-#'   Kattan MW, Gerds TA (2018) Diagn Progn Res 2:7.
-#'   Blanche P, Dartigues J-F, Jacqmin-Gadda H (2013) Stat Med 32:5381-5397.
+#' @references
+#' Graf E, Schmoor C, Sauerbrei W, Schumacher M (1999) Assessment and comparison of prognostic
+#'   classification schemes for survival data. Statistics in Medicine 18:2529-2545.
+#'
+#' Gerds TA, Schumacher M (2006) Consistent estimation of the expected Brier score in general survival
+#'   models with right-censored event times. Biometrical Journal 48:1029-1040.
+#'
+#' Kattan MW, Gerds TA (2018) The index of prediction accuracy: an intuitive measure useful for
+#'   evaluating risk prediction models. Diagnostic and Prognostic Research 2:7.
+#'
+#' Blanche P, Dartigues J-F, Jacqmin-Gadda H (2013) Estimating and comparing time-dependent areas
+#'   under receiver operating characteristic curves for censored event times with competing risks.
+#'   Statistics in Medicine 32:5381-5397.
+#'
+#' Gerds TA, Andersen PK, Kattan MW (2014) Calibration plots for risk prediction models in the
+#'   presence of competing risks. Statistics in Medicine 33:3191-3203.
+#'
+#' All references: \code{sx_references("brier_score")}, \code{sx_references("auc_t")},
+#' \code{sx_references("calibration")}.
+#' @seealso
+#' \code{\link{compare_models}} and \code{\link{cv_compare}} (cross-validated comparison),
+#' \code{\link{predict.SurvX}}.
+#' @examples
+#' set.seed(3)
+#' n <- 400
+#' d <- data.frame(x = rnorm(n))
+#' t1 <- rexp(n, 0.3 * exp(0.8 * d$x)); t2 <- rexp(n, 0.2); cens <- runif(n, 0, 5)
+#' d$time <- pmin(t1, t2, cens)
+#' d$status <- ifelse(d$time == cens, 0, ifelse(t1 < t2, 1, 2))
+#'
+#' ## predicted 2-year risk of cause 1 from a Fine-Gray model
+#' fit <- fg(Event(time, status) ~ x, d)
+#' risk <- predict(fit, d, times = 2)[, 1]
+#'
+#' brier_score(d$time, d$status, risk, t = 2)     # brier, brier_null, ipa
+#' auc_t(d$time, d$status, risk, t = 2)
+#' cal <- calibration(d$time, d$status, risk, t = 2, groups = 5)
+#' cal
+#' plot(cal$predicted, cal$observed, xlim = c(0, 1), ylim = c(0, 1),
+#'      xlab = "predicted risk", ylab = "observed risk"); abline(0, 1, lty = 2)
 #' @export
 brier_score <- function(time, status, risk, t, cause = 1L) {
   n <- length(time)
@@ -52,11 +141,18 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L) {
 
 #' Compare direct, Fine-Gray and cause-specific Cox models
 #'
-#' Fits a list of direct parametric models (with any of the three estimators), the Fine-Gray model
-#' and cause-specific Cox models to the same data and reports apparent and K-fold cross-validated
-#' Brier score, index of prediction accuracy, time-dependent AUC and calibration error at the chosen
-#' times. Fitting, cross-validation and scoring are done in the C++ core.
+#' @description
+#' Fits a set of competing-risks models to the same data and compares how well they predict the
+#' cumulative incidence of one cause: direct parametric models (\code{\link{directcif}}, any
+#' estimator), the Fine-Gray model (\code{\link{fg}}), cause-specific Cox models
+#' (\code{\link{csc}}) and, optionally, parametric cause-specific hazard models. For each model it
+#' reports the apparent and K-fold cross-validated Brier score, index of prediction accuracy (IPA),
+#' time-dependent AUC and calibration error at the chosen times, and the AIC where it is comparable.
+#' Fitting, cross-validation and scoring are done in the C++ core, so the comparison is fast.
 #'
+#' \strong{Use it when} choosing a model for predicting the risk of a cause.
+#' \strong{Use} \code{\link{cv_compare}} for models that \code{compare_models} does not include
+#' (other packages, other options).
 #' @param formula \code{Event(time, status) ~ covariates}.
 #' @param data a data frame.
 #' @param times time horizons.
@@ -69,17 +165,51 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L) {
 #' @param folds number of cross-validation folds (less than 2: apparent performance only).
 #' @param seed seed of the fold assignment.
 #' @param df degrees of freedom of spline baselines.
-#' @param hazard optional list of parametric cause-specific hazard models fitted by
-#'   \code{\link{csc}} with a parametric \code{baseline}, each a distribution name or
-#'   \code{c("rp", df)}, e.g. \code{list("weibull", "lognormal", c("rp", 4))}. They are cross-validated
-#'   with the same folds as the other models.
-#' @return an S7 object of class \code{ModelComparison}; \code{x@table} has one row per model and
+#' @param hazard optional list of parametric cause-specific hazard models, fitted by \code{\link{csc}}
+#'   with a parametric \code{baseline}: each a distribution name or \code{c("rp", df)}, e.g.
+#'   \code{list("weibull", "lognormal", c("rp", 4))}. They are cross-validated with the same folds as
+#'   the other models, and their AIC (full likelihood of the data) is comparable with that of the joint
+#'   and constrained direct models.
+#' @section Interpreting the result:
+#' Judge the models on the cross-validated columns (ending in \code{_cv}): lower Brier score and
+#' calibration error, higher IPA and AUC are better. Apparent measures, computed on the data used for
+#' fitting, favour complex models. Differences in the third decimal of the Brier score are usually
+#' within noise; prefer the simpler model when the measures are close. AIC can be compared only among
+#' models with a full likelihood of the same data (joint and constrained direct models, parametric
+#' cause-specific models); see Value.
+#' @return
+#' an S7 object of class \code{ModelComparison}; \code{x@table} has one row per model and
 #'   time, \code{x@fit} one row per model. AIC is reported for the joint and constrained direct models
 #'   (full likelihoods of the same data, comparable with each other); the weighted direct model,
 #'   Fine-Gray and Cox maximise pseudo- or partial likelihoods.
-#' @references Stone M (1974) J R Stat Soc B 36:111-147.
-#'   Gerds TA, Schumacher M (2007) Biometrics 63:1283-1287.
-#' @seealso \code{\link{cv_compare}} for models that are not in this list.
+#' @references
+#' \emph{Cross-validation:}
+#' Stone M (1974). Cross-validatory choice and assessment of statistical predictions. Journal of the
+#'   Royal Statistical Society, Series B 36:111-147.
+#' Hastie T, Tibshirani R, Friedman J (2009). The Elements of Statistical Learning, 2nd ed.
+#'   Springer, Section 7.10.
+#' Gerds TA, Schumacher M (2007). Efron-type measures of prediction error for survival analysis.
+#'   Biometrics 63:1283-1287.
+#'
+#' \emph{Measures:} see \code{\link{brier_score}}.
+#'
+#' All references: \code{sx_references("compare_models")}.
+#' @seealso
+#' \code{\link{cv_compare}}, \code{\link{brier_score}}, \code{\link{directcif}}, \code{\link{fg}},
+#' \code{\link{csc}}.
+#' @examples
+#' set.seed(3)
+#' n <- 300
+#' d <- data.frame(x = rbinom(n, 1, 0.5))
+#' t1 <- rexp(n, 0.4 * exp(0.6 * d$x)); t2 <- rexp(n, 0.3); cens <- runif(n, 0, 4)
+#' d$time <- pmin(t1, t2, cens)
+#' d$status <- ifelse(d$time == cens, 0, ifelse(t1 < t2, 1, 2))
+#'
+#' cm <- compare_models(Event(time, status) ~ x, d, times = c(1, 2), folds = 3,
+#'                      direct = list(c("gompertz", "PH"), c("gompertz", "PO", "weighted")),
+#'                      hazard = list("weibull"))
+#' cm
+#' as.data.frame(cm)
 #' @export
 compare_models <- function(formula, data, times, direct = NULL, cause = 1L, folds = 5L, seed = 1L, df = 3L, hazard = NULL) {
   cl <- match.call()
@@ -145,25 +275,45 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
 
 #' Cross-validated comparison of any set of models
 #'
+#' @description
 #' Fits every model to the full data (apparent performance) and in K-fold cross-validation, and
 #' reports the Brier score, the index of prediction accuracy, the time-dependent AUC and the
 #' calibration error of the predicted risk of one cause at the chosen times.
 #' \code{\link{compare_models}} does this in the C++ core for the models of this package;
 #' \code{cv_compare} is for anything else that has a \code{predict(fit, newdata, times, cause)} method
 #' (a model from another package wrapped in a function, a model with its own options).
-#'
 #' @param formula \code{Event(time, status) ~ covariates}; passed to every model.
 #' @param data a data frame; rows with missing values in the variables of \code{formula} are dropped.
-#' @param models a named list of functions \code{function(formula, data)} that return a fitted model.
+#' @param models a named list of functions \code{function(formula, data)} that return a fitted model
+#'   with a \code{predict(fit, newdata, times, cause)} method giving the cumulative incidence of
+#'   the cause. Wrap any model, with its own options, in such
+#'   a function.
 #' @param times time horizons.
 #' @param cause cause of interest.
 #' @param folds number of folds (less than 2: apparent performance only).
 #' @param seed seed of the fold assignment (the state of the random number generator is restored).
 #' @param groups number of risk groups for the calibration error.
-#' @return an S7 object of class \code{ModelComparison}: \code{x@table} has one row per model and time
+#' @section Interpreting the result:
+#' As for \code{\link{compare_models}}: judge the models on the cross-validated measures (lower Brier
+#' score and calibration error, higher IPA and AUC). The same folds are used for every model, so the
+#' comparison is paired.
+#' @return
+#' an S7 object of class \code{ModelComparison}: \code{x@table} has one row per model and time
 #'   (columns ending in \code{_cv} are computed from the pooled out-of-fold predictions), \code{x@fit}
 #'   one row per model. A model that fails in a fold has \code{NA} cross-validated measures.
-#' @references Gerds TA, Schumacher M (2007) Biometrics 63:1283-1287.
+#' @references
+#' Gerds TA, Schumacher M (2007) Efron-type measures of prediction error for survival analysis.
+#'   Biometrics 63:1283-1287.
+#'
+#' Hastie T, Tibshirani R, Friedman J (2009) The Elements of Statistical Learning, 2nd ed. Springer,
+#'   Section 7.10 (cross-validation).
+#'
+#' Akaike H (1974) A new look at the statistical model identification. IEEE Transactions on Automatic
+#'   Control 19:716-723.
+#'
+#' All references: \code{sx_references("cv_compare")}.
+#' @seealso
+#' \code{\link{compare_models}}, \code{\link{brier_score}}.
 #' @examples
 #' set.seed(3)
 #' n <- 300

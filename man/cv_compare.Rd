@@ -16,12 +16,20 @@ cv_compare(formula, data, models, times, cause = 1L, folds = 5L, seed = 1L,
 \arguments{
 \item{formula}{\code{Event(time, status) ~ covariates}; passed to every model.}
 \item{data}{a data frame; rows with missing values in the variables of \code{formula} are dropped.}
-\item{models}{a named list of functions \code{function(formula, data)} that return a fitted model.}
+\item{models}{a named list of functions \code{function(formula, data)} that return a fitted model
+  with a \code{predict(fit, newdata, times, cause)} method giving the cumulative incidence of
+  the cause. Wrap any model, with its own options, in such
+  a function.}
 \item{times}{time horizons.}
 \item{cause}{cause of interest.}
 \item{folds}{number of folds (less than 2: apparent performance only).}
 \item{seed}{seed of the fold assignment (the state of the random number generator is restored).}
 \item{groups}{number of risk groups for the calibration error.}
+}
+\section{Interpreting the result}{
+As for \code{\link{compare_models}}: judge the models on the cross-validated measures (lower Brier
+score and calibration error, higher IPA and AUC). The same folds are used for every model, so the
+comparison is paired.
 }
 \value{
 an S7 object of class \code{ModelComparison}: \code{x@table} has one row per model and time
@@ -37,7 +45,10 @@ Hastie T, Tibshirani R, Friedman J (2009) The Elements of Statistical Learning, 
 
 Akaike H (1974) A new look at the statistical model identification. IEEE Transactions on Automatic
   Control 19:716-723.
+
+All references: \code{sx_references("cv_compare")}.
 }
+\seealso{\code{\link{compare_models}}, \code{\link{brier_score}}.}
 \examples{
 set.seed(3)
 n <- 300

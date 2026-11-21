@@ -89,38 +89,93 @@
 
 #' Residuals of hazard models
 #'
-#' Martingale, deviance, Cox-Snell and (scaled) Schoenfeld residuals of Cox models, cause-specific Cox
-#' models and parametric models.
-#'
-#' @details With \eqn{\hat H_i} the fitted cumulative hazard of subject \eqn{i} at its time (minus that
-#' at entry), the Cox-Snell residual is \eqn{\hat H_i}, the martingale residual \eqn{d_i - \hat H_i}
-#' and the deviance residual \eqn{\mathrm{sign}(M_i)\sqrt{-2\{M_i + d_i \log(d_i - M_i)\}}}. Schoenfeld
-#' residuals are defined at every event: the covariate vector minus its risk-weighted mean over the
-#' subjects at risk (Efron or Breslow form, as the fit); the scaled residuals are \eqn{\hat\beta + D\,V r}, with
-#' \eqn{D} the number of events and \eqn{V} the covariance of \eqn{\hat\beta}, as in \pkg{survival},
-#' and their smoothed trend against time estimates \eqn{\beta(t)} (Grambsch and Therneau 1994).
-#' For cause-specific models a list with one element per cause is returned.
-#'
-#' @param object a model fitted by \code{\link{cox}}, \code{\link{csc}} or \code{\link{parsurv}}.
-#' @param type \code{"martingale"}, \code{"deviance"}, \code{"coxsnell"}, \code{"schoenfeld"} or
-#'   \code{"scaledsch"} (Cox models only for the last two).
-#' @param ... not used.
-#' @return a vector with one value per subject, or for Schoenfeld residuals a matrix with one row per
-#'   event (attribute \code{"time"}); for cause-specific models a list of these.
+#' @description
+#' Martingale, deviance, Cox-Snell and (scaled) Schoenfeld residuals of Cox models, cause-specific
+#' models, parametric models and cure models: \code{residuals(fit, type)}. They are used to check
+#' the functional form of covariates, to find poorly fitted subjects, to check the overall fit and
+#' the proportional hazards assumption.
+#' @details
+#' With \eqn{\hat H_i} the fitted cumulative hazard of subject \eqn{i} at its time (minus that at
+#' entry), the Cox-Snell residual is \eqn{\hat H_i}, the martingale residual
+#' \eqn{M_i = d_i - \hat H_i} and the deviance residual
+#' \eqn{\mathrm{sign}(M_i)\sqrt{-2\{M_i + d_i \log(d_i - M_i)\}}}. Schoenfeld residuals are defined at
+#' every event: the covariate vector minus its risk-weighted mean over the subjects at risk. For Cox
+#' models the cumulative hazard and the means take the form of the ties method of the fit: with Efron
+#' ties a subject who fails at a tied time contributes the Efron-weighted hazard increments, and the
+#' mean is averaged over the Efron terms, exactly as in \pkg{survival} (Therneau and Grambsch 2000,
+#' Section 3.3). The martingale residuals of a Cox model then sum to zero. The scaled residuals are \eqn{\hat\beta + D\,V r}, with \eqn{D} the number of events and
+#' \eqn{V} the covariance matrix of \eqn{\hat\beta}, as in \pkg{survival}; their smoothed trend
+#' against time estimates \eqn{\beta(t)} (Grambsch and Therneau 1994), see \code{\link{ph_test}}.
+#' @section Usage:
+#' \code{residuals(object, type = c("martingale", "deviance", "coxsnell", "schoenfeld", "scaledsch"))}
+#' @section Arguments:
+#' \describe{
+#' \item{\code{object}}{a model fitted by \code{\link{cox}}, \code{\link{csc}} (Cox or parametric
+#'   baseline), \code{\link{parsurv}} or \code{\link{cure}}.}
+#' \item{\code{type}}{\code{"martingale"} (default), \code{"deviance"}, \code{"coxsnell"},
+#'   \code{"schoenfeld"} or \code{"scaledsch"}; the last two for Cox models only.}
+#' }
+#' @section What each residual is for:
+#' \describe{
+#'   \item{Martingale}{observed minus expected number of events, between \eqn{-\infty} and 1.
+#'     Plotted against a numeric covariate that is \emph{not} in the model, a smooth curve shows the
+#'     functional form it should have (a straight line: enter it linearly; a threshold or a curve:
+#'     categorise, transform or use a spline) (Therneau, Grambsch and Fleming 1990).}
+#'   \item{Deviance}{a symmetrised martingale residual; values beyond about \eqn{\pm 2.5} point to
+#'     subjects poorly predicted by the model (an early death of a low-risk patient, for example).}
+#'   \item{Cox-Snell}{if the model is correct they behave like a censored sample from the unit
+#'     exponential distribution: \code{\link{dist_plot}(fit)} plots their cumulative hazard, which
+#'     should follow the identity line (Cox and Snell 1968).}
+#'   \item{Schoenfeld and scaled Schoenfeld}{one row per event; their trend over time estimates the
+#'     time-varying effect \eqn{\beta(t)} and is the basis of \code{\link{ph_test}}.}
+#' }
+#' @section Validation:
+#' In the validation suite of the package (\url{https://github.com/stats9/SurvX}, directory
+#' \code{validation}), martingale, deviance and scaled Schoenfeld residuals of Cox models agree with
+#' \code{survival::residuals.coxph} to \eqn{10^{-8}}, with Efron and Breslow ties, strata and
+#' weights; Efron martingale residuals sum to zero to \eqn{2 \times 10^{-13}}.
+#' @return
+#' a vector with one value per subject, or for Schoenfeld residuals a matrix with one row per event in
+#'   time order (attribute \code{"time"}); for cause-specific models a list with one element per cause.
 #' @references
-#' Cox DR, Snell EJ (1968) A general definition of residuals. J R Stat Soc B 30:248-275.
+#' Cox DR, Snell EJ (1968) A general definition of residuals. Journal of the Royal Statistical Society,
+#'   Series B 30:248-275.
+#'
 #' Schoenfeld D (1982) Partial residuals for the proportional hazards regression model. Biometrika
 #'   69:239-241.
+#'
 #' Therneau TM, Grambsch PM, Fleming TR (1990) Martingale-based residuals for survival models.
 #'   Biometrika 77:147-160.
+#'
 #' Grambsch PM, Therneau TM (1994) Proportional hazards tests and diagnostics based on weighted
 #'   residuals. Biometrika 81:515-526.
+#' @seealso
+#' \code{\link{ph_test}}, \code{\link{dist_plot}}, \code{\link{cox}}, \code{\link{parsurv}}.
+#' @examples
+#' set.seed(1)
+#' n <- 300
+#' d <- data.frame(age = runif(n, 40, 80), x = rbinom(n, 1, 0.5))
+#' t <- rexp(n, 0.05 * exp(0.5 * d$x + 0.002 * (d$age - 60)^2)); cens <- runif(n, 0, 20)
+#' d$time <- pmin(t, cens); d$status <- as.integer(t <= cens)
+#'
+#' ## functional form of age: martingale residuals of a model without age
+#' f0 <- cox(Event(time, status) ~ x, d)
+#' plot(d$age, residuals(f0), xlab = "age", ylab = "martingale residual")
+#' lines(stats::lowess(d$age, residuals(f0)), lwd = 2)      # U-shaped: age is not linear
+#'
+#' ## poorly fitted subjects
+#' f1 <- cox(Event(time, status) ~ x + splines::ns(age, 3), d)
+#' which(abs(residuals(f1, "deviance")) > 2.5)
+#'
+#' ## overall fit: Cox-Snell residuals
+#' dist_plot(f1)
 #' @name residuals.SurvX
 NULL
 
 .resid_types <- c("martingale", "deviance", "coxsnell", "schoenfeld", "scaledsch")
 
 S7::method(residuals, CoxFit) <- function(object, type = c("martingale", "deviance", "coxsnell", "schoenfeld", "scaledsch"), ...) {
+  .no_tt(object, "residuals()")
   type <- match.arg(type)
   .resid_cox_core(object@time, object@status, object@X, object@coefficients, object@vcov_model %||% object@vcov, object@ties, type,
                   object@weights, if (type %in% c("martingale", "deviance", "coxsnell")) .cox_baseline(object) else NULL,
@@ -195,45 +250,102 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
        transform = transform, beta = beta, vcov = vcov)
 }
 
-#' Test of proportional hazards
+#' Test and plot of the proportional hazards assumption
 #'
-#' Score test of the proportional hazards assumption of a Cox model (or of every cause of a
-#' cause-specific Cox model), for each covariate and globally, with the plot of the scaled Schoenfeld
-#' residuals against time.
+#' @description
+#' Tests whether the effect of each covariate of a Cox model is constant over time (proportional
+#' hazards), for every covariate and globally, and plots the estimated time-varying effect. For a
+#' cause-specific Cox model (\code{\link{csc}}) every cause is tested.
 #'
-#' @details For each covariate the test adds a term \eqn{\gamma_j x_j g(t)} to the model and tests
-#' \eqn{\gamma = 0} by the score test at the fitted \eqn{\hat\beta}: the score is
-#' \eqn{\sum_i g(t_i) r_{ij}} with the Schoenfeld residuals \eqn{r}, and its variance is the
-#' efficient information for \eqn{\gamma} given \eqn{\beta}. This is the test of Grambsch and Therneau
-#' (1994) in its exact score form, as computed by \code{survival::cox.zph} since version 3.0; risk-set
-#' moments use Breslow weights, so results agree with \pkg{survival} exactly when there are no tied
-#' event times. The plot shows the scaled Schoenfeld residuals, whose smoothed trend estimates the
-#' time-varying effect \eqn{\beta_j(t)}: a flat line at \eqn{\hat\beta_j} supports proportional
-#' hazards.
-#'
+#' \strong{Use it} after every \code{\link{cox}} or Cox-baseline \code{\link{csc}} fit: the hazard
+#' ratios are averages over time when the assumption fails.
 #' @param fit a model fitted by \code{\link{cox}} or by \code{\link{csc}} with a Cox baseline.
-#' @param transform the function \eqn{g(t)} of time: \code{"km"} (default, one minus the Kaplan-Meier
-#'   estimate just before \eqn{t}), \code{"rank"} (rank of \eqn{t} among all observed times,
-#'   censored included, as in \code{survival::cox.zph}), \code{"identity"} or \code{"log"}.
-#' @return an object of class \code{"ph_test"} (a list per cause for cause-specific models) with the
-#'   table of tests; \code{print} and \code{plot(x, var, df = 4)} methods.
-#' @references Grambsch PM, Therneau TM (1994) Proportional hazards tests and diagnostics based on
-#'   weighted residuals. Biometrika 81:515-526.
-#'   Therneau TM, Grambsch PM (2000) Modeling Survival Data: Extending the Cox Model. Springer,
+#' @param transform the function \eqn{g(t)} of time against which a change of the effect is sought:
+#'   \code{"km"} (default, one minus the Kaplan-Meier estimate just before \eqn{t}; robust to a few
+#'   long times), \code{"rank"} (rank of \eqn{t} among all observed times, censored included, as in
+#'   \code{survival::cox.zph}), \code{"identity"} (time itself) or \code{"log"} (log time; sensitive
+#'   to early changes).
+#' @details
+#' For each covariate the test adds a term \eqn{\gamma_j x_j g(t)} to the model and tests
+#' \eqn{\gamma = 0} by the score test at the fitted \eqn{\hat\beta}: the score is
+#' \eqn{\sum_i g(t_i) r_{ij}} with the Schoenfeld residuals \eqn{r}, and its variance is the efficient
+#' information for \eqn{\gamma} given \eqn{\beta}. The global test uses all covariates together. This
+#' is the test of Grambsch and Therneau (1994) in its exact score form, as computed by
+#' \code{survival::cox.zph} since version 3.0. Risk-set moments use Breslow weights, so the results
+#' agree with \pkg{survival} exactly when no event times are tied.
+#'
+#' The plot shows the scaled Schoenfeld residuals against \eqn{g(t)} with a natural spline smooth and
+#' its pointwise confidence band. The smooth estimates the time-varying effect \eqn{\beta_j(t)}; a flat
+#' line at \eqn{\hat\beta_j} (dashed) supports proportional hazards.
+#' @section Plot:
+#' \code{plot(x, var = NULL, cause = 1, df = 4, level = 0.95, col = "#0072B2", xlab = NULL,
+#' ylab = NULL, main = NULL, cex = 0.85, ...)}, with:
+#' \describe{
+#' \item{\code{x}}{the result of \code{ph_test()}.}
+#' \item{\code{var}}{covariates to plot; default all.}
+#' \item{\code{cause}}{the cause to plot for cause-specific models.}
+#' \item{\code{df}}{degrees of freedom of the natural spline that smooths the scaled residuals.}
+#' \item{\code{level}}{confidence level of the pointwise band of the smooth.}
+#' \item{\code{col}}{colour of the smooth.}
+#' \item{\code{xlab, ylab, main}}{axis labels and title.}
+#' \item{\code{cex}}{character expansion.}
+#' \item{\code{...}}{passed to \code{plot.default}.}
+#' }
+#' @section Interpreting the result:
+#' \itemize{
+#'   \item A small p-value for a covariate means that its hazard ratio changes over time. The plot
+#'     shows how: a rising smooth means the effect grows (the HR moves up), a falling one that it
+#'     fades. The global test asks whether any covariate violates the assumption.
+#'   \item With large data sets, tiny and clinically irrelevant departures become significant: judge
+#'     the size of the change on the plot, not only the p-value.
+#'   \item What to do when the assumption fails for a covariate: put it in \code{strata()} if its
+#'     effect is not of interest; let its effect change with time with \code{tt()} in
+#'     \code{\link{cox}}; or report hazard ratios for separate periods of follow-up. Restricted mean
+#'     survival time (\code{\link{rmst}}) needs no proportional hazards.
+#' }
+#' A sentence for a report: \emph{"The proportional hazards assumption was checked with the
+#' Grambsch-Therneau test (global p = 0.41) and plots of scaled Schoenfeld residuals."}
+#' @section Validation:
+#' In the validation suite of the package (\url{https://github.com/stats9/SurvX}, directory
+#' \code{validation}), the score statistics agree with \code{survival::cox.zph} for all four
+#' transforms, with and without strata, clusters and ties, to \eqn{10^{-8}}. In a Monte Carlo study
+#' (1000 replications, \eqn{n} = 200 to 1000) the size at the 5\% level was 4.5 to 5.9\% and identical to
+#' that of \code{cox.zph} on the same data; with crossing hazards the power was 100\%.
+#' @return
+#' An S7 object of class \code{PHTest} with \code{print}, \code{plot} and \code{as.data.frame}
+#' methods. \code{x@table} is a data frame of all tests (cause, term, chi-square, df, p; term
+#' \code{GLOBAL} for the global test); \code{x@tests} has one element per cause (one for a Cox model)
+#' with the table and the scaled Schoenfeld residuals used by the plot.
+#' @references
+#' \emph{Test and residual plot:}
+#' Grambsch PM, Therneau TM (1994). Proportional hazards tests and diagnostics based on weighted
+#'   residuals. Biometrika 81:515-526.
+#' Therneau TM, Grambsch PM (2000). Modeling Survival Data: Extending the Cox Model. Springer,
 #'   Chapter 6.
+#'
+#' \emph{Schoenfeld residuals:}
+#' Schoenfeld D (1982). Partial residuals for the proportional hazards regression model.
+#'   Biometrika 69:239-241.
+#'
+#' All references: \code{sx_references("ph_test")}.
+#' @seealso
+#' \code{\link{cox}} (\code{strata()}, \code{tt()}), \code{\link{residuals.SurvX}}, \code{\link{rmst}}.
 #' @examples
 #' set.seed(4)
 #' n <- 300
 #' x <- rbinom(n, 1, 0.5)
-#' t <- rweibull(n, ifelse(x == 1, 0.7, 1.5), 3); cens <- runif(n, 0, 6)  # non-proportional hazards
+#' t <- rweibull(n, ifelse(x == 1, 0.7, 1.5), 3); cens <- runif(n, 0, 6)   # non-proportional hazards
 #' d <- data.frame(time = pmin(t, cens), status = as.integer(t <= cens), x = x, z = rnorm(n))
+#'
 #' pt <- ph_test(cox(Event(time, status) ~ x + z, d))
-#' pt
-#' plot(pt, "x")
+#' pt                       # x violates proportional hazards, z does not
+#' plot(pt, "x")            # the effect of x changes over time
+#' as.data.frame(pt)
 #' @export
 ph_test <- function(fit, transform = c("km", "rank", "identity", "log")) {
   transform <- match.arg(transform)
   if (S7::S7_inherits(fit, CoxFit)) {
+    .no_tt(fit, "ph_test()")
     r <- .zph_core(fit@time, fit@status, fit@X, fit@coefficients, fit@vcov_model %||% fit@vcov, transform, fit@weights,
                    fit@entry, fit@strata)
     r$label <- "the event"
@@ -313,12 +425,19 @@ S7::method(plot, PHTest) <- function(x, var = NULL, cause = 1L, df = 4L, level =
 
 #' Plots for choosing a distribution and checking a fitted model
 #'
-#' With a formula: the classic linearising plots of the non-parametric estimate (Nelson-Aalen
-#' cumulative hazard, by group): straight lines indicate the distribution of the panel. With a fitted
-#' parametric or Cox model: the Cox-Snell residual plot.
-#'
-#' @details Panels for a formula, with \eqn{\hat H} the Nelson-Aalen estimate and
-#' \eqn{\hat S = e^{-\hat H}}:
+#' @description
+#' With a formula: the classic linearising plots of the non-parametric (Nelson-Aalen) cumulative
+#' hazard, by group; a straight line in a panel indicates the distribution of that panel. With a
+#' fitted model: the Cox-Snell residual plot.
+#' @param x a formula \code{Event(time, status) ~ 1} or \code{~ group}, or a model fitted by
+#'   \code{\link{parsurv}}, \code{\link{cox}} or \code{\link{csc}} (Cox or parametric baseline).
+#' @param data a data frame (with a formula).
+#' @param cause the cause for competing risks data (cause-specific hazard).
+#' @param col colours of the groups.
+#' @param cex character expansion.
+#' @param ... passed to \code{plot.default}.
+#' @details
+#' Panels for a formula, with \eqn{\hat H} the Nelson-Aalen estimate and \eqn{\hat S = e^{-\hat H}}:
 #' \describe{
 #'   \item{exponential}{\eqn{\hat H(t)} against \eqn{t}: a straight line through the origin.}
 #'   \item{Weibull}{\eqn{\log \hat H(t)} against \eqn{\log t}: a straight line (slope = shape;
@@ -327,22 +446,28 @@ S7::method(plot, PHTest) <- function(x, var = NULL, cause = 1L, df = 4L, level =
 #'   \item{log-logistic}{\eqn{\log\{(1 - \hat S)/\hat S\}} against \eqn{\log t}: a straight line
 #'     (parallel lines indicate proportional odds).}
 #' }
-#' For a fitted model, the Nelson-Aalen cumulative hazard of the Cox-Snell residuals \eqn{\hat H_i}
-#' (with the event indicators) is plotted against the residuals; if the model fits, the points lie
-#' on the line of identity, since the residuals then behave like a censored sample from the unit
-#' exponential distribution. With competing risks, \code{cause} selects the cause-specific hazard.
+#' For a fitted model, the Nelson-Aalen cumulative hazard of the Cox-Snell residuals (with the event
+#' indicators) is plotted against the residuals. If the model fits, the residuals behave like a
+#' censored sample from the unit exponential distribution and the curve follows the line of identity.
+#' @section Interpreting the plot:
+#' With a formula: look for the panel in which the points lie closest to a straight line; that
+#' distribution is a good candidate for \code{\link{parsurv}}. Parallel lines across groups in the
+#' Weibull panel indicate proportional hazards; in the log-logistic panel, proportional odds. With a
+#' fitted model: Cox-Snell residuals that follow the identity line support the model; a curve that
+#' bends away shows lack of fit, usually in the tail first.
+#' @return
+#' invisibly, the plotted data.
+#' @references
+#' Klein JP, Moeschberger ML (2003) Survival Analysis: Techniques for Censored and Truncated Data,
+#'   2nd ed. Springer, Sections 12.2-12.5.
 #'
-#' @param x a formula \code{Event(time, status) ~ 1} or \code{~ group}, or a model fitted by
-#'   \code{\link{parsurv}}, \code{\link{cox}} or \code{\link{csc}} (parametric or Cox).
-#' @param data a data frame (with a formula).
-#' @param cause the cause for competing risks data.
-#' @param col colours of the groups.
-#' @param cex character expansion.
-#' @param ... passed to \code{plot.default}.
-#' @return invisibly, the plotted data.
-#' @references Klein JP, Moeschberger ML (2003) Survival Analysis, 2nd ed. Springer, Sections 12.2-12.5.
-#'   Collett D (2015) Modelling Survival Data in Medical Research, 3rd ed. CRC Press, Chapter 5.
-#'   Cox DR, Snell EJ (1968) J R Stat Soc B 30:248-275.
+#' Collett D (2015) Modelling Survival Data in Medical Research, 3rd ed. CRC Press, Chapter 5.
+#'
+#' Cox DR, Snell EJ (1968) A general definition of residuals. Journal of the Royal Statistical Society,
+#'   Series B 30:248-275.
+#' @seealso
+#' \code{\link{hazard_plot}}, \code{\link{hazard_np}}, \code{\link{residuals.SurvX}},
+#' \code{\link{parsurv}}.
 #' @examples
 #' set.seed(5)
 #' d <- data.frame(time = rweibull(300, 1.5, 3), status = 1, arm = rep(c("A", "B"), 150))

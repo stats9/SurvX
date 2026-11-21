@@ -14,6 +14,14 @@ estimates(object, level = 0.95, ...)
 \item{level}{confidence level.}
 \item{...}{not used.}
 }
+\section{Interpreting the table}{
+\code{estimate} and \code{se} are on the scale of estimation (log hazard ratio, log odds, log
+shape, ...); \code{exp_estimate} with \code{exp_lower} and \code{exp_upper} is the effect on the
+scale named in \code{scale} (hazard ratio, subdistribution hazard ratio, time ratio, odds ratio of
+cure, ...), the one to report. Confidence limits and p-values are Wald limits and tests; for small
+samples, compare nested models with a likelihood ratio test (\code{anova}-style: twice the
+difference of \code{logLik()}).
+}
 \value{
 a data frame with the columns \code{cause, term, role, scale, estimate, se, lower, upper,
   z, p, exp_estimate, exp_lower, exp_upper}. \code{role} is \code{"beta"} for regression
@@ -34,6 +42,9 @@ Wald A (1943) Tests of statistical hypotheses concerning several parameters when
 Casella G, Berger RL (2002) Statistical Inference, 2nd ed. Duxbury, Section 10.3.
 
 White H (1982) Maximum likelihood estimation of misspecified models. Econometrica 50:1-25.
+}
+\seealso{
+\code{\link{SurvX-methods}} (print, summary, coef, confint), \code{\link{sx_references}}.
 }
 \examples{
 set.seed(4)

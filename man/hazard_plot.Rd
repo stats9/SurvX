@@ -32,6 +32,13 @@ hazard_plot(x, newdata = NULL, type = c("hazard", "cumhaz", "survival"),
 \item{cex}{character expansion.}
 \item{...}{passed to \code{plot.default}.}
 }
+\section{Interpreting the plot}{
+The fitted curve should run inside the confidence band of the non-parametric estimate over the
+range where many subjects are at risk. Systematic departures (a fitted monotone hazard where the
+non-parametric one rises and falls, for example) suggest another distribution: try a log-normal
+or log-logistic, or the flexible \code{"rp"} spline, and compare them with \code{AIC()}. Departures
+in the far tail, where few subjects remain, matter less.
+}
 \value{
 invisibly, a data frame of the plotted curves.
 }
@@ -47,6 +54,10 @@ Ramlau-Hansen H (1983) Smoothing counting process intensities by means of kernel
 
 Mueller HG, Wang JL (1994) Hazard rate estimation under random censoring with varying kernels and
   bandwidths. Biometrics 50:61-76.
+}
+\seealso{
+\code{\link{hazard_np}}, \code{\link{dist_plot}}, \code{\link{parsurv}}, \code{\link{csc}},
+\code{\link{cure}}.
 }
 \examples{
 set.seed(1)

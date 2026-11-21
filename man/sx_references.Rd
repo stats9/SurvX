@@ -25,6 +25,10 @@ delayed entry and the distribution of a parametric model.
 \value{
 invisibly, a character vector of full references.
 }
+\seealso{
+The \code{References} section of the help page of every function, which groups the references by
+what they are used for; \code{\link{SurvX-package}} for an overview.
+}
 \examples{
 sx_references("ph_test")
 set.seed(1)

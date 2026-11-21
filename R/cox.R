@@ -39,6 +39,10 @@
 #'   \item \code{cluster(id)}: rows with the same \code{id} are correlated (several rows per
 #'   subject in (start, stop] data, family members, recurrent events); the robust variance is
 #'   then used.
+#'   \item \code{tt(x)}: a time-varying coefficient for the numeric covariate \code{x}, together
+#'   with the argument \code{tt}: \code{x + tt(x)} gives the log hazard ratio
+#'   \eqn{\beta + \gamma g(t)} at time \eqn{t}. Use it when \code{\link{ph_test}} shows that the
+#'   effect of \code{x} changes over time and that effect is of interest.
 #'   }
 #' @param data a data frame containing the variables of the formula. Rows with a missing value in
 #'   any of these variables are removed (the number of rows used is shown by \code{nobs()} and in the
@@ -57,6 +61,10 @@
 #'   usually needs fewer than 10).
 #' @param tol convergence tolerance: iteration stops when the relative change of the log partial
 #'   likelihood is below \code{tol}.
+#' @param tt the function of time \eqn{g(t)} of the \code{tt()} terms, for example
+#'   \code{function(t) log(t)} (an effect that changes linearly in log time; the usual first choice),
+#'   \code{function(t) t}, or \code{function(t) as.numeric(t > 2)} (a different effect after time
+#'   2). A list gives one function per \code{tt()} term. Needed only with \code{tt()} terms.
 #' @details
 #' \subsection{The model}{
 #' The hazard of subject \eqn{i} at time \eqn{t} is
@@ -68,6 +76,15 @@
 #' (Kalbfleisch and Prentice 2002, Section 4.4). With \code{entry}, row \eqn{i} is in the risk set at
 #' time \eqn{t} when \eqn{entry_i < t \le time_i}: the counting-process formulation of Andersen and
 #' Gill (1982), which covers left truncation and time-varying covariates.
+#' }
+#' \subsection{Time-varying coefficients}{
+#' With \code{tt()} terms the model is \eqn{h(t \mid x) = h_0(t)\exp\{\beta x + \gamma x g(t)\}}. Every
+#' row is split at the event times inside its follow-up, and the \code{tt()} column of each piece is
+#' \eqn{x\,g(t)} at the end of the piece; the partial likelihood of the split data is exactly that of
+#' the model, as in \code{survival::coxph(tt = )} (Therneau and Grambsch 2000, Chapter 6). With many
+#' distinct event times the split data can be large (about \eqn{n} times the number of events
+#' rows); rounding the times reduces it. \code{\link{tt_effect}} gives the hazard ratio at chosen
+#' times. Predictions, residuals and \code{ph_test()} are not defined for such models.
 #' }
 #' \subsection{Standard errors}{
 #' Model-based: the inverse of the observed information matrix. Robust: \eqn{V (\sum_c U_c
@@ -101,7 +118,11 @@
 #'     baseline hazards.
 #'   \item Proportional hazards means the HR is the same at every time. If \code{\link{ph_test}}
 #'     rejects this, the printed HR is a weighted average of a time-varying effect; consider
-#'     \code{strata()} for that variable, a split of follow-up, or a time-varying coefficient.
+#'     \code{strata()} for that variable, or a time-varying coefficient with \code{tt()}.
+#'   \item With \code{x + tt(x)}, the row of \code{x} is the HR where \eqn{g(t) = 0} (at \eqn{t = 1}
+#'     for \eqn{g = \log}) and the row of \code{tt(x)} the factor by which that HR changes per unit
+#'     of \eqn{g(t)}; the print and \code{\link{tt_effect}} give the HR at chosen times, which is what
+#'     to report.
 #' }
 #' A sentence for a report: \emph{"In a Cox model adjusted for age and stage, treatment was
 #' associated with a 30\% lower hazard of death (HR 0.70, 95\% CI 0.55 to 0.89, p = 0.004)."}
@@ -136,12 +157,16 @@
 #' }
 #' @section Validation:
 #' Agreement with \code{survival::coxph} (\pkg{survival} 3.8) in the validation suite of the package
-#' (\url{https://github.com/stats9/SurvX}, directory \code{validation}), over simulated data sets with
-#' and without ties, strata, (start, stop] rows, clusters and case weights, and the real data sets
-#' \code{lung}, \code{veteran} and \code{colon}: coefficients to \eqn{2 \times 10^{-9}}, model-based
-#' and robust variances to \eqn{2 \times 10^{-11}}, log partial likelihood to
-#' \eqn{2 \times 10^{-10}}, predicted survival (\code{survfit.coxph}) to \eqn{10^{-9}}, martingale,
-#' deviance and scaled Schoenfeld residuals to \eqn{10^{-8}} (largest absolute differences).
+#' (\url{https://github.com/stats9/SurvX}, directory \code{validation}), over 82 simulated and real data
+#' sets (\code{lung}, \code{veteran}, \code{colon}; up to \eqn{n = 20000}) with and without ties, strata,
+#' (start, stop] rows, clusters and case weights, 438 fits in all: coefficients to
+#' \eqn{7 \times 10^{-7}}, model-based and robust variances to \eqn{4 \times 10^{-9}}, log partial
+#' likelihood to a relative \eqn{4 \times 10^{-8}}; predicted survival (\code{survfit.coxph}),
+#' martingale, deviance and scaled Schoenfeld residuals to \eqn{10^{-8}}. In a Monte Carlo study (1000
+#' replications, \eqn{n} = 200, 500, 1000), with strata, delayed entry and time-varying covariates,
+#' the standard errors matched the empirical standard deviation of the estimates (ratio 0.95 to 1.05)
+#' and the 95\% intervals covered 93.4 to 96.1\%. A fit on \eqn{n = 10000} takes about 0.01 s
+#' (\code{coxph}: 0.03 s).
 #' @return
 #' An S7 object of class \code{CoxFit}. Its main slots (read with \code{@}): \code{coefficients},
 #' \code{vcov} (robust when requested), \code{vcov_model}, \code{loglik}, \code{loglik_null} (no
@@ -163,6 +188,7 @@
 #'   \code{residuals(fit, type)} \tab martingale, deviance, Cox-Snell, Schoenfeld, scaled Schoenfeld
 #'     (see \code{\link{residuals.SurvX}}) \cr
 #'   \code{\link{ph_test}(fit)} \tab test of proportional hazards \cr
+#'   \code{\link{tt_effect}(fit, times)} \tab models with \code{tt()}: HR at chosen times \cr
 #'   \code{\link{compare_models}}, \code{\link{brier_score}}, \code{\link{cv_compare}} \tab
 #'     predictive performance \cr
 #' }
@@ -242,10 +268,18 @@
 #' ## 5. correlated rows: robust standard errors (two rows per family here)
 #' d$family <- rep(seq_len(n / 2), each = 2)
 #' cox(Event(time, status) ~ treat + I(age / 10) + cluster(family), d)
+#'
+#' ## 6. an effect that changes over time: tt()
+#' d$new <- as.numeric(d$treat == "new")
+#' ft <- cox(Event(time, status) ~ new + tt(new) + I(age / 10) + strata(centre), d,
+#'           tt = function(t) log(t))
+#' ft                                     # HR of the new treatment at the quartiles of time
+#' tt_effect(ft, times = c(1, 5, 10))
 #' @export
-cox <- function(formula, data, ties = c("efron", "breslow"), weights = NULL, robust = FALSE, max_iter = 50L, tol = 1e-10) {
+cox <- function(formula, data, ties = c("efron", "breslow"), weights = NULL, robust = FALSE, max_iter = 50L, tol = 1e-10,
+                tt = NULL) {
   cl <- match.call(); ties <- match.arg(ties)
-  f <- .sx_frame(formula, data, entry_ok = TRUE, what = "cox()", specials_ok = TRUE)
+  f <- .sx_frame(formula, data, entry_ok = TRUE, what = "cox()", specials_ok = TRUE, tt_ok = TRUE)
   if (any(f$status > 1L)) stop("cox() needs a 0/1 status; use csc() for cause-specific Cox models", call. = FALSE)
   n <- length(f$time); p <- ncol(f$X)
   if (p < 1L) stop("at least one covariate is needed", call. = FALSE)
@@ -255,15 +289,61 @@ cox <- function(formula, data, ties = c("efron", "breslow"), weights = NULL, rob
     if (length(weights) != n) stop("weights must have one value per row of data", call. = FALSE)
   }
   robust <- isTRUE(robust) || !is.null(f$cluster)
-  r <- .cox_fit(f$time, f$status, f$X, weights, ties, max_iter, tol, f$entry, f$strata)
-  vm <- r$vcov
-  if (robust) r$vcov <- .cox_robust(r, f$time, f$status, f$X, weights, ties, f$entry, f$strata, f$cluster)
+  if (length(f$tt_cols)) {
+    if (is.null(tt)) stop("the formula has tt() terms: give the function of time, for example tt = function(t) log(t)", call. = FALSE)
+    s <- .tt_split(f, weights, tt)
+    r <- .cox_fit(s$time, s$status, s$X, s$weights, ties, max_iter, tol, s$entry, s$strata)
+    vm <- r$vcov
+    if (robust) r$vcov <- .cox_robust(r, s$time, s$status, s$X, s$weights, ties, s$entry, s$strata, s$cluster)
+  } else {
+    r <- .cox_fit(f$time, f$status, f$X, weights, ties, max_iter, tol, f$entry, f$strata)
+    vm <- r$vcov
+    if (robust) r$vcov <- .cox_robust(r, f$time, f$status, f$X, weights, ties, f$entry, f$strata, f$cluster)
+  }
   CoxFit(call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
          coefficients = r$coefficients, vcov = r$vcov, loglik = r$loglik, n = n, nevent = r$nevent,
          iterations = r$iterations, converged = r$converged, flags = r$flags,
          time = f$time, status = f$status, X = f$X, ties = ties, weights = weights, loglik_null = r$loglik_null,
          entry = f$entry, strata = f$strata, strata_levels = f$strata_levels, strata_vars = f$strata_vars,
-         cluster = f$cluster, robust = robust, vcov_model = vm)
+         cluster = f$cluster, robust = robust, vcov_model = vm,
+         tt = if (length(f$tt_cols)) list(fun = tt, cols = f$tt_cols) else NULL)
+}
+
+# Time-varying coefficients: every row is split at the event times inside its (entry, time]
+# interval, and the tt() columns become x * g(t) evaluated at the end of each piece. The pieces
+# contain exactly one event time each (their end), so the partial likelihood of the split data is
+# that of the model log h(t | x) = log h0(t) + beta'x + gamma x g(t), as in survival::coxph(tt = ).
+.tt_split <- function(f, weights, tt) {
+  time <- f$time; status <- f$status; n <- length(time)
+  entry <- f$entry %||% rep(0, n)
+  et <- sort(unique(time[status == 1L]))
+  lo <- findInterval(entry, et)                      # event times <= entry
+  hi <- findInterval(time, et, left.open = TRUE)     # event times < time
+  k <- pmax(hi - lo, 0L)                             # cut points strictly inside (entry, time)
+  rows <- k + 1L
+  N <- sum(as.numeric(rows))
+  if (N > 5e7) stop("tt(): splitting at every event time would create ", format(N, big.mark = ","),
+                    " rows; use fewer distinct times (round them) or split follow-up into periods yourself", call. = FALSE)
+  idx <- rep.int(seq_len(n), rows)
+  r <- sequence(rows)
+  ci <- lo[idx] + r                                  # index in et of the end of a piece that is a cut
+  last <- r == rows[idx]
+  stop_t <- ifelse(last, time[idx], et[pmin(ci, length(et))])
+  start_t <- ifelse(r == 1L, entry[idx], et[pmax(ci - 1L, 1L)])
+  X <- f$X[idx, , drop = FALSE]
+  funs <- if (is.function(tt)) rep(list(tt), length(f$tt_cols)) else tt
+  if (!is.list(funs) || length(funs) != length(f$tt_cols) || !all(vapply(funs, is.function, logical(1))))
+    stop("tt must be a function of time, or a list with one function per tt() term", call. = FALSE)
+  for (j in seq_along(f$tt_cols)) {
+    g <- funs[[j]](stop_t)
+    if (length(g) != length(stop_t) || any(!is.finite(g)))
+      stop("tt function ", j, " must return a finite value for every time (log(t) needs t > 0)", call. = FALSE)
+    X[, f$tt_cols[j]] <- X[, f$tt_cols[j]] * g
+  }
+  list(time = stop_t, status = ifelse(last, status[idx], 0L), X = X, entry = start_t,
+       weights = if (is.null(weights)) NULL else weights[idx],
+       strata = if (is.null(f$strata)) NULL else f$strata[idx],
+       cluster = if (!is.null(f$cluster)) f$cluster[idx] else idx)
 }
 
 # arguments shared by the C routines of the extended Cox model
@@ -338,21 +418,128 @@ cox <- function(formula, data, ties = c("efron", "breslow"), weights = NULL, rob
 
 #' Predictions from SurvX models
 #'
-#' \code{predict()} methods of the model classes.
+#' @description
+#' Predictions from every fitted model of SurvX: linear predictors, survival probabilities,
+#' cumulative incidences, hazards, quantiles (median time), restricted mean survival time and cured
+#' fractions, for new subjects or for the subjects of the data, optionally with standard errors and
+#' confidence limits. Absolute predictions such as these are usually the clearest way to report a
+#' model: "a 60-year-old patient on the new treatment has a 24\% risk of relapse within 5 years".
+#' @details
+#' Cox models: \eqn{S(t \mid x) = \exp\{-\hat H_0(t) e^{x'\hat\beta}\}} with the Breslow
+#' estimate of the baseline cumulative hazard. Cause-specific Cox models: the cumulative incidence
+#' \eqn{\int_0^t \hat S(u-)\, d\hat H_k(u \mid x)} from all cause-specific hazards (product-limit
+#' or exponential form of \eqn{\hat S}, see \code{product_limit} of \code{\link{csc}}). Fine-Gray
+#' models: \eqn{1 - \exp\{-\hat\Lambda_{10}(t) e^{x'\hat\beta}\}}. Direct and parametric models
+#' evaluate the fitted distribution; parametric cause-specific models integrate the hazards
+#' numerically (Gauss-Legendre). Standard errors of direct and parametric predictions use the delta
+#' method with the covariance matrix of the parameters; limits are computed on a transformed scale
+#' (log-log for probabilities, log for hazards and times) and transformed back.
+#' @section Usage:
+#' \code{predict(object, newdata = NULL, times, type, cause = 1, se = FALSE, level = 0.95,
+#' average = FALSE, p = 0.5)}; each model class accepts the arguments that apply to it.
+#' @section Arguments:
+#' \describe{
+#' \item{\code{object}}{a fitted model.}
+#' \item{\code{newdata}}{a data frame with one row per subject to predict for, containing every
+#'   covariate of the model (and the \code{strata()} variables of a stratified Cox model). Factors may
+#'   be given as character values of their levels. \code{NULL}: the subjects used for fitting.}
+#' \item{\code{times}}{time points. For \code{directcif} fits \code{Inf} gives the plateau; for
+#'   \code{parsurv} with \code{type = "rmst"} the upper limits of integration.}
+#' \item{\code{type}}{for \code{cox}: \code{"lp"} (linear predictor) or \code{"survival"}. For
+#'   \code{parsurv}: \code{"survival"}, \code{"hazard"}, \code{"cumhaz"}, \code{"quantile"} (at the
+#'   probabilities \code{p}) or \code{"rmst"} (restricted mean survival time). For \code{csc} with a
+#'   parametric baseline: \code{"cif"} or \code{"survival"} (event-free probability). For
+#'   \code{cure}: \code{"survival"}, \code{"hazard"}, \code{"cumhaz"}, \code{"uncured"} (survival
+#'   of the uncured) or \code{"cured"} (the cured fraction, without \code{times}).}
+#' \item{\code{p}}{\code{parsurv}, \code{type = "quantile"}: probabilities; the time by which a
+#'   fraction \code{p} has failed (\code{p = 0.5}: the median).}
+#' \item{\code{cause}}{cause of interest (\code{csc} and \code{directcif} fits).}
+#' \item{\code{se}}{for \code{directcif}, \code{parsurv} and parametric \code{csc} fits: also return
+#'   delta-method standard errors (and, for \code{parsurv} and parametric \code{csc}, pointwise
+#'   limits: complementary log-log scale for probabilities, log scale for positive quantities).}
+#' \item{\code{level}}{confidence level of the limits.}
+#' \item{\code{average}}{\code{parsurv} and parametric \code{csc}: the average over the rows of
+#'   \code{newdata} (marginal curve), with its standard error.}
+#' \item{\code{...}}{not used.}
+#' }
+#' @section Choosing what to predict:
+#' \itemize{
+#'   \item For one event type: survival probabilities at clinically meaningful times
+#'     (\code{type = "survival"}), the median time (\code{parsurv}, \code{type = "quantile"}) or
+#'     the restricted mean (\code{type = "rmst"}).
+#'   \item With competing risks: the cumulative incidence of the cause of interest, from
+#'     \code{fg}, \code{csc} or \code{directcif}; \code{csc} gives incidences of all causes that
+#'     add up correctly with the event-free probability.
+#'   \item \emph{Individual} predictions (one row of \code{newdata} per profile) describe typical
+#'     patients; \emph{marginal} predictions (the average over the subjects of a population,
+#'     \code{average = TRUE}, or \code{\link{cif_data}} with \code{type = "marginal"}) give
+#'     standardised, population-level risks, for example to compare treatments as if everybody had
+#'     received each.
+#'   \item Cox and Fine-Gray baselines are step functions and are not defined beyond the last
+#'     event time; parametric models give smooth curves and can extrapolate, with the caveat that the
+#'     extrapolation rests on the distribution only.
+#' }
+#' @section Validation:
+#' In the validation suite of the package (\url{https://github.com/stats9/SurvX}, directory
+#' \code{validation}): Cox predictions agree with \code{survival::survfit.coxph}, Fine-Gray
+#' predictions with \code{cmprsk::predict.crr} (\eqn{2 \times 10^{-8}}), cause-specific predictions
+#' with \code{riskRegression::CSC} (\eqn{4 \times 10^{-7}}), and parametric predictions with
+#' \code{flexsurv} within the tolerance of its optimiser. In a Monte Carlo study the 95\% intervals of
+#' parametric survival predictions covered 93.5 to 94.9\%.
+#' @return
+#' a matrix with one row per row of \code{newdata} and one column per time point
+#'   (a vector for \code{type = "lp"}); with \code{se = TRUE} a list with \code{cif} and \code{se}
+#'   (\code{directcif}) or \code{est}, \code{se}, \code{lower} and \code{upper} (\code{parsurv},
+#'   parametric \code{csc}).
+#' @references
+#' Breslow NE (1974) Covariance analysis of censored survival data. Biometrics 30:89-99.
 #'
+#' Prentice RL, Kalbfleisch JD, Peterson AV, Flournoy N, Farewell VT, Breslow NE (1978) The analysis
+#'   of failure times in the presence of competing risks. Biometrics 34:541-554.
+#'
+#' Benichou J, Gail MH (1990) Estimates of absolute cause-specific risk in cohort studies. Biometrics
+#'   46:813-826.
+#'
+#' Fine JP, Gray RJ (1999) A proportional hazards model for the subdistribution of a competing risk.
+#'   Journal of the American Statistical Association 94:496-509.
+#'
+#' Kalbfleisch JD, Prentice RL (2002) The Statistical Analysis of Failure Time Data, 2nd ed. Wiley.
+#'
+#' Hinchliffe SR, Lambert PC (2013) Flexible parametric modelling of cause-specific hazards to
+#'   estimate cumulative incidence functions. BMC Medical Research Methodology 13:13.
+#'
+#' Casella G, Berger RL (2002) Statistical Inference, 2nd ed. Duxbury, Section 5.5 (delta method).
+#' @seealso
+#' \code{\link{cif_data}} and \code{\link{cif_plot}} (curves with bootstrap intervals),
+#' \code{\link{hazard_plot}}, \code{\link{cox}}, \code{\link{fg}}, \code{\link{csc}},
+#' \code{\link{parsurv}}, \code{\link{directcif}}, \code{\link{cure}}.
+#' @examples
+#' set.seed(1)
+#' n <- 300
+#' d <- data.frame(treat = rbinom(n, 1, 0.5), age = round(rnorm(n, 60, 10)))
+#' t <- rweibull(n, 1.4, 5 * exp(0.4 * d$treat - 0.02 * (d$age - 60))); cens <- runif(n, 0, 10)
+#' d$time <- pmin(t, cens); d$status <- as.integer(t <= cens)
+#' nd <- data.frame(treat = 0:1, age = 60)
+#'
+#' ## Cox: survival at 2 and 5 years for two profiles
+#' fc <- cox(Event(time, status) ~ treat + age, d)
+#' predict(fc, nd, times = c(2, 5), type = "survival")
+#'
+#' ## Weibull: survival with limits, median time, restricted mean up to 5 years
+#' fw <- parsurv(Event(time, status) ~ treat + age, d)
+#' predict(fw, nd, times = c(2, 5), se = TRUE)
+#' predict(fw, nd, type = "quantile", p = 0.5)
+#' predict(fw, nd, times = 5, type = "rmst")
+#'
+#' ## marginal (standardised) survival: everybody treated versus nobody treated
+#' d1 <- transform(d, treat = 1); d0 <- transform(d, treat = 0)
+#' c(treated = predict(fw, d1, times = 5, average = TRUE),
+#'   untreated = predict(fw, d0, times = 5, average = TRUE))
 #' @name predict.SurvX
-#' @param object a fitted model.
-#' @param newdata data frame with the covariates; the data used for fitting when \code{NULL}.
-#' @param times time points. For \code{directcif} fits \code{Inf} gives the plateau.
-#' @param type for \code{cox}: \code{"lp"} (linear predictor) or \code{"survival"}.
-#' @param cause cause of interest (\code{csc} and \code{directcif} fits).
-#' @param se for \code{directcif} fits: also return delta-method standard errors.
-#' @param ... not used.
-#' @return a matrix with one row per row of \code{newdata} and one column per time point
-#'   (a vector for \code{type = "lp"}); with \code{se = TRUE} a list with \code{cif} and \code{se}.
 NULL
 
 S7::method(predict, CoxFit) <- function(object, newdata = NULL, times = NULL, type = c("lp", "survival"), ...) {
+  .no_tt(object, "predict()")
   type <- match.arg(type)
   lp <- drop(.sx_newX(object, newdata) %*% object@coefficients)
   if (type == "lp") return(lp)
@@ -365,4 +552,56 @@ S7::method(predict, CoxFit) <- function(object, newdata = NULL, times = NULL, ty
   if (length(times) == 1L && !is.null(sn)) out <- matrix(out, ncol = 1L)
   dimnames(out) <- list(NULL, paste0("t=", times))
   out
+}
+
+#' Hazard ratio at chosen times for time-varying coefficients
+#'
+#' @description
+#' For a Cox model with \code{tt()} terms (see \code{\link{cox}}), the hazard ratio of each such
+#' covariate at the requested times, \eqn{\exp\{\beta + \gamma\, g(t)\}}, with a Wald confidence
+#' interval. It turns the two coefficients of a time-varying effect into the quantity to report:
+#' "the hazard ratio of treatment was 0.55 at 6 months and 0.85 at 3 years".
+#' @param fit a model fitted by \code{\link{cox}} with \code{tt()} terms.
+#' @param times the times at which the effect is wanted; default the quartiles of the event times.
+#' @param level confidence level.
+#' @details
+#' For a covariate \eqn{x} entered as \code{x + tt(x)} with \code{tt = g}, the log hazard ratio at
+#' time \eqn{t} is \eqn{\beta + \gamma g(t)} with variance
+#' \eqn{V_{\beta\beta} + g(t)^2 V_{\gamma\gamma} + 2 g(t) V_{\beta\gamma}}. When \code{x} itself is not
+#' in the model, \eqn{\beta = 0}.
+#' @return
+#' A data frame with \code{term}, \code{time}, \code{g} (the value of the function of time),
+#' \code{log_hr}, \code{se}, \code{hr}, \code{lower} and \code{upper}.
+#' @references
+#' Therneau TM, Grambsch PM (2000). Modeling Survival Data: Extending the Cox Model. Springer,
+#'   Chapter 6.
+#' @seealso
+#' \code{\link{cox}}, \code{\link{ph_test}}.
+#' @examples
+#' set.seed(4)
+#' n <- 300
+#' x <- rbinom(n, 1, 0.5)
+#' t <- rweibull(n, ifelse(x == 1, 0.7, 1.5), 3); cens <- runif(n, 0, 6)
+#' d <- data.frame(time = pmin(t, cens), status = as.integer(t <= cens), x = x)
+#' fit <- cox(Event(time, status) ~ x + tt(x), d, tt = function(t) log(t))
+#' tt_effect(fit, times = c(0.5, 1, 2, 4))
+#' @export
+tt_effect <- function(fit, times = NULL, level = 0.95) {
+  if (!S7::S7_inherits(fit, CoxFit) || is.null(fit@tt)) stop("fit must be a cox() model with tt() terms", call. = FALSE)
+  if (is.null(times)) times <- unname(stats::quantile(fit@time[fit@status == 1L], c(0.25, 0.5, 0.75), type = 1))
+  b <- fit@coefficients; V <- fit@vcov; nm <- names(b)
+  funs <- if (is.function(fit@tt$fun)) rep(list(fit@tt$fun), length(fit@tt$cols)) else fit@tt$fun
+  z <- stats::qnorm(1 - (1 - level) / 2)
+  out <- lapply(seq_along(fit@tt$cols), function(j) {
+    jt <- fit@tt$cols[j]
+    base <- sub("^tt\\((.*)\\)$", "\\1", nm[jt])
+    jb <- match(base, nm)
+    g <- funs[[j]](times)
+    est <- (if (is.na(jb)) 0 else b[jb]) + b[jt] * g
+    v <- V[jt, jt] * g^2 + if (is.na(jb)) 0 else V[jb, jb] + 2 * g * V[jb, jt]
+    se <- sqrt(pmax(v, 0))
+    data.frame(term = base, time = times, g = g, log_hr = unname(est), se = unname(se), hr = exp(unname(est)),
+               lower = exp(unname(est - z * se)), upper = exp(unname(est + z * se)), stringsAsFactors = FALSE)
+  })
+  do.call(rbind, out)
 }

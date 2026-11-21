@@ -23,6 +23,13 @@
   hall_marron1991 = c("Hall & Marron (1991)", "Hall P, Marron JS (1991). Local minima in cross-validation functions. Journal of the Royal Statistical Society, Series B 53:245-252."),
   # Cox
   cox1972 = c("Cox (1972)", "Cox DR (1972). Regression models and life-tables. Journal of the Royal Statistical Society, Series B 34:187-220."),
+  kawaguchi2021 = c("Kawaguchi et al. (2021)", "Kawaguchi ES, Shen JI, Suchard MA, Li G (2021). Scalable algorithms for large competing risks data. Journal of Computational and Graphical Statistics 30:685-693."),
+  latouche2013 = c("Latouche et al. (2013)", "Latouche A, Allignol A, Beyersmann J, Labopin M, Fine JP (2013). A competing risks analysis should report results on all cause-specific hazards and cumulative incidence functions. Journal of Clinical Epidemiology 66:648-653."),
+  austin_fine2017 = c("Austin & Fine (2017)", "Austin PC, Fine JP (2017). Practical recommendations for reporting Fine-Gray model analyses for competing risk data. Statistics in Medicine 36:4391-4400."),
+  marubini1995 = c("Marubini & Valsecchi (1995)", "Marubini E, Valsecchi MG (1995). Analysing Survival Data from Clinical Trials and Observational Studies. Wiley, Chichester."),
+  putter2007 = c("Putter et al. (2007)", "Putter H, Fiocco M, Geskus RB (2007). Tutorial in biostatistics: competing risks and multi-state models. Statistics in Medicine 26:2389-2430."),
+  andersen2012 = c("Andersen et al. (2012)", "Andersen PK, Geskus RB, de Witte T, Putter H (2012). Competing risks in epidemiology: possibilities and pitfalls. International Journal of Epidemiology 41:861-870."),
+  stone1974 = c("Stone (1974)", "Stone M (1974). Cross-validatory choice and assessment of statistical predictions. Journal of the Royal Statistical Society, Series B 36:111-147."),
   breslow1972 = c("Breslow (1972)", "Breslow NE (1972). Discussion of the paper by D. R. Cox. Journal of the Royal Statistical Society, Series B 34:216-217."),
   breslow1974 = c("Breslow (1974)", "Breslow NE (1974). Covariance analysis of censored survival data. Biometrics 30:89-99."),
   andersen_gill1982 = c("Andersen & Gill (1982)", "Andersen PK, Gill RD (1982). Cox's regression model for counting processes: a large sample study. Annals of Statistics 10:1100-1120."),
@@ -51,7 +58,7 @@
   prentice1974 = c("Prentice (1974)", "Prentice RL (1974). A log gamma model and its maximum likelihood estimation. Biometrika 61:539-544."),
   cox2007 = c("Cox et al. (2007)", "Cox C, Chu H, Schneider MF, Munoz A (2007). Parametric survival analysis and taxonomy of hazard functions for the generalized gamma distribution. Statistics in Medicine 26:4352-4374."),
   # cure models
-  boag1949 = c("Boag (1949)", "Boag JW (1949). Maximum likelihood estimates of the proportion of patients cured by cancer therapy. Journal of the Royal Statistical Society, Series B 11:15-53."),
+  boag1949 = c("Boag (1949)", "Boag JW (1949). Maximum likelihood estimates of the proportion of patients cured by cancer therapy. Journal of the Royal Statistical Society, Series B 11:15-44."),
   berkson1952 = c("Berkson & Gage (1952)", "Berkson J, Gage RP (1952). Survival curve for cancer patients following treatment. Journal of the American Statistical Association 47:501-515."),
   farewell1982 = c("Farewell (1982)", "Farewell VT (1982). The use of mixture models for the analysis of survival data with long-term survivors. Biometrics 38:1041-1046."),
   yakovlev1996 = c("Yakovlev & Tsodikov (1996)", "Yakovlev AY, Tsodikov AD (1996). Stochastic Models of Tumor Latency and Their Biostatistical Applications. World Scientific, Singapore."),
@@ -90,17 +97,18 @@
 # what each key is used for, by topic; values are character vectors of keys
 .topics <- list(
   km = c("kaplan_meier1958", "greenwood1926", "brookmeyer1982", "mantel1966", "peto1972", "harrington1982"),
-  aj = c("aalen_johansen1978", "andersen1993", "kalbfleisch2002", "gray1988"),
+  aj = c("aalen_johansen1978", "kalbfleisch2002", "marubini1995", "andersen1993", "gray1988", "putter2007"),
   logrank_test = c("mantel1966", "peto1972", "harrington1982"),
   gray_test = c("gray1988"),
-  rmst = c("irwin1949", "royston_parmar2013"),
+  rmst = c("irwin1949", "royston_parmar2013", "klein2003"),
   hazard_np = c("nelson1972", "aalen1978", "ramlau1983", "muller_wang1994", "patil1993", "hall_marron1991"),
   cox = c("cox1972", "breslow1974", "breslow1972", "efron1977", "andersen_gill1982", "lin_wei1989", "kalbfleisch2002",
           "therneau1990", "grambsch1994", "therneau2000", "wilks1938", "akaike1974"),
-  fg = c("fine_gray1999", "geskus2011", "white1982"),
-  csc = c("prentice1978", "cox1972", "breslow1974", "efron1977", "benichou1990", "kalbfleisch2002", "andersen_gill1982", "lin_wei1989"),
-  parsurv = c("kalbfleisch2002", "lawless2003", "klein2003", "casella2002", "akaike1974", "schwarz1978",
-              "levenberg1944", "marquardt1963"),
+  fg = c("fine_gray1999", "geskus2011", "white1982", "lin_wei1989", "efron1993", "kawaguchi2021", "latouche2013", "austin_fine2017"),
+  csc = c("prentice1978", "cox1972", "breslow1974", "efron1977", "benichou1990", "kalbfleisch2002", "andersen_gill1982", "lin_wei1989",
+          "latouche2013", "andersen2012", "hinchliffe2013", "lawless2003"),
+  parsurv = c("kalbfleisch2002", "lawless2003", "klein2003", "royston_parmar2002", "friedman1982", "prentice1974",
+              "cox2007", "casella2002", "akaike1974", "schwarz1978", "levenberg1944", "marquardt1963"),
   directcif = c("jeong_fine2006", "jeong_fine2007", "dabrowska1988", "casella2002", "akaike1974",
                 "levenberg1944", "marquardt1963"),
   cure = c("boag1949", "berkson1952", "farewell1982", "yakovlev1996", "chen1999", "lambert2007", "maller1996", "amico2018",
@@ -112,7 +120,7 @@
   brier_score = c("graf1999", "gerds2006", "kattan2018"),
   auc_t = c("blanche2013"),
   calibration = c("gerds2014", "aalen_johansen1978"),
-  compare_models = c("graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", "hastie2009", "gerds2007", "akaike1974"),
+  compare_models = c("stone1974", "graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", "hastie2009", "gerds2007", "akaike1974"),
   cv_compare = c("hastie2009", "gerds2007", "graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014"),
   cif_plot = c("aalen_johansen1978", "benichou1990", "efron1993", "casella2002"),
   cif_data = c("aalen_johansen1978", "benichou1990", "efron1993", "casella2002"),
@@ -127,7 +135,8 @@
     return(c("cox1972", if (x@ties == "efron") "efron1977" else "breslow1974", "breslow1974", .design_keys(x)))
   if (S7::S7_inherits(x, FineGrayFit))
     return(c("fine_gray1999", if (!is.null(x@entry)) c("geskus2011", "andersen_gill1982"),
-             if (identical(x@variance, "robust")) (if (is.null(x@entry)) "white1982" else "lin_wei1989")))
+             if (identical(x@variance, "robust")) (if (is.null(x@entry)) "white1982" else "lin_wei1989"),
+             if (identical(x@variance, "bootstrap")) "efron1993"))
   if (S7::S7_inherits(x, CSCFit))
     return(c("prentice1978", "cox1972", if (x@ties == "efron") "efron1977", "breslow1974", "benichou1990", .design_keys(x)))
   if (S7::S7_inherits(x, CureFit))
@@ -162,7 +171,8 @@
 }
 
 .design_keys <- function(x) {
-  c(if (!is.null(x@strata)) "kalbfleisch2002", if (!is.null(x@entry)) "andersen_gill1982", if (isTRUE(x@robust)) "lin_wei1989")
+  c(if (!is.null(x@strata)) "kalbfleisch2002", if (!is.null(x@entry)) "andersen_gill1982", if (isTRUE(x@robust)) "lin_wei1989",
+    if (S7::S7_inherits(x, CoxFit) && !is.null(x@tt)) "therneau2000")
 }
 
 # the line printed under every result
@@ -176,17 +186,25 @@
 
 #' References of the methods behind a result
 #'
-#' Every result of SurvX rests on published methods. \code{sx_references()} prints the full
-#' references of the methods that produced a fitted object, or of a function of the package, so
-#' that they can be cited and checked; the printed output of every model ends with the short form
-#' of the same list (the "Methods:" line).
-#'
+#' @description
+#' Every result of SurvX rests on published methods. \code{sx_references()} prints the full references
+#' of the methods that produced a fitted object, or of a function of the package, so that they can be
+#' cited and checked. The printed output of every model ends with the short form of the same list
+#' (the \dQuote{Methods:} line).
 #' @param x a fitted object (from \code{\link{cox}}, \code{\link{fg}}, \code{\link{csc}},
-#'   \code{\link{directcif}}, \code{\link{parsurv}}, \code{\link{km}}, \code{\link{aj}},
+#'   \code{\link{directcif}}, \code{\link{parsurv}}, \code{\link{cure}}, \code{\link{km}}, \code{\link{aj}},
 #'   \code{\link{hazard_np}}, \code{\link{compare_models}} or \code{\link{ph_test}}), or the name of a
 #'   function of the package as a character string (for example \code{"brier_score"}); \code{NULL}
-#'   lists all references.
-#' @return invisibly, a character vector of full references.
+#'   lists all references of the package.
+#' @details
+#' For a fitted object the list depends on the options that were used: for example the Efron or
+#' Breslow method for ties of a Cox model, the estimation method and baselines of a direct model, or
+#' delayed entry and the distribution of a parametric model.
+#' @return
+#' invisibly, a character vector of full references.
+#' @seealso
+#' The \code{References} section of the help page of every function, which groups the references by
+#' what they are used for; \code{\link{SurvX-package}} for an overview.
 #' @examples
 #' sx_references("ph_test")
 #' set.seed(1)

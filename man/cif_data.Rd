@@ -73,6 +73,22 @@ nonparametric bootstrap of the subjects for Fine-Gray and cause-specific Cox mod
 Tibshirani 1993); both on the complementary log-log scale, \eqn{F^{\exp(\pm z\,se/(F \log F))}},
 so that the limits stay in [0, 1]. \code{interval = "percentile"} gives bootstrap percentile limits instead.
 }
+\section{Interpreting the curves and intervals}{
+\itemize{
+  \item A \emph{profile} curve is the risk of one kind of subject (the typical one, or the rows of
+    \code{newdata}); a \emph{marginal} curve is the average risk of the population of the data
+    (standardisation), the natural choice for comparing treatments "as if everybody had received
+    each"; an \emph{unadjusted} curve ignores the covariates and shows how the model compares with
+    the data.
+  \item The intervals are pointwise: each covers the true incidence at its own time with the stated
+    probability; they are not a band for the whole curve. Parametric models (\code{directcif},
+    parametric \code{csc}) use the delta method; Fine-Gray and Cox-baseline \code{csc} fits use the
+    bootstrap (\code{B} resamples of subjects, or of clusters with \code{cluster()}), with
+    \code{seed} for reproducibility.
+  \item \code{reference = TRUE} adds the Aalen-Johansen estimate: a model whose unadjusted curve
+    departs from it fits the data poorly.
+}
+}
 \value{
 a data frame with the columns \code{model, cause, profile, time, cif, se, lower, upper, step,
   method}; attribute \code{"description"} says which covariate values were used.
@@ -82,6 +98,10 @@ Jeong J-H, Fine JP (2006) J R Stat Soc C 55:187-200.
 Efron B, Tibshirani RJ (1993) An Introduction to the Bootstrap. Chapman and Hall, New York.
 Kalbfleisch JD, Prentice RL (2002) The Statistical Analysis of Failure Time Data, 2nd ed. Wiley,
   Section 8.2 (cumulative incidence functions).
+}
+\seealso{
+\code{\link{aj}}, \code{\link{fg}}, \code{\link{csc}}, \code{\link{directcif}},
+\code{\link{predict.SurvX}}, \code{\link{hazard_plot}}.
 }
 \examples{
 set.seed(6)

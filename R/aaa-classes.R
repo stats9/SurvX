@@ -31,7 +31,8 @@ CoxFit <- S7::new_class("CoxFit", parent = SurvXFit, package = "SurvX",
     strata_vars = S7::class_any,
     cluster = S7::class_any,          # cluster identifiers, or NULL
     robust = S7::class_logical,       # vcov is the robust (sandwich) variance
-    vcov_model = S7::class_any        # inverse information
+    vcov_model = S7::class_any,       # inverse information
+    tt = S7::class_any                # time-varying coefficients: list(fun, cols), or NULL
   ))
 
 FineGrayFit <- S7::new_class("FineGrayFit", parent = SurvXFit, package = "SurvX",
@@ -42,7 +43,8 @@ FineGrayFit <- S7::new_class("FineGrayFit", parent = SurvXFit, package = "SurvX"
     vcov_robust = S7::class_any,
     loglik_null = S7::class_numeric,
     entry = S7::class_any,            # delayed entry (Geskus 2011), or NULL
-    expanded = S7::class_any          # weighted counting-process rows of the Geskus fit
+    expanded = S7::class_any,         # weighted counting-process rows of the Geskus fit
+    vcov_boot = S7::class_any         # bootstrap variance (variance = "bootstrap"), or NULL
   ))
 
 DirectCIFFit <- S7::new_class("DirectCIFFit", parent = SurvXFit, package = "SurvX",

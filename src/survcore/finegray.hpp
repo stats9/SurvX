@@ -7,7 +7,7 @@
 //   G(t-) / G(X_i-); subjects still under observation have weight 1.
 //
 // Algorithm: forward-backward scan, O(n p^2) per evaluation after one sort, in
-// the spirit of Kawaguchi et al. (2021, R Journal 12(2), fastcmprsk). All
+// the spirit of Kawaguchi, Shen, Suchard & Li (2021), J Comput Graph Stat 30:685-693. All
 // running sums are accumulated by addition only.
 //
 // Conventions, those of cmprsk::crr on tied data:
