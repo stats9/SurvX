@@ -300,7 +300,8 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
 #'     the size of the change on the plot, not only the p-value.
 #'   \item What to do when the assumption fails for a covariate: put it in \code{strata()} if its
 #'     effect is not of interest; let its effect change with time with \code{tt()} in
-#'     \code{\link{cox}}; or report hazard ratios for separate periods of follow-up. Restricted mean
+#'     \code{\link{cox}}, or let \code{\link{time_effects}} compare forms of the change and refit the
+#'     model with them; or report hazard ratios for separate periods of follow-up. Restricted mean
 #'     survival time (\code{\link{rmst}}) needs no proportional hazards.
 #' }
 #' A sentence for a report: \emph{"The proportional hazards assumption was checked with the
@@ -329,7 +330,8 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
 #'
 #' All references: \code{sx_references("ph_test")}.
 #' @seealso
-#' \code{\link{cox}} (\code{strata()}, \code{tt()}), \code{\link{residuals.SurvX}}, \code{\link{rmst}}.
+#' \code{\link{cox}} (\code{strata()}, \code{tt()}), \code{\link{time_effects}}, \code{\link{residuals.SurvX}},
+#' \code{\link{rmst}}.
 #' @examples
 #' set.seed(4)
 #' n <- 300
@@ -388,6 +390,8 @@ S7::method(print, PHTest) <- function(x, ...) {
         else "Reading: no evidence against proportional hazards (all p >= 0.05).", "\n")
   }
   cat("\nplot(x, var) shows the scaled Schoenfeld residuals: a flat trend supports proportional hazards.\n")
+  if (any(x@table$p[x@table$term != "GLOBAL"] < 0.05, na.rm = TRUE))
+    cat("time_effects(fit) compares forms of the change over time and refits the model with them.\n")
   cat("\n", .method_lines(.method_keys(x)), sep = "\n")
   invisible(x)
 }

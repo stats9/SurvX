@@ -52,6 +52,7 @@ competing risks treat it correctly.
 | What is the risk of each cause when other events compete? | `aj()`, `gray_test()` |
 | How do covariates change the event rate (hazard ratios)? | `cox()` |
 | Is the hazard ratio constant over time? | `ph_test()` |
+| How does an effect change over time? (form, refit, HR at each time) | `time_effects()` |
 | How do covariates change the rate of each cause? | `csc()` |
 | How do covariates change the risk of one cause? | `fg()`, `directcif()` |
 | Smooth survival curves, time ratios, extrapolation | `parsurv()` |

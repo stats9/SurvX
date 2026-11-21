@@ -150,6 +150,32 @@ tt_effect(ft, times = c(30, 90, 180, 365))
 The hazard ratio per point of the score moves toward 1 as time passes. `tt_effect()` gives these
 values, with confidence intervals, at any times; they are what to report.
 
+### Choosing the form with `time_effects()`
+
+Above, the form `log(t + 20)` was chosen by hand. `time_effects()` does the whole sequence for every
+covariate: the test of a constant effect (with Holm's adjustment for the number of covariates), a
+comparison of forms for the covariates that fail it (log-linear, a step at a change point chosen from
+the data, a spline in log time, or functions you supply) by AIC and likelihood ratio tests, the final
+model with the chosen forms, and the hazard ratio over time.
+
+```{r}
+te <- time_effects(fv, times = c(30, 90, 180, 365))
+te
+```
+
+```{r te-plot, fig.height = 4}
+plot(te)
+```
+
+The figure shows the chosen form with its confidence band, the constant (proportional hazards)
+fit as a dashed line and the scaled Schoenfeld residuals. `fix = list(karno = "piecewise")` imposes a
+form, for a pre-specified analysis or a sensitivity analysis. The forms are chosen from the same data,
+so the intervals of the final model are somewhat too narrow; `bootstrap = 200` repeats the whole
+procedure in bootstrap samples, giving intervals that include the choice and the share of samples in
+which each form is chosen. `predict(te, newdata, times)` gives survival probabilities with the
+time-varying effects, and `report(te, file)` writes the analysis, with methods and references, to an
+HTML file.
+
 ## 6. Residuals and functional form
 
 Martingale residuals of a model *without* a numeric covariate, plotted against it, show the form
@@ -211,5 +237,9 @@ ones.
 * Grambsch PM, Therneau TM (1994). Proportional hazards tests and diagnostics based on weighted
   residuals. *Biometrika*, 81, 515-526.
 * Therneau TM, Grambsch PM (2000). *Modeling Survival Data: Extending the Cox Model*. Springer.
+* Holm S (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal of
+  Statistics*, 6, 65-70.
+* Hess KR (1994). Assessing time-by-covariate interactions in proportional hazards regression models
+  using cubic spline functions. *Statistics in Medicine*, 13, 1045-1062.
 * Royston P, Parmar MKB (2013). Restricted mean survival time: an alternative to the hazard ratio.
   *BMC Medical Research Methodology*, 13, 152.

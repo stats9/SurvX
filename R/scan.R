@@ -358,7 +358,8 @@
 #' All references: \code{sx_references("model_scan")}.
 #' @seealso
 #' \code{\link{compare_models}} and \code{\link{cv_compare}} (a chosen set of models at chosen times),
-#' \code{\link{brier_score}}, \code{\link{ph_test}}, \code{\link{km}}, \code{\link{aj}}.
+#' \code{\link{brier_score}}, \code{\link{ph_test}}, \code{\link{time_effects}}, \code{\link{km}},
+#' \code{\link{aj}}.
 #' @examples
 #' ## one event type
 #' set.seed(1)
@@ -373,7 +374,7 @@
 #' \donttest{
 #' ## competing risks, with the effects of the covariates in every model
 #' data(fertility)
-#' sc2 <- model_scan(Event(time, status) ~ education + age, fertility, cause = 1,
+#' sc2 <- model_scan(Event(time, status) ~ education, fertility, cause = 1,
 #'                   goal = "effect", depth = "quick", folds = 3)
 #' summary(sc2)
 #' plot(sc2)
@@ -564,6 +565,10 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
     out <- c(out, paste0("  dAIC compares only the models with a full likelihood of the same data (",
                          if (x@type == "single") "parametric and cure models" else "parametric cause-specific, joint and constrained direct models",
                          "); Cox, Fine-Gray and weighted direct models have no comparable likelihood."))
+  ph_bad <- tab$model[tab$fitted & grepl("PH doubtful", tab$checks, fixed = TRUE)]
+  if (length(ph_bad))
+    out <- c(out, paste0("  Proportional hazards are doubtful for ", paste(ph_bad, collapse = "; "),
+                         ": time_effects(fit) shows how the effects change over time (fits in x@fits)."))
   if (x@type == "competing")
     out <- c(out, "  Cause-specific models describe rates; Fine-Gray and direct models the cumulative incidence itself.",
              "  For the effect of a covariate on risk use the second, on the rate of the event the first (goal = \"effect\").")

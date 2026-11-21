@@ -1,5 +1,17 @@
 # SurvX (development version)
 
+* New `time_effects()`: for a `cox()`, `csc()` or `fg()` model, tests every term for a
+  time-varying effect (Grambsch-Therneau score test, Holm-adjusted), compares forms of the change
+  (constant, log-linear, a step at a change point chosen by profile likelihood, a natural spline
+  in log time, or your own functions of time) by AIC or BIC and likelihood ratio tests, refits the
+  model with the chosen forms on follow-up split at every event time, and reports the hazard ratio
+  (cause-specific or subdistribution) at chosen times with a reading in plain words. `fix` imposes
+  forms; `bootstrap` repeats the whole procedure for intervals and selection frequencies that
+  include the choice. `plot()`, `predict()` (survival or cumulative incidence with the
+  time-varying effects), `as.data.frame()` and an HTML `report()`.
+* `ph_test()` points to `time_effects()` when a covariate fails the test.
+* The fertility examples no longer use `age`, which is recorded at the end of follow-up and is
+  therefore not a baseline covariate.
 * New `model_scan()`: fits every model of the package that suits the data (one event type or
   competing risks; cure models when the Kaplan-Meier curve levels off) and compares them on
   criteria valid for the comparison: the cross-validated integrated Brier score, IPA, AUC and

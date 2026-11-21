@@ -92,7 +92,12 @@
   andersen1993 = c("Andersen et al. (1993)", "Andersen PK, Borgan O, Gill RD, Keiding N (1993). Statistical Models Based on Counting Processes. Springer, New York."),
   efron1993 = c("Efron & Tibshirani (1993)", "Efron B, Tibshirani RJ (1993). An Introduction to the Bootstrap. Chapman and Hall, New York."),
   levenberg1944 = c("Levenberg (1944)", "Levenberg K (1944). A method for the solution of certain non-linear problems in least squares. Quarterly of Applied Mathematics 2:164-168."),
-  marquardt1963 = c("Marquardt (1963)", "Marquardt DW (1963). An algorithm for least-squares estimation of nonlinear parameters. Journal of the Society for Industrial and Applied Mathematics 11:431-441.")
+  marquardt1963 = c("Marquardt (1963)", "Marquardt DW (1963). An algorithm for least-squares estimation of nonlinear parameters. Journal of the Society for Industrial and Applied Mathematics 11:431-441."),
+  # time-varying effects
+  holm1979 = c("Holm (1979)", "Holm S (1979). A simple sequentially rejective multiple test procedure. Scandinavian Journal of Statistics 6:65-70."),
+  hess1994 = c("Hess (1994)", "Hess KR (1994). Assessing time-by-covariate interactions in proportional hazards regression models using cubic spline functions. Statistics in Medicine 13:1045-1062."),
+  gray1992 = c("Gray (1992)", "Gray RJ (1992). Flexible methods for analyzing survival data using splines, with applications to breast cancer prognosis. Journal of the American Statistical Association 87:942-951."),
+  buchholz2011 = c("Buchholz & Sauerbrei (2011)", "Buchholz A, Sauerbrei W (2011). Comparison of procedures to assess non-linear and time-varying effects in multivariable models for survival data. Biometrical Journal 53:308-331.")
 )
 
 # what each key is used for, by topic; values are character vectors of keys
@@ -117,6 +122,8 @@
            "kalbfleisch2002", "casella2002"),
   residuals = c("cox_snell1968", "schoenfeld1982", "therneau1990", "grambsch1994"),
   ph_test = c("grambsch1994", "therneau2000", "schoenfeld1982"),
+  time_effects = c("grambsch1994", "therneau2000", "holm1979", "hess1994", "gray1992", "akaike1974", "schwarz1978",
+                   "buchholz2011", "fine_gray1999", "geskus2011", "lin_wei1989", "efron1993"),
   dist_plot = c("klein2003", "collett2015", "nelson1972", "cox_snell1968"),
   hazard_plot = c("nelson1972", "ramlau1983", "muller_wang1994", "klein2003"),
   brier_score = c("graf1999", "gerds2006", "kattan2018"),
@@ -172,6 +179,13 @@
   if (S7::S7_inherits(x, ModelComparison)) return(c("graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", if (x@folds >= 2L) "hastie2009"))
   if (S7::S7_inherits(x, PHTest)) return(c("grambsch1994", "therneau2000"))
   if (S7::S7_inherits(x, ModelScan)) return(.topics$model_scan)
+  if (S7::S7_inherits(x, TimeEffects)) {
+    s <- x@settings; f <- x@forms
+    return(c("grambsch1994", "therneau2000", if (s$screen == "holm") "holm1979", if ("spline" %in% f) c("hess1994", "gray1992"),
+             if (s$criterion == "aic") "akaike1974" else "schwarz1978", "buchholz2011",
+             if (x@kind == "fg") c("fine_gray1999", "geskus2011", "lin_wei1989"),
+             if (x@kind == "csc") "prentice1978", if (!is.null(x@bootstrap)) "efron1993"))
+  }
   character(0)
 }
 

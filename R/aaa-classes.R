@@ -203,6 +203,20 @@ HazardFit <- S7::new_class("HazardFit", package = "SurvX",
     group = S7::class_any
   ))
 
+# result of time_effects(): one element of `units` per analysis (the Cox model, each cause of a
+# cause-specific model, or the Fine-Gray model)
+TimeEffects <- S7::new_class("TimeEffects", package = "SurvX",
+  properties = list(
+    model_call = S7::class_any,
+    fit = S7::class_any,
+    kind = S7::class_character,
+    units = S7::class_list,
+    settings = S7::class_list,
+    forms = S7::class_character,
+    bootstrap = S7::class_any,
+    level = S7::class_numeric
+  ))
+
 # result of ph_test(): one element of `tests` per cause (one for a Cox model)
 PHTest <- S7::new_class("PHTest", package = "SurvX",
   properties = list(

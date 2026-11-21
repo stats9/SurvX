@@ -156,6 +156,7 @@ patient, which keeps the plateau parameters interpretable and stabilises the fit
 | `compare_models(formula, data, times, direct, cause, folds)` | cross-validated comparison of direct, Fine-Gray and cause-specific Cox models; runs in the C++ core |
 | `cv_compare(formula, data, models, times, ...)` | the same for any list of fitting functions with a `predict` method |
 | `model_scan(formula, data, cause, goal, depth)` | fits every suitable model (one event type or competing risks), ranks them by cross-validated prediction with the equally good ones grouped, AIC only among comparable models, checks of every model; `plot()` and an HTML `report()` |
+| `time_effects(fit, forms, fix, screen, bootstrap)` | for a Cox, cause-specific Cox or Fine-Gray model: tests every covariate for a time-varying effect (Holm-adjusted), compares forms of the change (log-linear, step at a change point, spline in log time, your own functions) by AIC and likelihood ratio tests, refits with the chosen forms and reports the hazard ratio over time; optional bootstrap of the whole procedure; `plot()`, `predict()` and an HTML `report()` |
 | `estimates(fit)` | every coefficient as a data frame: estimate, standard error, interval, z, p and exponentiated effect |
 | `fertility` | real competing risks data: time from marriage to a live birth or a stillbirth/abortion of 652 women (Shayan et al. 2011) |
 

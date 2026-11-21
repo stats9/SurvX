@@ -57,7 +57,8 @@ ylab = NULL, main = NULL, cex = 0.85, ...)}, with:
     the size of the change on the plot, not only the p-value.
   \item What to do when the assumption fails for a covariate: put it in \code{strata()} if its
     effect is not of interest; let its effect change with time with \code{tt()} in
-    \code{\link{cox}}; or report hazard ratios for separate periods of follow-up. Restricted mean
+    \code{\link{cox}}, or let \code{\link{time_effects}} compare forms of the change and refit the
+    model with them; or report hazard ratios for separate periods of follow-up. Restricted mean
     survival time (\code{\link{rmst}}) needs no proportional hazards.
 }
 A sentence for a report: \emph{"The proportional hazards assumption was checked with the
@@ -90,7 +91,8 @@ Schoenfeld D (1982). Partial residuals for the proportional hazards regression m
 All references: \code{sx_references("ph_test")}.
 }
 \seealso{
-\code{\link{cox}} (\code{strata()}, \code{tt()}), \code{\link{residuals.SurvX}}, \code{\link{rmst}}.
+\code{\link{cox}} (\code{strata()}, \code{tt()}), \code{\link{time_effects}}, \code{\link{residuals.SurvX}},
+\code{\link{rmst}}.
 }
 \examples{
 set.seed(4)

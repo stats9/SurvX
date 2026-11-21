@@ -242,6 +242,16 @@ pt
 plot(pt, cause = 1)
 ```
 
+`time_effects()` goes one step further: for every covariate that fails the test it compares forms of
+the change (log-linear, a step, a spline in log time), refits the model with the chosen forms and
+reports the hazard ratio over time. It works on cause-specific Cox models (one analysis per cause) and
+on Fine-Gray models, where the effect is a time-varying subdistribution hazard ratio.
+
+```{r time-effects}
+time_effects(f_csc)
+time_effects(fg(Event(time, status) ~ education, fertility, cause = 1))
+```
+
 ## Comparing the models
 
 `compare_models()` fits a default set of direct models together with Fine–Gray and cause-specific
@@ -332,6 +342,10 @@ rowSums(sapply(1:3, function(k) predict(f_k3, nd, times = Inf, cause = k)))
   *Journal of the Royal Statistical Society, Series C*, 55, 187-200.
 - Jeong JH, Fine JP (2007). Parametric regression on cumulative incidence function.
   *Biostatistics*, 8, 184-196.
+- Grambsch PM, Therneau TM (1994). Proportional hazards tests and diagnostics based on weighted
+  residuals. *Biometrika*, 81, 515-526.
+- Geskus RB (2011). Cause-specific cumulative incidence estimation and the Fine and Gray model under
+  both left truncation and right censoring. *Biometrics*, 67, 39-49.
 - Hastie T, Tibshirani R, Friedman J (2009). *The Elements of Statistical Learning*, 2nd ed.
   Springer, New York.
 - Larson MG, Dinse GE (1985). A mixture model for the regression analysis of competing risks

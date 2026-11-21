@@ -223,7 +223,8 @@ All references: \code{sx_references("model_scan")}.
 }
 \seealso{
 \code{\link{compare_models}} and \code{\link{cv_compare}} (a chosen set of models at chosen times),
-\code{\link{brier_score}}, \code{\link{ph_test}}, \code{\link{km}}, \code{\link{aj}}.
+\code{\link{brier_score}}, \code{\link{ph_test}}, \code{\link{time_effects}}, \code{\link{km}},
+\code{\link{aj}}.
 }
 \examples{
 ## one event type
@@ -239,7 +240,7 @@ plot(sc, which = "ranking")
 \donttest{
 ## competing risks, with the effects of the covariates in every model
 data(fertility)
-sc2 <- model_scan(Event(time, status) ~ education + age, fertility, cause = 1,
+sc2 <- model_scan(Event(time, status) ~ education, fertility, cause = 1,
                   goal = "effect", depth = "quick", folds = 3)
 summary(sc2)
 plot(sc2)

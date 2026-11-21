@@ -36,7 +36,7 @@ test_that("model_scan() restores the random number generator and is reproducible
 })
 
 test_that("model_scan() for competing risks and goal = 'effect'", {
-  sc <- model_scan(Event(time, status) ~ education + age, fertility, cause = 1, goal = "effect", depth = "quick", folds = 3)
+  sc <- model_scan(Event(time, status) ~ education, fertility, cause = 1, goal = "effect", depth = "quick", folds = 3)
   tab <- as.data.frame(sc)
   expect_identical(sc@type, "competing")
   expect_true(all(c("cause-specific Cox", "Fine-Gray") %in% tab$model))
