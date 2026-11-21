@@ -1,0 +1,54 @@
+# R CMD check --as-cran as CRAN runs it on submission, including the incoming checks (URLs, DOIs,
+# spelling of DESCRIPTION, package size) and the timing of examples. Fails on any WARNING, and
+# lists every NOTE in the log; a NOTE must be explained in cran-comments.md or removed.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+name: CRAN check
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cran-check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        r: ['devel', 'release']
+    name: --as-cran (R ${{ matrix.r }})
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      _R_CHECK_CRAN_INCOMING_: true
+      _R_CHECK_CRAN_INCOMING_REMOTE_: true
+      _R_CHECK_FORCE_SUGGESTS_: false
+      _R_CHECK_TIMINGS_: 0
+      _R_CHECK_EXAMPLE_TIMING_THRESHOLD_: 5
+      _R_CHECK_LENGTH_1_CONDITION_: true
+      _R_CHECK_LENGTH_1_LOGIC2_: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-pandoc@v2
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.r }}
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          args: 'c("--no-manual", "--as-cran", "--timings")'
+          error-on: '"warning"'
+          upload-snapshots: true
+      - name: Examples that took more than 5 seconds
+        if: always()
+        run: |
+          f=$(find check -name "SurvX-Ex.timings" | head -1)
+          if [ -n "$f" ]; then awk 'NR == 1 || $2 > 5' "$f"; else echo "no timings file"; fi

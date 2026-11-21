@@ -1,4 +1,13 @@
-# SurvX 0.9.2
+# SurvX 1.0.0
+
+First release on CRAN.
+
+* New data set `fertility`: time from marriage to a live birth or a stillbirth/abortion of 652
+  women in Shiraz (Shayan, Ayatollahi and Zare 2011), a real competing risks example with many
+  tied times.
+* Six vignettes: getting started, survival analysis with one event, competing risks, parametric
+  and cure models, interpreting and reporting results, and validation.
+* New title and description; lifecycle stable.
 
 * `cox()`: time-varying coefficients with `tt()` terms and the new argument `tt`, a function of
   time: `cox(Event(time, status) ~ x + tt(x), data, tt = function(t) log(t))` fits

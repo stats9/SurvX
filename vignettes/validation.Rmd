@@ -1,0 +1,106 @@
+---
+title: "6. Validation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{6. Validation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+has_survival <- requireNamespace("survival", quietly = TRUE)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = has_survival)
+```
+
+A package for statistical analysis must give the right numbers. Every estimator and model of
+SurvX was checked in three ways:
+
+1. **accuracy**: the results are compared with those of the established reference packages, on
+   simulated and real data sets with and without ties, strata, delayed entry, clusters and
+   weights;
+2. **statistical properties**: a Monte Carlo study checks bias, standard errors and the coverage
+   of confidence intervals, and the size and power of the tests;
+3. **stability**: difficult data (few events, heavy censoring, ties, separation, extreme scales,
+   collinearity) must give either a correct result, a fit flagged as not converged, or a clear
+   error, never a silent wrong answer; and results must not depend on the order of the rows or the
+   units of time.
+
+The suite is in the directory `validation` of the source repository
+(<https://github.com/stats9/SurvX>); `Rscript run_validation.R` runs it and writes one text file
+and one PDF of figures. A run takes about 20 minutes in quick mode and several hours in full
+mode.
+
+## Agreement with the reference packages
+
+Largest difference over all data sets of the full run (82 data sets, up to $n = 20000$):
+
+| SurvX | Reference | Quantity | Largest difference |
+|---|---|---|---|
+| `km()` | `survival::survfit` | survival, Greenwood SE, median and CI | $10^{-15}$ |
+| `logrank_test()` | `survival::survdiff` | log-rank, Peto-Peto, stratified | relative $3 \times 10^{-6}$ |
+| `rmst()` | `survival::survfit`, `survRM2::rmst2` | RMST and its SE | $10^{-11}$ |
+| `hazard_np()` | `survival::survfit(ctype = 1)` | Nelson-Aalen | $10^{-15}$ |
+| `aj()` | `cmprsk::cuminc`, `survival::survfit` | cumulative incidence | $10^{-14}$ |
+| `gray_test()` | `cmprsk::cuminc` | Gray's statistics | $10^{-11}$ |
+| `cox()` | `survival::coxph` | coefficients, variances, log-likelihood | $10^{-6}$ |
+| `cox()` with `tt()` | `survival::coxph(tt = )` | coefficients, variances | $10^{-8}$ |
+| `ph_test()` | `survival::cox.zph` | score tests (4 transforms) | $10^{-7}$ |
+| `predict(cox)` | `survival::survfit.coxph` | predicted survival | $10^{-9}$ |
+| `residuals(cox)` | `survival::residuals.coxph` | martingale, deviance, scaled Schoenfeld | $10^{-8}$ |
+| `fg()` | `cmprsk::crr` | coefficients, robust variance, predictions | $10^{-7}$ |
+| `fg()` with delayed entry | `survival::finegray` + `coxph` | coefficients, robust variance | $10^{-7}$ |
+| `csc()` | `survival::coxph`, `riskRegression::CSC` | coefficients, variances, predicted CIF | $10^{-6}$ |
+| `parsurv()` | `survival::survreg` | AFT coefficients, SEs, log-likelihood | $10^{-9}$ |
+| `parsurv()` | `flexsurv::flexsurvreg`, `flexsurvspline` | log-likelihood, coefficients, SEs | optimiser tolerance |
+| `cure()` | `flexsurvcure::flexsurvcure` | log-likelihood, predictions | optimiser tolerance |
+| `brier_score()`, `auc_t()` | `riskRegression::Score` | Brier score, AUC | $10^{-14}$ |
+
+"Optimiser tolerance" means that the reference package maximises the likelihood numerically
+with its own stopping rule; where the results differ beyond it, SurvX reaches the higher
+log-likelihood. `directcif()` has no other implementation in R; its likelihoods, scores and
+information matrices were checked against independent code and numerical differentiation.
+
+## A check you can run
+
+The comparison with **survival** takes a few lines:
+
+```{r}
+library(SurvX)
+lung <- survival::lung
+lung$status <- lung$status - 1
+ours <- cox(Event(time, status) ~ age + sex + ph.ecog, lung)
+ref <- survival::coxph(survival::Surv(time, status) ~ age + sex + ph.ecog, data = lung)
+cbind(SurvX = coef(ours), survival = coef(ref), difference = coef(ours) - coef(ref))
+max(abs(vcov(ours) - vcov(ref)))
+```
+
+## Statistical properties
+
+In the Monte Carlo study (1000 replications for each of $n$ = 200, 500 and 1000), data were
+generated from each model with known parameters. Across the models, the mean standard error
+matched the empirical standard deviation of the estimates (ratios mostly between 0.95 and 1.05),
+the 95% confidence intervals covered close to 95%, and the tests held their level (log-rank 4-6%,
+Gray 4-5%, `ph_test()` 5-6% at the 5% level). Two findings shaped the package:
+
+* with delayed entry, the robust variance of the Fine-Gray model, which treats the weights as
+  known (as `survival::finegray` does), was 5-11% too small; `fg(..., variance = "bootstrap")` was
+  added for this case;
+* with the Kaplan-Meier transform and $n = 300$, the size of the proportional hazards test was
+  above 5% in one design, identically for `survival::cox.zph` on the same data: a property of the
+  test, not of the code.
+
+## Speed
+
+Median time of one fit with $n = 10000$ and 5 covariates (one core):
+
+| Model | SurvX | Reference |
+|---|---|---|
+| Cox | 0.01 s | `coxph` 0.03 s |
+| Fine-Gray | 0.01 s | `crr` 154 s; `finegray` + `coxph` 11 s |
+| cause-specific Cox | 0.01 s | `riskRegression::CSC` 0.07 s |
+| Weibull PH | 0.02 s | `flexsurvreg` 0.17 s |
+| generalized gamma | 0.36 s | `flexsurvreg` 2.8 s |
+| Royston-Parmar spline | 0.03 s | `flexsurvspline` 1.6 s |
+| mixture cure | 0.03 s | `flexsurvcure` 2.9 s |
+
+The full tables, figures and session information of each run are written by the suite itself.

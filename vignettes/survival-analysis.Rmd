@@ -1,0 +1,215 @@
+---
+title: "2. Survival analysis with one event"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{2. Survival analysis with one event}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+has_survival <- requireNamespace("survival", quietly = TRUE)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 4.5, dpi = 96,
+                      eval = has_survival)
+```
+
+This vignette follows a complete analysis of a single event: description, comparison of groups,
+Cox regression and its extensions, model checking and prediction. It uses two classic data sets
+of the **survival** package: `lung` (advanced lung cancer, North Central Cancer Treatment Group)
+and `veteran` (Veterans' Administration lung cancer trial).
+
+```{r}
+library(SurvX)
+lung <- survival::lung
+lung$status <- lung$status - 1                      # 0 = censored, 1 = died
+lung$sex <- factor(lung$sex, 1:2, c("male", "female"))
+lung$years <- lung$time / 365.25
+nrow(lung); table(lung$status)
+```
+
+## 1. Describing survival: Kaplan-Meier
+
+```{r}
+k <- km(Event(years, status) ~ sex, lung)
+k
+summary(k, times = c(0.5, 1, 2))
+```
+
+The print gives the number of patients and deaths, the **median survival** with its confidence
+interval (Brookmeyer and Crowley) and the log-rank test. Women lived longer: median
+`r round(k@counts$median[k@counts$group == "female"], 2)` versus
+`r round(k@counts$median[k@counts$group == "male"], 2)` years.
+
+```{r km-plot, fig.height = 5}
+plot(k, median = TRUE, conf.int = TRUE)
+```
+
+The table under the plot shows the numbers at risk; the curves become uncertain where few
+patients remain.
+
+## 2. Comparing groups
+
+`km()` already reports the log-rank test. `logrank_test()` also gives the Peto-Peto test, which
+weights early differences more, and the stratified test:
+
+```{r}
+logrank_test(lung$years, lung$status, lung$sex)
+logrank_test(lung$years, lung$status, lung$sex, rho = 1)
+```
+
+The restricted mean survival time (RMST) is an effect measure in time units that needs no
+proportional hazards. Over the first two years:
+
+```{r}
+r_f <- rmst(lung$years[lung$sex == "female"], lung$status[lung$sex == "female"], tau = 2)
+r_m <- rmst(lung$years[lung$sex == "male"], lung$status[lung$sex == "male"], tau = 2)
+d <- r_f[["rmst"]] - r_m[["rmst"]]; se <- sqrt(r_f[["se"]]^2 + r_m[["se"]]^2)
+round(c(female = r_f[["rmst"]], male = r_m[["rmst"]], difference = d,
+        lower = d - 1.96 * se, upper = d + 1.96 * se), 3)
+```
+
+On average, women lived `r round(d, 2)` years (`r round(12 * d, 1)` months) longer during the
+first two years.
+
+## 3. Cox regression
+
+```{r}
+fit <- cox(Event(years, status) ~ sex + age + ph.ecog, lung)
+fit
+```
+
+Rows with a missing covariate are removed (see the number of subjects). Each hazard ratio is
+read with the other covariates held fixed: women had a
+`r round(100 * (1 - exp(coef(fit)[["sexfemale"]])))`% lower death rate than men of the same age
+and performance status (HR `r round(exp(coef(fit)[["sexfemale"]]), 2)`). The `Reading:` lines say
+the same in words.
+
+Ties are handled with the Efron method by default, as in `survival::coxph`; `ties = "breslow"`
+gives the Breslow approximation.
+
+### Strata
+
+A variable whose effect is not of interest, or that violates proportional hazards, can define
+strata: each stratum gets its own baseline hazard and the variable gets no coefficient.
+
+```{r}
+cox(Event(years, status) ~ sex + age + strata(ph.ecog), lung)
+```
+
+### Clustered data and robust standard errors
+
+When rows are not independent (several rows per patient, patients within centres), `cluster()`
+gives the robust variance of Lin and Wei (1989). Here, as an illustration, patients are clustered
+by institution:
+
+```{r}
+cox(Event(years, status) ~ sex + age + ph.ecog + cluster(inst), lung)
+```
+
+### Delayed entry and time-varying covariates
+
+With `Event(time, status, entry = entry)` a subject enters the risk set at `entry`. The same form
+handles covariates that change over follow-up, with one row per period `(start, stop]`, as in
+`survival::coxph(Surv(start, stop, event) ~ ...)`.
+
+## 4. Checking proportional hazards
+
+```{r}
+ph_test(fit)
+```
+
+Look at the p-values of the covariates and of the global test, and at the plots for any covariate
+in doubt. The veteran data give a classic example of a changing effect: that of the Karnofsky
+performance score fades over time.
+
+```{r}
+vet <- survival::veteran
+fv <- cox(Event(time, status) ~ trt + celltype + karno, vet)
+pt <- ph_test(fv)
+pt
+```
+
+```{r zph-plot, fig.height = 4}
+plot(pt, var = "karno")
+```
+
+The coefficient of `karno` is negative (a higher score, a lower death rate), and the smooth
+rises toward zero: the protective effect is strong early and weakens later.
+
+## 5. Time-varying effects with `tt()`
+
+The effect of `karno` can be allowed to change with log time:
+
+```{r}
+ft <- cox(Event(time, status) ~ trt + celltype + karno + tt(karno), vet,
+          tt = function(t) log(t + 20))
+ft
+tt_effect(ft, times = c(30, 90, 180, 365))
+```
+
+The hazard ratio per point of the score moves toward 1 as time passes. `tt_effect()` gives these
+values, with confidence intervals, at any times; they are what to report.
+
+## 6. Residuals and functional form
+
+Martingale residuals of a model *without* a numeric covariate, plotted against it, show the form
+the covariate should take:
+
+```{r mart, fig.height = 4}
+l2 <- na.omit(lung[, c("years", "status", "sex", "age", "ph.ecog", "wt.loss")])
+f0 <- cox(Event(years, status) ~ sex + ph.ecog, l2)
+plot(l2$age, residuals(f0), xlab = "age", ylab = "martingale residual", col = "grey50")
+lines(stats::lowess(l2$age, residuals(f0)), lwd = 2)
+```
+
+A roughly straight line supports a linear term for age. Deviance residuals point to poorly fitted
+patients, and `dist_plot(fit)` checks the overall fit with Cox-Snell residuals.
+
+## 7. Absolute predictions
+
+```{r}
+nd <- data.frame(sex = c("male", "female"), age = 65, ph.ecog = 1)
+round(predict(fit, nd, times = c(0.5, 1, 2), type = "survival"), 3)
+```
+
+```{r pred-plot}
+plot(fit, nd, labels = c("male, 65, ECOG 1", "female, 65, ECOG 1"))
+```
+
+```{r, include = FALSE}
+p1 <- predict(fit, nd, times = 1, type = "survival")[, 1]
+```
+
+A 65-year-old woman with ECOG 1 has an estimated one-year survival of `r round(100 * p1[2])`%, a man
+with the same profile `r round(100 * p1[1])`%.
+
+## 8. Predictive performance
+
+`brier_score()` and `auc_t()` assess predicted risks at a horizon; `cv_compare()` compares models
+by cross-validation:
+
+```{r}
+f1 <- cox(Event(years, status) ~ sex + age + ph.ecog, l2)
+risk <- 1 - predict(f1, l2, times = 1, type = "survival")[, 1]
+bs <- brier_score(l2$years, l2$status, risk, t = 1)
+bs
+auc_t(l2$years, l2$status, risk, t = 1)
+```
+
+The IPA (index of prediction accuracy) of `r round(bs[["ipa"]], 2)` means that the model removes
+`r round(100 * bs[["ipa"]])`% of the prediction error of a model without covariates. These are
+apparent measures, computed on the data used for fitting; `cv_compare()` gives cross-validated
+ones.
+
+## References
+
+* Kaplan EL, Meier P (1958). Nonparametric estimation from incomplete observations. *JASA*, 53,
+  457-481.
+* Cox DR (1972). Regression models and life-tables. *JRSS B*, 34, 187-220.
+* Lin DY, Wei LJ (1989). The robust inference for the Cox proportional hazards model. *JASA*, 84,
+  1074-1078.
+* Grambsch PM, Therneau TM (1994). Proportional hazards tests and diagnostics based on weighted
+  residuals. *Biometrika*, 81, 515-526.
+* Therneau TM, Grambsch PM (2000). *Modeling Survival Data: Extending the Cox Model*. Springer.
+* Royston P, Parmar MKB (2013). Restricted mean survival time: an alternative to the hazard ratio.
+  *BMC Medical Research Methodology*, 13, 152.

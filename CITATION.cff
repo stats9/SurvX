@@ -1,11 +1,11 @@
 cff-version: 1.2.0
 message: "If you use SurvX, please cite it as below."
-title: "SurvX: Survival and Competing Risks Analysis with Direct Parametric Models for the Cumulative Incidence Function"
+title: "SurvX: Survival, Competing Risks and Cure Regression Models"
 type: software
 authors:
   - family-names: Ezzatabadipour
     given-names: Habib
-version: 0.9.2
+version: 1.0.0
 doi: 10.5281/zenodo.24255828
 date-released: 2026-11-16
 license: GPL-3.0-only

@@ -1,0 +1,167 @@
+---
+title: "4. Parametric and cure models"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{4. Parametric and cure models}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+has_survival <- requireNamespace("survival", quietly = TRUE)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 4.5, dpi = 96,
+                      eval = has_survival)
+```
+
+A parametric model describes the whole distribution of the time to the event: smooth survival
+and hazard curves, quantiles such as the median, time ratios, and extrapolation beyond follow-up.
+A cure model adds a fraction of subjects who will never have the event. This vignette shows how
+to choose a distribution, read the coefficients, check the fit and use the model.
+
+```{r}
+library(SurvX)
+lung <- survival::lung
+lung$status <- lung$status - 1
+lung$sex <- factor(lung$sex, 1:2, c("male", "female"))
+lung$years <- lung$time / 365.25
+```
+
+## 1. What shape has the hazard?
+
+The non-parametric hazard shows the shape any distribution must reproduce:
+
+```{r hz, fig.height = 4}
+plot(hazard_np(Event(years, status) ~ 1, lung))
+```
+
+`dist_plot()` gives the linearising plots of the classic distributions; the panel with the
+straightest lines points to a candidate:
+
+```{r dist, fig.height = 6}
+dist_plot(Event(years, status) ~ sex, lung)
+```
+
+## 2. Fitting and comparing distributions
+
+```{r}
+fw <- parsurv(Event(years, status) ~ sex + age, lung, baseline = "weibull")
+fl <- parsurv(Event(years, status) ~ sex + age, lung, baseline = "lognormal")
+fgg <- parsurv(Event(years, status) ~ sex + age, lung, baseline = "gengamma")
+fr <- parsurv(Event(years, status) ~ sex + age, lung, baseline = "rp", df = 3)
+AIC(fw, fl, fgg, fr)
+```
+
+The generalized gamma contains the Weibull ($Q = 1$) and the log-normal ($Q = 0$): its estimate of
+$Q$ says which of the two the data favour.
+
+```{r}
+summary(fgg)
+```
+
+The fitted hazard against the non-parametric one is the visual check:
+
+```{r hzplot, fig.height = 4}
+hazard_plot(list(Weibull = fw, "log-normal" = fl, spline = fr))
+```
+
+## 3. Hazard ratios and time ratios
+
+The Weibull model can be written in both forms. As a proportional hazards model it gives hazard
+ratios, as in a Cox model:
+
+```{r}
+fw
+```
+
+As an accelerated failure time model it gives **time ratios**: by how much the time to death is
+stretched or shrunk.
+
+```{r}
+fa <- parsurv(Event(years, status) ~ sex + age, lung, baseline = "weibull", scale = "AFT")
+fa
+```
+
+A time ratio above 1 means longer survival: women's survival times are about
+`r round(exp(coef(fa)[["sexfemale"]]), 2)` times those of men of the same age. The hazard ratio
+and the time ratio of the Weibull model are linked by $\beta_{PH} = -\beta_{AFT}/\sigma$, so they
+always point in opposite directions for the same effect.
+
+## 4. Predictions and extrapolation
+
+```{r}
+nd <- data.frame(sex = c("male", "female"), age = 65)
+predict(fw, nd, times = c(1, 2, 5), se = TRUE)$est        # survival
+predict(fw, nd, type = "quantile", p = 0.5)              # median survival time
+predict(fw, nd, times = 3, type = "rmst")                # restricted mean over 3 years
+```
+
+Beyond the last follow-up time, the curve is determined by the distribution alone. Distributions
+that fit the data equally well can extrapolate very differently, so compare them before relying on
+one:
+
+```{r extrap}
+tt <- seq(0.05, 5, by = 0.05)
+s_w <- predict(fw, nd[2, ], times = tt)[1, ]
+s_l <- predict(fl, nd[2, ], times = tt)[1, ]
+plot(tt, s_w, type = "l", lwd = 2, ylim = c(0, 1), xlab = "years", ylab = "survival",
+     main = "woman aged 65")
+lines(tt, s_l, lwd = 2, lty = 2)
+abline(v = max(lung$years), col = "grey")
+legend("topright", c("Weibull", "log-normal", "end of follow-up"), lty = c(1, 2, 1),
+       col = c("black", "black", "grey"), bty = "n")
+```
+
+## 5. Cure models
+
+When follow-up is long and the Kaplan-Meier curve levels off, part of the population may never
+have the event. The `colon` data of **survival** (adjuvant chemotherapy for colon cancer) show this
+for recurrence:
+
+```{r}
+colon <- survival::colon
+rec <- colon[colon$etype == 1, ]
+rec$years <- rec$time / 365.25
+```
+
+```{r km-colon, fig.height = 5}
+plot(km(Event(years, status) ~ rx, rec), risk.table = FALSE)
+```
+
+The curves flatten after about four years. A mixture cure model separates the two questions:
+*who is cured?* (the cured fraction, a logistic model) and *when do the others recur?* (the
+latency, here a Weibull model):
+
+```{r}
+cf <- cure(Event(years, status) ~ rx, rec, cure = ~ rx + node4)
+cf
+```
+
+The cure coefficients are odds ratios of being cured; the latency coefficients are hazard ratios
+among patients who will recur. The predicted cured fraction for each treatment, with and without
+more than four positive nodes:
+
+```{r}
+ndc <- expand.grid(rx = levels(rec$rx), node4 = 0:1)
+cbind(ndc, round(predict(cf, ndc, type = "cured", se = TRUE)$est, 3))
+```
+
+```{r cure-plot}
+plot(cf)
+```
+
+The fitted population survival should follow the Kaplan-Meier curve, and its plateau is the
+average cured fraction. When there is no plateau in the data, the cured fraction is not identified
+and the fit is flagged.
+
+## References
+
+* Royston P, Parmar MKB (2002). Flexible parametric proportional-hazards and proportional-odds
+  models for censored survival data. *Statistics in Medicine*, 21, 2175-2197.
+* Cox C, Chu H, Schneider MF, Munoz A (2007). Parametric survival analysis and taxonomy of hazard
+  functions for the generalized gamma distribution. *Statistics in Medicine*, 26, 4352-4374.
+* Farewell VT (1982). The use of mixture models for the analysis of survival data with long-term
+  survivors. *Biometrics*, 38, 1041-1046.
+* Amico M, Van Keilegom I (2018). Cure models in survival analysis. *Annual Review of Statistics
+  and Its Application*, 5, 311-342.
+* Moertel CG, et al. (1990). Levamisole and fluorouracil for adjuvant therapy of resected colon
+  carcinoma. *New England Journal of Medicine*, 322, 352-358.

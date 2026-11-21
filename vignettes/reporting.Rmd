@@ -1,0 +1,154 @@
+---
+title: "5. Interpreting and reporting results"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{5. Interpreting and reporting results}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+has_survival <- requireNamespace("survival", quietly = TRUE)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 4.5, dpi = 96,
+                      eval = has_survival)
+```
+
+A correct analysis can still be reported in a way that misleads. This vignette collects what each
+effect measure of SurvX means, how to write it in a paper, how to build tables and figures, and a
+checklist of what a report of a survival analysis should contain.
+
+```{r}
+library(SurvX)
+lung <- survival::lung
+lung$status <- lung$status - 1
+lung$sex <- factor(lung$sex, 1:2, c("male", "female"))
+lung$years <- lung$time / 365.25
+```
+
+## 1. The effect measures and what they mean
+
+| Model | Printed effect | Meaning | Common mistake |
+|---|---|---|---|
+| `cox()` | hazard ratio (HR) | factor by which the event *rate* is multiplied, at every time | reading HR = 2 as "twice the risk" or "half the survival time" |
+| `csc()` | cause-specific HR | the same, for the rate of one cause among subjects free of all events | reading it as an effect on the risk of that cause |
+| `fg()` | subdistribution HR (sHR) | direction of the effect on the cumulative incidence of the cause | reading its size as a ratio of risks |
+| `directcif(link = "PO")` | odds ratio of the cumulative incidence | factor on the odds $F/(1-F)$ at every time | |
+| `parsurv(scale = "AFT")` | time ratio (TR) | factor by which survival times (every quantile) are stretched | forgetting that TR > 1 is *good* while HR > 1 is *bad* |
+| `cure()` | odds ratio of cure; latency HR or TR | effect on the chance of being cured; effect on the timing among the uncured | mixing up the two parts |
+| `rmst()` difference | time units | extra event-free time over the first $\tau$ units | not stating $\tau$ |
+
+Ratios are relative. A report should also give **absolute** quantities: survival or cumulative
+incidence at fixed times, medians, or restricted means, for typical patients or groups.
+
+## 2. Sentences
+
+The `Reading:` lines of every print are a starting point:
+
+```{r}
+fit <- cox(Event(years, status) ~ sex + age + ph.ecog, lung)
+fit
+```
+
+Written for a paper, with the numbers taken from the fit:
+
+```{r}
+e <- estimates(fit)
+w <- e[e$term == "sexfemale", ]
+sprintf("Women had a lower hazard of death than men (HR %.2f, 95%% CI %.2f to %.2f, p = %.3f), adjusted for age and ECOG performance status.",
+        w$exp_estimate, w$exp_lower, w$exp_upper, w$p)
+```
+
+and with an absolute quantity:
+
+```{r}
+nd <- data.frame(sex = c("male", "female"), age = 65, ph.ecog = 1)
+s1 <- predict(fit, nd, times = 1, type = "survival")[, 1]
+sprintf("For a 65-year-old patient with ECOG 1, the predicted one-year survival was %.0f%% for a man and %.0f%% for a woman.",
+        100 * s1[1], 100 * s1[2])
+```
+
+## 3. Tables
+
+`estimates()` returns every coefficient with its standard error, confidence limits and p-value,
+and the exponentiated effect on the scale named in the column `scale`. A publication table is a
+few lines away:
+
+```{r}
+tab <- data.frame(Covariate = e$term,
+                  HR = sprintf("%.2f", e$exp_estimate),
+                  "95% CI" = sprintf("%.2f to %.2f", e$exp_lower, e$exp_upper),
+                  p = format.pval(e$p, digits = 2, eps = 0.001),
+                  check.names = FALSE)
+tab
+```
+
+`knitr::kable(tab)` turns it into a Markdown, HTML or LaTeX table. For several models, bind their
+`estimates()` with a column naming the model.
+
+## 4. Figures
+
+Survival curves with numbers at risk (`plot(km(...))`), predicted curves for typical patients
+(`plot(fit, newdata)`), and cumulative incidence curves with confidence bands
+(`cif_plot()`) are the usual figures. Each accepts labels, colours and limits;
+`cif_plot(..., engine = "ggplot2")` returns a ggplot object for further styling.
+
+```{r km, fig.height = 5}
+plot(km(Event(years, status) ~ sex, lung), median = TRUE, percent = TRUE,
+     labels = c("Men", "Women"), xlab = "Years since enrolment")
+```
+
+## 5. Follow-up
+
+The median follow-up is estimated by the reverse Kaplan-Meier method: the Kaplan-Meier estimate
+with censoring as the event.
+
+```{r}
+km(Event(years, 1 - status) ~ 1, lung)
+```
+
+The median of this curve is the median potential follow-up time.
+
+## 6. Citing the methods
+
+Every print ends with a `Methods:` line, and `sx_references()` gives the full references of the
+methods behind a fitted model, to cite in the statistical methods section:
+
+```{r}
+sx_references(fit)
+```
+
+and `citation("SurvX")` gives the reference of the package itself.
+
+## 7. A checklist
+
+A report of a survival or competing risks analysis should state:
+
+1. **The time origin and the event**: from what (diagnosis, randomisation) to what; what counts as
+   censoring; with competing risks, every event type and how it was coded.
+2. **Follow-up**: median follow-up (reverse Kaplan-Meier) and the numbers of events of each type.
+3. **Methods**: the estimator or model, the handling of ties, the variance (model-based, robust,
+   bootstrap), and the software with its version and references (`sx_references()`).
+4. **Assumptions**: how proportional hazards (`ph_test()`), the functional form of continuous
+   covariates (`residuals()`), the distribution of parametric models (`hazard_plot()`,
+   `dist_plot()`) and the identifiability of a cure fraction were checked.
+5. **Competing risks**, when present: report cause-specific hazards and cumulative incidences of
+   every cause (Latouche et al. 2013), and never one minus Kaplan-Meier for a cause.
+6. **Effects with confidence intervals**, on the scale the model estimates (HR, sHR, TR, OR), and
+   their meaning in words.
+7. **Absolute quantities**: survival or cumulative incidence at clinically relevant times, medians
+   or restricted means, for typical patients or groups.
+8. **Prediction models**: discrimination (`auc_t()`), calibration (`calibration()`) and overall
+   accuracy (`brier_score()`), preferably cross-validated or on external data.
+
+## References
+
+* Austin PC, Fine JP (2017). Practical recommendations for reporting Fine-Gray model analyses for
+  competing risk data. *Statistics in Medicine*, 36, 4391-4400.
+* Latouche A, Allignol A, Beyersmann J, Labopin M, Fine JP (2013). A competing risks analysis
+  should report results on all cause-specific hazards and cumulative incidence functions.
+  *Journal of Clinical Epidemiology*, 66, 648-653.
+* Schemper M, Smith TL (1996). A note on quantifying follow-up in studies of failure time.
+  *Controlled Clinical Trials*, 17, 343-346.
+* Royston P, Parmar MKB (2013). Restricted mean survival time: an alternative to the hazard ratio
+  for the design and analysis of randomized trials with a time-to-event outcome. *BMC Medical
+  Research Methodology*, 13, 152.
