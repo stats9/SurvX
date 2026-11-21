@@ -282,7 +282,7 @@ Parametric regression uses the probability of each interval, $S(L) - S(R)$, for 
 plot draws the Turnbull estimate for comparison:
 
 ```{r ic-parsurv, fig.height = 4}
-fw <- parsurv(Interval(left, right) ~ trt + age, data = ic, dist = "weibull", scale = "AFT")
+fw <- parsurv(Interval(left, right) ~ trt + age, data = ic, baseline = "weibull", scale = "AFT")
 fw
 plot(fw)
 ```

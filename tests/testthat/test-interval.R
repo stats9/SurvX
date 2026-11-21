@@ -92,8 +92,8 @@ test_that("parsurv() with Interval() of exact and right-censored times equals th
   specs <- list(c("exponential", "PH"), c("weibull", "PH"), c("weibull", "AFT"), c("gompertz", "PH"),
                 c("lognormal", "AFT"), c("loglogistic", "AFT"), c("rp", "PH"), c("pwexp", "PH"))
   for (sp in specs) {
-    a <- parsurv(Event(time, dead) ~ x + z, data = sc, dist = sp[1], scale = sp[2])
-    b <- parsurv(Interval(L, R) ~ x + z, data = sc, dist = sp[1], scale = sp[2])
+    a <- parsurv(Event(time, dead) ~ x + z, data = sc, baseline = sp[1], scale = sp[2])
+    b <- parsurv(Interval(L, R) ~ x + z, data = sc, baseline = sp[1], scale = sp[2])
     expect_close(coef(b), coef(a), 1e-5)
     expect_close(as.numeric(logLik(b)), as.numeric(logLik(a)), 1e-7)
     expect_close(sqrt(diag(vcov(b))), sqrt(diag(vcov(a))), 1e-4)
@@ -106,12 +106,12 @@ test_that("parsurv() interval-censored fits agree with survreg(type = 'interval2
   d$R2 <- ifelse(is.finite(d$R), d$R, NA); d$L2 <- ifelse(d$L > 0, d$L, NA)
   for (dist in c("weibull", "lognormal", "loglogistic", "exponential")) {
     s <- survival::survreg(survival::Surv(L2, R2, type = "interval2") ~ x + g, data = d, dist = dist)
-    f <- parsurv(Interval(L, R) ~ x + g, data = d, dist = dist, scale = "AFT")
+    f <- parsurv(Interval(L, R) ~ x + g, data = d, baseline = dist, scale = "AFT")
     expect_close(coef(f)[1:3], coef(s), 1e-5)
     if (dist != "exponential") expect_close(exp(coef(f)[4]), s$scale, 1e-5)
     expect_close(as.numeric(logLik(f)), as.numeric(logLik(s)), 1e-6)
   }
-  f <- parsurv(Interval(L, R) ~ x + g, data = d, dist = "weibull")
+  f <- parsurv(Interval(L, R) ~ x + g, data = d, baseline = "weibull")
   expect_true(f@converged)
   expect_output(print(f), "interval-censored")
   expect_error(residuals(f), "interval-censored")
