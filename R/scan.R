@@ -605,7 +605,7 @@ S7::method(plot, ModelScan) <- function(x, which = c("ranking", "fit", "brier", 
       graphics::par(mar = c(4.1, min(16, max(6, max(nchar(lab)) * 0.42)), 2.6, 1.1))
       graphics::plot(tab$ibs_cv, seq_len(nrow(tab)), xlim = range(c(lo, hi)), yaxt = "n", pch = 19,
                      col = ifelse(tab$equivalent %in% TRUE, pal[1L], "grey40"), xlab = "Integrated Brier score",
-                     ylab = "", main = "Ranking (IBS, cross-validated)")
+                     ylab = "", main = "Ranking")
       graphics::segments(lo, seq_len(nrow(tab)), hi, seq_len(nrow(tab)), col = "grey60")
       graphics::axis(2, at = seq_len(nrow(tab)), labels = lab, las = 1, cex.axis = 0.7)
       graphics::abline(v = min(tab$ibs_cv), lty = 3, col = "grey60")
