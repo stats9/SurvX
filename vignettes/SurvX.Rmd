@@ -58,6 +58,7 @@ competing risks treat it correctly.
 | Smooth survival curves, time ratios, extrapolation | `parsurv()` |
 | What proportion is cured? | `cure()` |
 | An effect measure without proportional hazards | `rmst()` |
+| How much would the risk change if everyone were treated? (adjusted, causal) | `adjusted_risk()` |
 | How good are the predictions? Which model is best? | `brier_score()`, `compare_models()` |
 
 The same table is in `?SurvX`.

@@ -33,5 +33,6 @@ Run from the repository root with the development version of SurvX installed
 
     Rscript paper2/sim/run_simulation.R full      # 1000 replications per scenario
     Rscript paper2/sim/summarize.R full
+    Rscript paper2/figures/make_figures.R full    # figures of the paper, in paper2/figures/
 
 Results go to `paper2/results/`.

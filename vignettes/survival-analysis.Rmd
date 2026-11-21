@@ -209,7 +209,28 @@ p1 <- predict(fit, nd, times = 1, type = "survival")[, 1]
 A 65-year-old woman with ECOG 1 has an estimated one-year survival of `r round(100 * p1[2])`%, a man
 with the same profile `r round(100 * p1[1])`%.
 
-## 8. Predictive performance
+## 8. Adjusted absolute risks
+
+Hazard ratios do not say how much the *risk* would change. `adjusted_risk()` answers "what would the
+risk have been had everyone received this treatment?", standardising a fitted model over the
+covariates of the data (the g-formula) or weighting by the inverse probability of treatment, with
+bootstrap intervals in which the models are refitted.
+
+```{r}
+fl <- cox(Event(years, status) ~ sex + age + ph.ecog, data = lung)
+ar <- adjusted_risk(fl, lung, "sex", times = c(0.5, 1), method = "both", B = 0)
+ar
+```
+
+```{r ar-plot, fig.height = 4}
+plot(ar)
+```
+
+The two methods rest on different models (the outcome model and a model of sex given age and
+performance status) and agree closely. Use `B = 200` or more for intervals; `report(ar, file)`
+writes the analysis to an HTML file.
+
+## 9. Predictive performance
 
 `brier_score()` and `auc_t()` assess predicted risks at a horizon; `cv_compare()` compares models
 by cross-validation:
@@ -241,5 +262,9 @@ ones.
   Statistics*, 6, 65-70.
 * Hess KR (1994). Assessing time-by-covariate interactions in proportional hazards regression models
   using cubic spline functions. *Statistics in Medicine*, 13, 1045-1062.
+* Robins J (1986). A new approach to causal inference in mortality studies with a sustained exposure
+  period. *Mathematical Modelling*, 7, 1393-1512.
+* Cole SR, Hernan MA (2004). Adjusted survival curves with inverse probability weights. *Computer
+  Methods and Programs in Biomedicine*, 75, 45-49.
 * Royston P, Parmar MKB (2013). Restricted mean survival time: an alternative to the hazard ratio.
   *BMC Medical Research Methodology*, 13, 152.

@@ -16,7 +16,7 @@ perf <- function(d, truth, prob) {
       g <- log(-log1p(-d$est)); sg <- d$se / ((1 - d$est) * (-log1p(-d$est)))
       lo <- -expm1(-exp(g - z * sg)); hi <- -expm1(-exp(g + z * sg))
     } else { lo <- d$est - z * d$se; hi <- d$est + z * d$se }
-    mean(lo[hasse] <= th & th <= hi[hasse])
+    mean(lo[hasse] <= th & th <= hi[hasse], na.rm = TRUE)
   } else NA_real_
   sd <- stats::sd(d$est)
   data.frame(reps = nrow(d), true = th, bias = mean(d$est) - th, emp_sd = sd,

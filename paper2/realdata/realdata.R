@@ -18,19 +18,19 @@ cat("SurvX", as.character(utils::packageVersion("SurvX")), "\n")
 # ------------------------------------------------------------------------------------------
 # 1. fertility: two causes (live birth; stillbirth or abortion). Weighted estimator for each
 #    cause, links, and the standard errors with and without the censoring term.
+#    Education only: age is recorded at the end of follow-up (?fertility), so it is not a
+#    baseline covariate.
 # ------------------------------------------------------------------------------------------
 cat("\n==== fertility ====\n")
 data(fertility, package = "SurvX")
-fertility$age_c <- fertility$age - round(mean(fertility$age))
 print(table(fertility$status))
-print(aj(Event(time, status) ~ education, fertility))
-print(gray_test(Event(time, status) ~ education, fertility))
+print(aj(Event(time, status) ~ education, fertility))      # includes Gray's test
 
 for (k in 1:2) {
   cat("\n---- cause", k, "----\n")
   fits <- list()
   for (b in c("gompertz", "mix_weibull", "mix_loglogistic")) for (l in c("PH", "PO", "GOR")) {
-    f <- safe(directcif(Event(time, status) ~ education + age_c, fertility, baseline = b, link = l,
+    f <- safe(directcif(Event(time, status) ~ education, fertility, baseline = b, link = l,
                         estimation = "weighted", cause = k))
     if (!is.null(f) && f@converged) fits[[paste(b, l)]] <- f
   }
@@ -43,14 +43,14 @@ for (k in 1:2) {
   cat("\nstandard errors with the censoring term (ipcw) and with the censoring distribution treated as known:\n")
   st <- se_tab(best); print(st, digits = 4)
   utils::write.csv(st, file.path(out_dir, paste0("fertility_cause", k, "_se.csv")), row.names = FALSE)
-  nd <- data.frame(education = levels(fertility$education), age_c = 0)
+  nd <- data.frame(education = factor(levels(fertility$education), levels = levels(fertility$education)))
   pr <- predict(best, nd, times = Inf, cause = k, se = TRUE)
-  cat("\nlong-term incidence by education (age at the mean):\n")
+  cat("\nlong-term incidence by education:\n")
   print(data.frame(education = nd$education, Finf = pr$cif[, 1], se = pr$se[, 1]), digits = 3)
-  ff <- safe(fg(Event(time, status) ~ education + age_c, fertility, cause = k))
+  ff <- safe(fg(Event(time, status) ~ education, fertility, cause = k))
   if (!is.null(ff)) { cat("\nsemi-parametric Fine-Gray for comparison:\n"); print(ff) }
   pdf(file.path(out_dir, paste0("fertility_cause", k, ".pdf")), width = 7, height = 5)
-  safe(cif_plot(best, cause = k, type = "unadjusted", reference = TRUE))
+  safe(cif_plot(best, cause = k, type = "marginal", reference = TRUE))
   dev.off()
 }
 
@@ -76,6 +76,7 @@ prep <- function(fl, age0) {
 }
 causes <- c("circulatory", "neoplasms", "other")
 analyse <- function(fl, label, age0) {
+  fl$age5 <- (fl$age - age0) / 5                       # centred within the group
   cat("\n---- flchain,", label, "----\n")
   cat("status: 0 alive, 1 circulatory, 2 neoplasms, 3 other\n"); print(table(fl$status))
   cat("share alive at the end of follow-up:", round(mean(fl$status == 0L), 3), "\n")
@@ -119,7 +120,7 @@ analyse <- function(fl, label, age0) {
                 constrained = round(sapply(1:3, function(k) predict(best, nd, times = t10, cause = k)), 3)))
   }
   pdf(file.path(out_dir, paste0("flchain_cif_", gsub("[^a-z0-9]+", "_", label), ".pdf")), width = 10, height = 4)
-  safe(cif_plot(best, cause = 1:3, type = "unadjusted", reference = TRUE))
+  safe(cif_plot(best, cause = 1:3, type = "marginal", reference = TRUE))
   dev.off()
   invisible(best)
 }

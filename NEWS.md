@@ -1,5 +1,12 @@
 # SurvX (development version)
 
+* New `adjusted_risk()`: adjusted absolute risks and causal contrasts between treatments, by
+  standardisation of a fitted `cox()`, `fg()`, `csc()`, `directcif()`, `parsurv()`, `cure()` or
+  `time_effects()` model (the g-formula) and/or by inverse probability of treatment weighting
+  (weighted Kaplan-Meier or Aalen-Johansen with a logistic or multinomial treatment model), with
+  risk differences and ratios at chosen times, curves, bootstrap intervals in which the models are
+  refitted, balance (standardised mean differences) and weight diagnostics, a reading in plain
+  words, `plot()` and an HTML `report()`.
 * New `time_effects()`: for a `cox()`, `csc()` or `fg()` model, tests every term for a
   time-varying effect (Grambsch-Therneau score test, Holm-adjusted), compares forms of the change
   (constant, log-linear, a step at a change point chosen by profile likelihood, a natural spline

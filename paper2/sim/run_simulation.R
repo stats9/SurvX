@@ -41,7 +41,7 @@ one_B <- function(r, s) {
 
 cl <- parallel::makeCluster(cores)
 on.exit(parallel::stopCluster(cl), add = TRUE)
-parallel::clusterEvalQ(cl, { library(SurvX); NULL })
+invisible(parallel::clusterEvalQ(cl, { library(SurvX); NULL }))
 parallel::clusterExport(cl, c("scen_A", "scen_B", "one_A", "one_B", ls(pattern = "^(A_|B_|cif_ci)")))
 
 run <- function(fun, S, label) {
@@ -62,7 +62,12 @@ B <- do.call(rbind, lapply(Bl, `[[`, "est"))
 Bc <- do.call(rbind, lapply(Bl, `[[`, "coherence"))
 
 # Study C: computing time on one data set per size (median of 3 runs)
-timing <- function(expr) median(replicate(3L, system.time(expr)[["elapsed"]]))
+timing <- function(expr) {          # repeats the fit until 0.5 s have passed (timer resolution), seconds per fit
+  e <- substitute(expr); pf <- parent.frame()
+  k <- 0L; t0 <- proc.time()[["elapsed"]]
+  repeat { eval(e, pf); k <- k + 1L; el <- proc.time()[["elapsed"]] - t0; if (el >= 0.5 || k >= 200L) break }
+  el / k
+}
 C <- NULL
 for (n in if (mode == "quick") c(1000L, 5000L) else c(1000L, 5000L, 20000L, 50000L)) {
   set.seed(n)

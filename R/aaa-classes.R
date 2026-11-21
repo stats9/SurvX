@@ -203,6 +203,28 @@ HazardFit <- S7::new_class("HazardFit", package = "SurvX",
     group = S7::class_any
   ))
 
+# result of adjusted_risk(): risks by treatment value and their contrasts, by method
+AdjustedRisk <- S7::new_class("AdjustedRisk", package = "SurvX",
+  properties = list(
+    model_call = S7::class_any,
+    fit = S7::class_any,
+    treatment = S7::class_character,
+    levels = S7::class_character,
+    times = S7::class_numeric,
+    cause = S7::class_integer,
+    kind = S7::class_character,
+    method = S7::class_character,
+    risk = S7::class_any,
+    contrast = S7::class_any,
+    curve = S7::class_any,
+    ps = S7::class_any,
+    B = S7::class_integer,
+    ok = S7::class_integer,
+    level = S7::class_numeric,
+    n = S7::class_integer,
+    ps_formula = S7::class_any
+  ))
+
 # result of time_effects(): one element of `units` per analysis (the Cox model, each cause of a
 # cause-specific model, or the Fine-Gray model)
 TimeEffects <- S7::new_class("TimeEffects", package = "SurvX",

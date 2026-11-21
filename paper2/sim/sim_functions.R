@@ -82,6 +82,10 @@ A_fit_all <- function(d, alpha, p = A_par) {
   if (!is.null(fgor) && fgor@converged) {
     r <- safe(A_extract(fgor, p$t0, "GOR"))
     if (!is.null(r)) { r$est[1:2] <- NA; r$se[1:2] <- NA; add("weighted GOR (alpha estimated)", r) }
+    fgr <- safe(directcif(Event(time, status) ~ z1 + z2, d, link = "GOR", estimation = "weighted", cause = 1,
+                          variance = "robust", init = coef(fgor)))
+    r2 <- if (is.null(fgr)) NULL else safe(A_extract(fgr, p$t0, "GOR"))
+    if (!is.null(r2)) { r2$est[1:2] <- NA; r2$se[1:2] <- NA; add("weighted GOR (censoring ignored)", r2) }
   }
   fj <- safe(directcif(Event(time, status) ~ z1 + z2, d, link = link))
   if (!is.null(fj) && fj@converged) add("joint (cause 2 misspecified)", safe(A_extract(fj, p$t0, link)))

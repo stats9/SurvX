@@ -20,6 +20,7 @@ reference packages (see the \code{Validation} section of each help page).
   How do covariates change the event rate (hazard ratios)? \tab \code{\link{cox}} \cr
   Is the hazard ratio constant over time? \tab \code{\link{ph_test}} \cr
   How does an effect change over time? \tab \code{\link{time_effects}} \cr
+  Adjusted absolute risks and causal contrasts \tab \code{\link{adjusted_risk}} \cr
   How do covariates change the rate of each cause? \tab \code{\link{csc}} \cr
   How do covariates change the risk (cumulative incidence) of one cause? \tab \code{\link{fg}},
     \code{\link{directcif}} \cr

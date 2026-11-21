@@ -2,7 +2,7 @@ useDynLib(SurvX, .registration = TRUE)
 export(Event, km, aj, rmst, logrank_test, gray_test, cox, fg, csc, directcif,
        brier_score, auc_t, calibration, compare_models, cv_compare, estimates, cif_data, cif_plot,
        parsurv, hazard_np, hazard_plot, ph_test, dist_plot,
-       sx_references, cure, tt_effect, model_scan, report, time_effects)
+       sx_references, cure, tt_effect, model_scan, report, time_effects, adjusted_risk)
 S3method("[", SurvXEvent)
 S3method(is.na, SurvXEvent)
 S3method(print, SurvXEvent)

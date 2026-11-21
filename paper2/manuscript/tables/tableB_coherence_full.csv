@@ -1,0 +1,17 @@
+"scenario","n","dgp","cmax","estimator","excess_inf","excess_end","max_inf"
+1,500,"constrained",12,"constrained, K = 3",0,0,1
+1,500,"constrained",12,"joint, unconstrained",0.518146,0.410488,1.22239916792333
+2,1500,"constrained",12,"constrained, K = 3",0,0,1
+2,1500,"constrained",12,"joint, unconstrained",0.284704666666667,0.213848,1.12654290325616
+3,500,"csh",12,"constrained, K = 3",0,0,1
+3,500,"csh",12,"joint, unconstrained",0.69785,0.308836,1.24801194388321
+4,1500,"csh",12,"constrained, K = 3",0,0,1
+4,1500,"csh",12,"joint, unconstrained",0.582385333333333,0.199354666666667,1.1861859937444
+5,500,"constrained",5,"constrained, K = 3",0,0,1
+5,500,"constrained",5,"joint, unconstrained",0.924698,0.134546,1.39780612061651
+6,1500,"constrained",5,"constrained, K = 3",0,0,1
+6,1500,"constrained",5,"joint, unconstrained",0.968034666666667,0.062424,1.31027446834107
+7,500,"csh",5,"constrained, K = 3",0,0,1
+7,500,"csh",5,"joint, unconstrained",0.777042,0.015362,1.45457254727827
+8,1500,"csh",5,"constrained, K = 3",0,0,1
+8,1500,"csh",5,"joint, unconstrained",0.777965333333333,0.00687066666666667,1.31532618216344

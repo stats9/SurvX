@@ -97,6 +97,12 @@
   holm1979 = c("Holm (1979)", "Holm S (1979). A simple sequentially rejective multiple test procedure. Scandinavian Journal of Statistics 6:65-70."),
   hess1994 = c("Hess (1994)", "Hess KR (1994). Assessing time-by-covariate interactions in proportional hazards regression models using cubic spline functions. Statistics in Medicine 13:1045-1062."),
   gray1992 = c("Gray (1992)", "Gray RJ (1992). Flexible methods for analyzing survival data using splines, with applications to breast cancer prognosis. Journal of the American Statistical Association 87:942-951."),
+  robins1986 = c("Robins (1986)", "Robins J (1986). A new approach to causal inference in mortality studies with a sustained exposure period: application to control of the healthy worker survivor effect. Mathematical Modelling 7:1393-1512."),
+  cole_hernan2004 = c("Cole & Hernan (2004)", "Cole SR, Hernan MA (2004). Adjusted survival curves with inverse probability weights. Computer Methods and Programs in Biomedicine 75:45-49."),
+  neumann2016 = c("Neumann & Billionnet (2016)", "Neumann A, Billionnet C (2016). Covariate adjustment of cumulative incidence functions for competing risks data using inverse probability of treatment weighting. Computer Methods and Programs in Biomedicine 129:63-70."),
+  austin_stuart2015 = c("Austin & Stuart (2015)", "Austin PC, Stuart EA (2015). Moving towards best practice when using inverse probability of treatment weighting (IPTW) using the propensity score to estimate causal treatment effects in observational studies. Statistics in Medicine 34:3661-3679."),
+  hernan_robins2020 = c("Hernan & Robins (2020)", "Hernan MA, Robins JM (2020). Causal Inference: What If. Chapman and Hall/CRC, Boca Raton."),
+  ozenne2020 = c("Ozenne et al. (2020)", "Ozenne BMH, Scheike TH, Staerk L, Gerds TA (2020). On the estimation of average treatment effects with right-censored time to event outcome and competing risks. Biometrical Journal 62:751-763."),
   buchholz2011 = c("Buchholz & Sauerbrei (2011)", "Buchholz A, Sauerbrei W (2011). Comparison of procedures to assess non-linear and time-varying effects in multivariable models for survival data. Biometrical Journal 53:308-331.")
 )
 
@@ -122,6 +128,7 @@
            "kalbfleisch2002", "casella2002"),
   residuals = c("cox_snell1968", "schoenfeld1982", "therneau1990", "grambsch1994"),
   ph_test = c("grambsch1994", "therneau2000", "schoenfeld1982"),
+  adjusted_risk = c("robins1986", "hernan_robins2020", "cole_hernan2004", "neumann2016", "austin_stuart2015", "ozenne2020", "efron1993"),
   time_effects = c("grambsch1994", "therneau2000", "holm1979", "hess1994", "gray1992", "akaike1974", "schwarz1978",
                    "buchholz2011", "fine_gray1999", "geskus2011", "lin_wei1989", "efron1993"),
   dist_plot = c("klein2003", "collett2015", "nelson1972", "cox_snell1968"),
@@ -179,6 +186,9 @@
   if (S7::S7_inherits(x, ModelComparison)) return(c("graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", if (x@folds >= 2L) "hastie2009"))
   if (S7::S7_inherits(x, PHTest)) return(c("grambsch1994", "therneau2000"))
   if (S7::S7_inherits(x, ModelScan)) return(.topics$model_scan)
+  if (S7::S7_inherits(x, AdjustedRisk))
+    return(c(if (x@method != "ipw") "robins1986", if (x@method != "gformula") c("cole_hernan2004", if (x@kind == "competing") "neumann2016", "austin_stuart2015"),
+             "hernan_robins2020", if (x@B > 0L) "efron1993"))
   if (S7::S7_inherits(x, TimeEffects)) {
     s <- x@settings; f <- x@forms
     return(c("grambsch1994", "therneau2000", if (s$screen == "holm") "holm1979", if ("spline" %in% f) c("hess1994", "gray1992"),
