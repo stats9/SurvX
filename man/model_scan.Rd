@@ -98,7 +98,10 @@ The models are ranked on the cross-validated IBS. The standard error of the diff
 best model is the standard deviation of the fold-wise differences in IBS divided by the square
 root of the number of folds (a paired comparison: the same folds for every model). Every model
 within one standard error of the best gets rank 1: the one-standard-error rule of Hastie,
-Tibshirani and Friedman (2009, Section 7.10).
+Tibshirani and Friedman (2009, Section 7.10). The other models are numbered after them in the
+order of their IBS. The reading also says when no model predicts clearly better than the model
+without covariates (largest IPA below 0.01), and when AIC clearly disfavours (dAIC > 10) a model
+of rank 1.
 }
 }
 \section{Interpreting the result}{

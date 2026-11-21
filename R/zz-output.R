@@ -381,6 +381,7 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
     if (all(ek$role %in% c("conditional", "share", "share_beta"))) {
       oth <- setdiff(seq_len(x@K), x@interest)
       cj <- x@cond[min(match(k, oth), length(x@cond))]
+      cj <- c(logistic = "modified logistic", weibull = "Weibull", loglogistic = "log-logistic", lognormal = "log-normal")[[cj]]
       if (x@K > 2L) {
         out <- c(out, "", paste0("Cause ", k, ": cumulative incidence = (1 - long-run risk of cause ", x@interest, ") x share(z) x G(t)"),
                  paste0("  G: ", cj, " distribution of the time to a cause ", k, " event; no covariates"))

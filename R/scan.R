@@ -240,7 +240,10 @@
 #' best model is the standard deviation of the fold-wise differences in IBS divided by the square
 #' root of the number of folds (a paired comparison: the same folds for every model). Every model
 #' within one standard error of the best gets rank 1: the one-standard-error rule of Hastie,
-#' Tibshirani and Friedman (2009, Section 7.10).
+#' Tibshirani and Friedman (2009, Section 7.10). The other models are numbered after them in the
+#' order of their IBS. The reading also says when no model predicts clearly better than the model
+#' without covariates (largest IPA below 0.01), and when AIC clearly disfavours (dAIC > 10) a model
+#' of rank 1.
 #' }
 #' @section Interpreting the result:
 #' \describe{
@@ -486,9 +489,10 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
       tab$se_diff[m] <- if (m == best) 0 else if (length(dk) >= 2L) stats::sd(dk) / sqrt(length(dk)) else NA_real_
       tab$equivalent[m] <- m == best || (is.finite(tab$se_diff[m]) && tab$diff_best[m] <= tab$se_diff[m])
     }
-    r <- rank(tab$ibs_cv[ok], ties.method = "min")
-    tab$rank[ok] <- as.integer(r)
-    tab$rank[ok & tab$equivalent %in% TRUE] <- 1L
+    eqv <- ok & tab$equivalent %in% TRUE
+    tab$rank[eqv] <- 1L
+    rest <- which(ok & !eqv)
+    tab$rank[rest[order(tab$ibs_cv[rest])]] <- sum(eqv) + seq_along(rest)
   }
   o <- order(is.na(tab$rank), tab$rank, tab$ibs_cv)
   tab <- tab[o, , drop = FALSE]; rownames(tab) <- NULL
@@ -547,6 +551,15 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
              paste0("    ", paste(eq, collapse = "; ")),
              "  Choose among them on interpretation, assumptions and simplicity, not on the small differences.")
   else if (length(eq) == 1L) out <- c(out, paste0("  Best prediction: ", eq, "; the others are more than one standard error worse."))
+  best_ipa <- suppressWarnings(max(tab$ipa_cv, na.rm = TRUE))
+  if (is.finite(best_ipa) && best_ipa < 0.01)
+    out <- c(out, sprintf(paste0("  No model predicts clearly better than no covariates (largest IPA %s): the covariates carry little ",
+                                 "prognostic information here. Compare the models on their effects (goal = \"effect\"), not on prediction."),
+                          .num(best_ipa, 3L)))
+  eqa <- tab[tab$equivalent %in% TRUE & is.finite(tab$delta_aic), , drop = FALSE]
+  if (nrow(eqa) > 1L && any(eqa$delta_aic > 10))
+    out <- c(out, paste0("  Within rank 1, AIC clearly disfavours ", paste(eqa$model[eqa$delta_aic > 10], collapse = "; "),
+                         " (dAIC > 10): similar predictions, but a worse description of the data."))
   if (any(is.finite(tab$aic)))
     out <- c(out, paste0("  dAIC compares only the models with a full likelihood of the same data (",
                          if (x@type == "single") "parametric and cure models" else "parametric cause-specific, joint and constrained direct models",
@@ -576,7 +589,11 @@ S7::method(as.data.frame, ModelScan) <- function(x, ...) x@table
 S7::method(plot, ModelScan) <- function(x, which = c("ranking", "fit", "brier", "calibration"), top = 4L, ...) {
   which <- match.arg(which, several.ok = TRUE)
   pal <- c("#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9")
-  if (length(which) > 1L) { op <- graphics::par(mfrow = c(ceiling(length(which) / 2), min(2L, length(which)))); on.exit(graphics::par(op)) }
+  op <- graphics::par(no.readonly = TRUE); on.exit(graphics::par(op))
+  if (length(which) > 1L) graphics::par(mfrow = c(ceiling(length(which) / 2), min(2L, length(which))))
+  base_mar <- c(4.1, 4.1, 2.6, 1.1)
+  short <- function(s, n = 30L) ifelse(nchar(s) > n, paste0(substr(s, 1L, n - 3L), "..."), s)
+  leg <- function(pos, labels, ...) graphics::legend(pos, short(labels), bty = "n", cex = 0.7, ...)
   ylab_risk <- if (x@type == "single") "Probability of the event" else paste("Cumulative incidence of cause", x@cause)
   for (w in which) {
     if (w == "ranking") {
@@ -584,39 +601,43 @@ S7::method(plot, ModelScan) <- function(x, which = c("ranking", "fit", "brier", 
       tab <- tab[order(tab$ibs_cv, decreasing = TRUE), , drop = FALSE]
       if (!nrow(tab)) next
       lo <- tab$ibs_cv - ifelse(is.finite(tab$se_diff), tab$se_diff, 0); hi <- tab$ibs_cv + ifelse(is.finite(tab$se_diff), tab$se_diff, 0)
-      op2 <- graphics::par(mar = c(4, max(8, max(nchar(tab$model)) * 0.45), 2, 1)); on.exit(graphics::par(op2), add = TRUE)
+      lab <- short(tab$model, 34L)
+      graphics::par(mar = c(4.1, min(16, max(6, max(nchar(lab)) * 0.42)), 2.6, 1.1))
       graphics::plot(tab$ibs_cv, seq_len(nrow(tab)), xlim = range(c(lo, hi)), yaxt = "n", pch = 19,
-                     col = ifelse(tab$equivalent %in% TRUE, pal[1L], "grey40"), xlab = "Integrated Brier score (cross-validated)",
-                     ylab = "", main = "Ranking")
+                     col = ifelse(tab$equivalent %in% TRUE, pal[1L], "grey40"), xlab = "Integrated Brier score",
+                     ylab = "", main = "Ranking (IBS, cross-validated)")
       graphics::segments(lo, seq_len(nrow(tab)), hi, seq_len(nrow(tab)), col = "grey60")
-      graphics::axis(2, at = seq_len(nrow(tab)), labels = tab$model, las = 1, cex.axis = 0.75)
-      graphics::abline(v = min(tab$ibs_cv) + c(0, tab$se_diff[tab$ibs_cv == min(tab$ibs_cv)][1L]), lty = 3, col = "grey60")
+      graphics::axis(2, at = seq_len(nrow(tab)), labels = lab, las = 1, cex.axis = 0.7)
+      graphics::abline(v = min(tab$ibs_cv), lty = 3, col = "grey60")
+      graphics::par(mar = base_mar)
     } else if (w == "fit") {
+      graphics::par(mar = base_mar)
       mods <- .scan_top(x, top)
       tg <- seq(0, max(x@grid), length.out = 60L)[-1L]
       npv <- .scan_np(x@time, x@status, x@cause, tg)
       avg <- lapply(mods, function(m) { rk <- .scan_risk_any(x, x@fits[[m]], m, tg); if (is.null(rk)) NULL else colMeans(rk) })
       ymax <- max(c(npv, unlist(avg), 1e-6), na.rm = TRUE) * 1.1
       graphics::plot(tg, npv, type = "n", xlim = c(0, max(x@grid)), ylim = c(0, ymax),
-                     xlab = "Time", ylab = ylab_risk, main = "Average prediction and non-parametric estimate")
+                     xlab = "Time", ylab = ylab_risk, main = "Fit: average prediction")
       graphics::lines(c(0, tg), c(0, npv), type = "s", lwd = 2, col = "black")
       for (i in seq_along(mods)) if (!is.null(avg[[i]])) graphics::lines(tg, avg[[i]], col = pal[i], lwd = 2, lty = i + 1L)
-      graphics::legend("topleft", c(if (x@type == "single") "Kaplan-Meier" else "Aalen-Johansen", mods),
-                       col = c("black", pal[seq_along(mods)]), lty = c(1, seq_along(mods) + 1L), lwd = 2, bty = "n", cex = 0.8)
+      leg("topleft", c(if (x@type == "single") "Kaplan-Meier" else "Aalen-Johansen", mods),
+          col = c("black", pal[seq_along(mods)]), lty = c(1, seq_along(mods) + 1L), lwd = 2)
     } else if (w == "brier") {
+      graphics::par(mar = base_mar)
       b <- x@brier; mods <- .scan_top(x, top)
       if (is.null(b)) next
       b <- b[b$model %in% mods, , drop = FALSE]
       b0 <- stats::aggregate(brier_null ~ time, data = b, FUN = mean)
       graphics::plot(b0$time, b0$brier_null, type = "l", lty = 3, lwd = 2, col = "grey40", ylim = c(0, max(c(b$brier_cv, b0$brier_null), na.rm = TRUE)),
-                     xlab = "Time", ylab = "Brier score (cross-validated)", main = "Prediction error over time")
+                     xlab = "Time", ylab = "Brier score (cross-validated)", main = "Prediction error")
       for (i in seq_along(mods)) { bi <- b[b$model == mods[i], ]; graphics::lines(bi$time, bi$brier_cv, col = pal[i], lwd = 2, lty = i + 1L) }
-      graphics::legend("topleft", c("no covariates", mods), col = c("grey40", pal[seq_along(mods)]), lty = c(3, seq_along(mods) + 1L),
-                       lwd = 2, bty = "n", cex = 0.8)
+      leg("bottomright", c("no covariates", mods), col = c("grey40", pal[seq_along(mods)]), lty = c(3, seq_along(mods) + 1L), lwd = 2)
     } else if (w == "calibration") {
+      graphics::par(mar = base_mar)
       mods <- .scan_top(x, top); t0 <- x@times[ceiling(length(x@times) / 2)]
       graphics::plot(c(0, 1), c(0, 1), type = "n", xlab = "Predicted risk", ylab = "Observed risk",
-                     main = paste0("Calibration at t = ", format(t0), " (apparent)"))
+                     main = paste0("Calibration, t = ", format(t0)))
       graphics::abline(0, 1, lty = 2, col = "grey50")
       for (i in seq_along(mods)) {
         rk <- .scan_risk_any(x, x@fits[[mods[i]]], mods[i], t0)
@@ -624,7 +645,7 @@ S7::method(plot, ModelScan) <- function(x, which = c("ranking", "fit", "brier", 
         cal <- tryCatch(calibration(x@time, x@status, rk[, 1L], t0, x@cause, 10L), error = function(e) NULL)
         if (!is.null(cal)) graphics::points(cal$predicted, cal$observed, col = pal[i], pch = 14 + i, type = "b")
       }
-      graphics::legend("topleft", mods, col = pal[seq_along(mods)], pch = 14 + seq_along(mods), bty = "n", cex = 0.8)
+      leg("topleft", mods, col = pal[seq_along(mods)], pch = 14 + seq_along(mods))
     }
   }
   invisible(x)
