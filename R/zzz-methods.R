@@ -46,7 +46,7 @@ S7::method(report, AdjustedRisk) <- function(x, file = "adjusted_risk_report.htm
   methods <- paste0("<p>",
     if (any(r$method == "gformula")) paste0("Standardisation (the parametric g-formula; Robins 1986): the fitted outcome model predicted, for every ",
       "subject, the risk under each treatment value with the other covariates as observed, and the predictions were averaged. ") else "",
-    if (any(r$method == "ipw")) paste0("Inverse probability of treatment weighting (Cole and Hernán 2004): a ",
+    if (any(r$method == "ipw")) paste0("Inverse probability of treatment weighting (Cole and Hernan 2004): a ",
       if (length(x@levels) == 2L) "logistic" else "multinomial logistic", " model of the treatment (", esc(paste(deparse(x@ps_formula), collapse = " ")),
       ") gave stabilised weights", if (x@ps$trim > 0) paste0(", truncated at the ", 100 * x@ps$trim, "th and ", 100 * (1 - x@ps$trim), "th percentiles") else "",
       "; the weighted ", if (x@kind == "single") "Kaplan-Meier" else "Aalen-Johansen", " estimate was computed in each treatment group ",

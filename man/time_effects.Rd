@@ -263,7 +263,7 @@ time_effects(fit, forms = list("constant", "log", sqrt = function(t) sqrt(t)))
 
 \donttest{
 ## stability of the choice and intervals that include it
-te_b <- time_effects(fit, bootstrap = 200)
+te_b <- time_effects(fit, forms = c("constant", "log"), bootstrap = 50)
 summary(te_b)
 report(te_b, file = tempfile(fileext = ".html"))
 
