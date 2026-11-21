@@ -132,6 +132,22 @@ and `cif_plot()` draws them, with bootstrap confidence bands for Fine-Gray model
 cif_plot(f, newdata = nd, B = 50, labels = nd$education)
 ```
 
+## 6. Which model fits my data?
+
+`model_scan()` fits every suitable model of the package, compares them by cross-validated
+prediction, and tells which ones are equally good. With `goal = "effect"`, `summary()` also shows
+the effect of every covariate in every model side by side:
+
+```{r scan}
+sc <- model_scan(Event(time, status) ~ education, fertility, cause = 1, depth = "quick", folds = 3)
+sc
+```
+
+The table does not choose for you: among the models of rank 1, choose on the question (rates or
+risks), the assumptions and simplicity. `plot(sc)` draws the ranking, the fit against the
+non-parametric estimate, the prediction error over time and the calibration; `report(sc)` writes
+everything to one HTML file.
+
 ## Where next
 
 * Vignette 2 for survival with one event, and vignette 3 for competing risks.

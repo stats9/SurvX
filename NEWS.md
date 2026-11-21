@@ -1,5 +1,15 @@
 # SurvX (development version)
 
+* New `model_scan()`: fits every model of the package that suits the data (one event type or
+  competing risks; cure models when the Kaplan-Meier curve levels off) and compares them on
+  criteria valid for the comparison: the cross-validated integrated Brier score, IPA, AUC and
+  calibration error for all models, with the models within one standard error of the best
+  grouped at rank 1; AIC only among the models with a full likelihood of the same data; and
+  checks of every model (convergence, proportional hazards, incidences adding up to more than
+  one, distance from the non-parametric estimate). `goal = "effect"` adds the effects of the
+  covariates in every model side by side. `plot()` draws the ranking, the fit, the prediction
+  error over time and the calibration; `report()` writes a self-contained HTML report with a
+  methods paragraph and references.
 * `directcif(estimation = "weighted")`: new argument `variance`. The default, `"ipcw"`, is a
   sandwich variance that includes the effect of estimating the censoring distribution (the exact
   influence of each subject with the Kaplan-Meier estimate recomputed; the discrete form of the

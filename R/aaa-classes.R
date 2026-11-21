@@ -131,6 +131,33 @@ ModelComparison <- S7::new_class("ModelComparison", package = "SurvX",
     cause = S7::class_integer
   ))
 
+# result of model_scan(): one row per candidate model in `table`
+ModelScan <- S7::new_class("ModelScan", package = "SurvX",
+  properties = list(
+    model_call = S7::class_any,
+    type = S7::class_character,
+    K = S7::class_integer,
+    cause = S7::class_integer,
+    goal = S7::class_character,
+    depth = S7::class_character,
+    times = S7::class_numeric,
+    grid = S7::class_numeric,
+    folds = S7::class_integer,
+    seed = S7::class_integer,
+    n = S7::class_integer,
+    counts = S7::class_integer,
+    plateau = S7::class_logical,
+    table = S7::class_any,
+    per_time = S7::class_any,
+    brier = S7::class_any,
+    effects = S7::class_any,
+    fits = S7::class_list,
+    nonparametric = S7::class_any,
+    data = S7::class_any,
+    time = S7::class_numeric,
+    status = S7::class_integer
+  ))
+
 # parametric survival regression: coefficients = (Intercept), covariates, shape parameter
 ParSurvFit <- S7::new_class("ParSurvFit", parent = SurvXFit, package = "SurvX",
   properties = list(

@@ -83,6 +83,7 @@
   hastie2009 = c("Hastie et al. (2009)", "Hastie T, Tibshirani R, Friedman J (2009). The Elements of Statistical Learning, 2nd ed. Springer, New York, Section 7.10."),
   # general inference
   akaike1974 = c("Akaike (1974)", "Akaike H (1974). A new look at the statistical model identification. IEEE Transactions on Automatic Control 19:716-723."),
+  burnham2002 = c("Burnham & Anderson (2002)", "Burnham KP, Anderson DR (2002). Model Selection and Multimodel Inference: A Practical Information-Theoretic Approach, 2nd ed. Springer, New York."),
   schwarz1978 = c("Schwarz (1978)", "Schwarz G (1978). Estimating the dimension of a model. Annals of Statistics 6:461-464."),
   wilks1938 = c("Wilks (1938)", "Wilks SS (1938). The large-sample distribution of the likelihood ratio for testing composite hypotheses. Annals of Mathematical Statistics 9:60-62."),
   white1982 = c("White (1982)", "White H (1982). Maximum likelihood estimation of misspecified models. Econometrica 50:1-25."),
@@ -122,6 +123,8 @@
   auc_t = c("blanche2013"),
   calibration = c("gerds2014", "aalen_johansen1978"),
   compare_models = c("stone1974", "graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", "hastie2009", "gerds2007", "akaike1974"),
+  model_scan = c("graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", "hastie2009", "akaike1974", "burnham2002",
+                 "putter2007", "latouche2013"),
   cv_compare = c("hastie2009", "gerds2007", "graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014"),
   cif_plot = c("aalen_johansen1978", "benichou1990", "efron1993", "casella2002"),
   cif_data = c("aalen_johansen1978", "benichou1990", "efron1993", "casella2002"),
@@ -168,6 +171,7 @@
   if (S7::S7_inherits(x, HazardFit)) return(c("nelson1972", "aalen1978", if (!is.null(x@bandwidth)) c("ramlau1983", "muller_wang1994", "patil1993", "hall_marron1991")))
   if (S7::S7_inherits(x, ModelComparison)) return(c("graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", if (x@folds >= 2L) "hastie2009"))
   if (S7::S7_inherits(x, PHTest)) return(c("grambsch1994", "therneau2000"))
+  if (S7::S7_inherits(x, ModelScan)) return(.topics$model_scan)
   character(0)
 }
 

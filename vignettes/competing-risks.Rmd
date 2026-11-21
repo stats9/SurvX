@@ -140,6 +140,31 @@ confidence limits:
 estimates(f_fg)
 ```
 
+### One cause alone: the weighted estimator
+
+The joint model needs a correct model for every cause. When only cause 1 matters,
+`estimation = "weighted"` fits its direct model alone: subjects who fail from another cause enter
+through the Kaplan-Meier estimate of the censoring distribution, as in Fine and Gray (1999), and
+no model for the other causes is needed.
+
+```{r}
+f_w <- directcif(Event(time, status) ~ x + z, d, link = "PO", estimation = "weighted", cause = 1)
+f_w
+```
+
+The censoring weights are estimated, and by default (`variance = "ipcw"`) the standard errors
+account for it: the sandwich variance includes, for every subject, the effect of that subject on
+the Kaplan-Meier estimate of the censoring distribution. `variance = "robust"` treats the
+censoring distribution as known. The correction concerns mostly the baseline parameters, and
+with them the predicted and long-run incidences; for the regression coefficients it is usually
+small:
+
+```{r}
+se <- cbind(ipcw = sqrt(diag(f_w@diagnostics$vcov_ipcw)),
+            censoring_known = sqrt(diag(f_w@diagnostics$vcov_robust)))
+round(cbind(se, ratio = se[, 1] / se[, 2]), 4)
+```
+
 ## Prediction
 
 `predict()` gives the CIF for new covariate values at chosen times; `se = TRUE` adds
@@ -235,6 +260,27 @@ plot(cm, measure = "ipa")
 For a list of your own models use `cv_compare()`; the individual measures are also available as
 `brier_score()`, `auc_t()` and `calibration()`.
 
+### Scanning all models at once
+
+`model_scan()` fits every model of the package that suits the data (here the cause-specific Cox
+and parametric models, Fine-Gray and the direct models), compares them on the cross-validated
+integrated Brier score, and groups together the models that predict equally well (within one
+standard error of the best, a paired comparison on the same folds). AIC is shown only among the
+models with a full likelihood of the same data, and every model is checked (proportional hazards,
+incidences that add up to more than one, distance from the Aalen-Johansen estimate):
+
+```{r scan}
+sc <- model_scan(Event(time, status) ~ x + z, d, cause = 1, depth = "quick", folds = 3)
+sc
+```
+
+```{r scan-plot, fig.height = 7}
+plot(sc)
+```
+
+`report(sc, file = "scan.html")` writes a complete HTML report with the tables, the figures, a
+methods paragraph and the references.
+
 ## Coherence: do the CIFs add up?
 
 The CIFs of all causes must sum to at most one. The cause-specific Cox approach satisfies this
@@ -252,8 +298,31 @@ s_fg  <- predict(f_fg, d, times = tt) + predict(f_fg2, d, times = tt)
 c(direct = max(s_dir), "Fine-Gray" = max(s_fg))
 ```
 
-For two causes in which every subject eventually fails, `directcif(..., estimation = "constrained")`
-fits the model of Shi, Cheng and Jeong (2013), whose plateaus add up to one by construction.
+When every subject eventually fails from one of the causes, `directcif(..., estimation =
+"constrained")` makes the long-run incidences add up to one by construction. With two causes this
+is the model of Shi, Cheng and Jeong (2013): the cause of interest has its direct model with a
+plateau $F_1(\infty \mid z)$, and the other cause takes the rest,
+$F_2(t \mid z) = \{1 - F_1(\infty \mid z)\}\, G(t)$. With three or more causes the rest is
+shared among the competing causes by a multinomial logit in the covariates,
+$F_k(t \mid z) = \{1 - F_1(\infty \mid z)\}\, \pi_k(z)\, G_k(t)$, in the manner of the
+mixture model of Larson and Dinse (1985):
+
+```{r}
+d3 <- d
+set.seed(5)
+d3$status[d3$status == 2 & runif(nrow(d3)) < 0.4] <- 3      # split cause 2 into two causes
+f_k3 <- directcif(Event(time, status) ~ x + z, d3, estimation = "constrained", cause = 1, cond = "weibull")
+f_k3
+```
+
+The `share_` coefficients of cause 3 are log odds ratios of failing from cause 3 rather than from
+cause 2, among the subjects who do not fail from cause 1. The long-run incidences add up to one
+for every covariate value:
+
+```{r}
+nd <- data.frame(x = 0:1, z = 0)
+rowSums(sapply(1:3, function(k) predict(f_k3, nd, times = Inf, cause = k)))
+```
 
 ## References
 
@@ -263,6 +332,10 @@ fits the model of Shi, Cheng and Jeong (2013), whose plateaus add up to one by c
   *Journal of the Royal Statistical Society, Series C*, 55, 187-200.
 - Jeong JH, Fine JP (2007). Parametric regression on cumulative incidence function.
   *Biostatistics*, 8, 184-196.
+- Hastie T, Tibshirani R, Friedman J (2009). *The Elements of Statistical Learning*, 2nd ed.
+  Springer, New York.
+- Larson MG, Dinse GE (1985). A mixture model for the regression analysis of competing risks
+  data. *Journal of the Royal Statistical Society, Series C*, 34, 201-211.
 - Latouche A, Allignol A, Beyersmann J, Labopin M, Fine JP (2013). A competing risks analysis
   should report results on all cause-specific hazards and cumulative incidence functions.
   *Journal of Clinical Epidemiology*, 66, 648-653.
