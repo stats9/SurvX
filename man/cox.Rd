@@ -260,7 +260,8 @@ n <- 300
 d <- data.frame(treat = factor(rbinom(n, 1, 0.5), labels = c("control", "new")),
                 age = round(rnorm(n, 60, 10)),
                 centre = sample(c("A", "B", "C"), n, TRUE))
-rate <- 0.1 * exp(-0.4 * (d$treat == "new") + 0.03 * (d$age - 60)) * c(A = 1, B = 2, C = 0.5)[d$centre]
+rate <- 0.1 * exp(-0.4 * (d$treat == "new") + 0.03 * (d$age - 60)) *
+  c(A = 1, B = 2, C = 0.5)[d$centre]
 t <- rexp(n, rate); cens <- runif(n, 0, 15)
 d$time <- pmin(t, cens); d$status <- as.integer(t <= cens)
 

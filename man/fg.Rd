@@ -22,8 +22,8 @@ prognosis or prediction.
 }
 }
 \usage{
-fg(formula, data, cause = 1L, variance = c("robust", "model", "bootstrap"), max_iter = 50L,
-    tol = 1e-10, B = 200L, seed = 1L)
+fg(formula, data, cause = 1L, variance = c("robust", "model", "bootstrap"),
+   max_iter = 50L, tol = 1e-10, B = 200L, seed = 1L)
 }
 \arguments{
 \item{formula}{a formula with \code{\link{Event}()} on the left and the covariates on the right:
