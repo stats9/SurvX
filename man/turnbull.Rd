@@ -36,8 +36,10 @@ the curve is drawn linearly within the innermost intervals (the usual convention
 times are point masses, as in the Kaplan-Meier estimate. After the last left end point of the
 right-censored subjects the curve is undefined (as the Kaplan-Meier curve after the last time).
 
-\strong{Computation.} The self-consistency (EM) algorithm of Turnbull (1976) in compiled code,
-accelerated with SQUAREM (Varadhan and Roland 2008). Convergence is checked on the Kuhn-Tucker
+\strong{Computation.} In compiled code, steps of the self-consistency (EM) algorithm of Turnbull
+(1976) alternate with steps of the iterative convex minorant algorithm (Groeneboom and Wellner
+1992) with a line search (Jongbloed 1998), the EM-ICM hybrid of Wellner and Zhan (1997), which
+converges in a fraction of a second also with thousands of subjects. Convergence is checked on the Kuhn-Tucker
 conditions, which are necessary and sufficient for the maximum of this concave problem (Gentleman
 and Geyer 1994): the printed value is zero at the NPMLE.
 
@@ -72,8 +74,15 @@ Peto R (1973). Experimental survival curves for interval-censored data. Applied 
 Gentleman R, Geyer CJ (1994). Maximum likelihood for interval censored data: consistency and
   computation. Biometrika 81:618-623.
 
-Varadhan R, Roland C (2008). Simple and globally convergent methods for accelerating the
-  convergence of any EM algorithm. Scandinavian Journal of Statistics 35:335-353.
+Groeneboom P, Wellner JA (1992). Information Bounds and Nonparametric Maximum Likelihood
+  Estimation. Birkhauser, Basel.
+
+Jongbloed G (1998). The iterative convex minorant algorithm for nonparametric estimation.
+  Journal of Computational and Graphical Statistics 7:310-321.
+
+Wellner JA, Zhan Y (1997). A hybrid algorithm for computation of the nonparametric maximum
+  likelihood estimator from censored data. Journal of the American Statistical Association
+  92:945-959.
 
 Finkelstein DM (1986). A proportional hazards model for interval-censored failure time data.
   Biometrics 42:845-854.

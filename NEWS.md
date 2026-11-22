@@ -4,7 +4,7 @@
   * New `Interval(left, right, cause)` outcome: interval-, left- and right-censored and exact times
     can be mixed in one data set.
   * New `turnbull()`: the Turnbull non-parametric maximum likelihood estimate of the survival curve
-    (self-consistency algorithm with SQUAREM acceleration in compiled code, convergence checked on
+    (EM-ICM hybrid of the self-consistency and iterative convex minorant algorithms in compiled code, convergence checked on
     the Kuhn-Tucker conditions), by group, with bootstrap bands, medians with intervals, the range
     of survival values that the data leave unidentified within the innermost intervals, and a
     logrank-type test with Finkelstein scores and permutational variance. `print()`, `summary()`,

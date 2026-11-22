@@ -29,8 +29,10 @@
 #' times are point masses, as in the Kaplan-Meier estimate. After the last left end point of the
 #' right-censored subjects the curve is undefined (as the Kaplan-Meier curve after the last time).
 #'
-#' \strong{Computation.} The self-consistency (EM) algorithm of Turnbull (1976) in compiled code,
-#' accelerated with SQUAREM (Varadhan and Roland 2008). Convergence is checked on the Kuhn-Tucker
+#' \strong{Computation.} In compiled code, steps of the self-consistency (EM) algorithm of Turnbull
+#' (1976) alternate with steps of the iterative convex minorant algorithm (Groeneboom and Wellner
+#' 1992) with a line search (Jongbloed 1998), the EM-ICM hybrid of Wellner and Zhan (1997), which
+#' converges in a fraction of a second also with thousands of subjects. Convergence is checked on the Kuhn-Tucker
 #' conditions, which are necessary and sufficient for the maximum of this concave problem (Gentleman
 #' and Geyer 1994): the printed value is zero at the NPMLE.
 #'
@@ -63,8 +65,15 @@
 #' Gentleman R, Geyer CJ (1994). Maximum likelihood for interval censored data: consistency and
 #'   computation. Biometrika 81:618-623.
 #'
-#' Varadhan R, Roland C (2008). Simple and globally convergent methods for accelerating the
-#'   convergence of any EM algorithm. Scandinavian Journal of Statistics 35:335-353.
+#' Groeneboom P, Wellner JA (1992). Information Bounds and Nonparametric Maximum Likelihood
+#'   Estimation. Birkhauser, Basel.
+#' 
+#' Jongbloed G (1998). The iterative convex minorant algorithm for nonparametric estimation.
+#'   Journal of Computational and Graphical Statistics 7:310-321.
+#' 
+#' Wellner JA, Zhan Y (1997). A hybrid algorithm for computation of the nonparametric maximum
+#'   likelihood estimator from censored data. Journal of the American Statistical Association
+#'   92:945-959.
 #'
 #' Finkelstein DM (1986). A proportional hazards model for interval-censored failure time data.
 #'   Biometrics 42:845-854.
@@ -131,7 +140,8 @@ turnbull <- function(formula, data, times = NULL, B = 200L, level = 0.95, test =
             " (Kuhn-Tucker gap ", signif(fits[[lv]]$kkt, 2), "); increase max_iter", call. = FALSE)
   fin <- c(L, R[is.finite(R)])
   tmax <- max(fin)
-  grid <- sort(unique(c(seq(0, tmax, length.out = 201L), times[is.finite(times)])))
+  ptimes <- if (length(times)) as.double(times[is.finite(times)]) else .default_times(tmax)
+  grid <- sort(unique(c(seq(0, tmax, length.out = 201L), ptimes)))
   boot <- NULL
   if (B > 0L) {
     boot <- .with_seed(seed, lapply(levs, function(lv) {
@@ -146,7 +156,7 @@ turnbull <- function(formula, data, times = NULL, B = 200L, level = 0.95, test =
   }
   tst <- if (isTRUE(test) && length(levs) > 1L) .tb_test(L, R, g, max_iter, tol) else NULL
   TurnbullFit(model_call = cl, groups = levs, variable = variable, fits = fits, times = grid, boot = boot, B = B,
-              level = level, test = tst, n = length(L), print_times = as.double(times[is.finite(times)]))
+              level = level, test = tst, n = length(L), print_times = ptimes)
 }
 
 .with_seed <- function(seed, expr) {
@@ -235,8 +245,16 @@ turnbull <- function(formula, data, times = NULL, B = 200L, level = 0.95, test =
       bm <- x@boot[[lv]]
       for (m in seq_along(times)) {
         j <- which.min(abs(x@times - times[m]))
-        v <- bm[, j]; v <- v[is.finite(v)]
-        if (length(v) >= 10L && abs(x@times[j] - times[m]) < 1e-8 * max(1, times[m])) {
+        if (abs(x@times[j] - times[m]) < 1e-8 * max(1, times[m])) v <- bm[, j]
+        else {
+          # between two grid times: the bootstrap curves interpolated linearly
+          j1 <- max(which(x@times < times[m]), 1L); j2 <- min(which(x@times > times[m]), length(x@times))
+          if (j1 == j2 || !is.finite(times[m]) || times[m] > max(x@times)) next
+          f <- (times[m] - x@times[j1]) / (x@times[j2] - x@times[j1])
+          v <- (1 - f) * bm[, j1] + f * bm[, j2]
+        }
+        v <- v[is.finite(v)]
+        if (length(v) >= 10L) {
           q <- stats::quantile(v, c(a, 1 - a), names = FALSE); lo[m] <- q[1L]; hi[m] <- q[2L]
         }
       }
@@ -282,7 +300,7 @@ turnbull <- function(formula, data, times = NULL, B = 200L, level = 0.95, test =
            if (grp) paste0("  Groups (", x@variable, "): ", paste0(x@groups, " (n = ", vapply(x@fits, function(f) length(f$L), 1L), ")", collapse = ", ")),
            "")
   tmax <- max(vapply(x@fits, function(f) max(c(f$L, f$R[is.finite(f$R)])), 1))
-  tt <- if (length(x@print_times)) x@print_times else .default_times(tmax)
+  tt <- x@print_times
   tab <- .tb_table(x, tt)
   ci_lab <- if (!is.null(x@boot)) paste0(.pct(x@level), " CI (bootstrap, B = ", x@B, ")") else NULL
   shown <- data.frame(time = .num(tab$time, 3L), survival = .num(tab$survival, 3L), stringsAsFactors = FALSE)
@@ -315,7 +333,7 @@ turnbull <- function(formula, data, times = NULL, B = 200L, level = 0.95, test =
                                    " intervals of positive length the data do not say how the probability is spread ",
                                    "(the 'identified range' column), and the curve is drawn linearly there."), width = 100L, prefix = "", initial = ""))
   conv <- vapply(x@fits, function(f) f$converged, TRUE)
-  out <- c(out, paste0("Algorithm: EM with SQUAREM acceleration, ", if (all(conv)) "converged" else "NOT converged", " (",
+  out <- c(out, paste0("Algorithm: EM-ICM hybrid, ", if (all(conv)) "converged" else "NOT converged", " (",
                        paste0(vapply(x@fits, function(f) f$iterations, 1L), collapse = ", "), " iterations; Kuhn-Tucker gap ",
                        format(signif(max(vapply(x@fits, function(f) f$kkt, 1)), 2)), ")."))
   if (detail) {

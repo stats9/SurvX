@@ -13,8 +13,11 @@
 //
 // Estimation: the self-consistency (EM) algorithm of Turnbull (1976),
 //   p_j <- p_j / W sum_i w_i 1{a_i <= j <= b_i} / P_i,   P_i = sum_{j = a_i}^{b_i} p_j,
-// in O(n + m) per step with prefix sums, accelerated by SQUAREM (Varadhan & Roland 2008, Scand J
-// Statist 35:335-353, scheme S3) with a monotonicity safeguard. Convergence is checked on the
+// in O(n + m) per step with prefix sums, alternated with a step of the iterative convex minorant
+// algorithm (Groeneboom & Wellner 1992; with the line search of Jongbloed 1998, J Comput Graph Statist
+// 7:310-321): a Newton step for the distribution function with the diagonal of the Hessian, projected
+// on the monotone functions by weighted isotonic regression. The hybrid (EM-ICM; Wellner & Zhan 1997,
+// JASA 92:945-959) converges quickly also with thousands of innermost intervals, where EM alone stalls. Convergence is checked on the
 // Kuhn-Tucker conditions of the concave problem (Gentleman & Geyer 1994, Biometrika 81:618-623):
 // d_j = sum_i w_i 1{a_i <= j <= b_i} / P_i <= W for every j, with equality where p_j > 0; the reported
 // value max_j d_j / W - 1 is zero at the NPMLE.
@@ -123,6 +126,25 @@ inline void ic_em(std::vector<double>& p, const std::vector<int>& a, const std::
   if (s > 0.0) for (double& v : p) v /= s;
 }
 
+// weighted isotonic (non-decreasing) regression by pool-adjacent-violators, in place
+inline void pava(std::vector<double>& y, const std::vector<double>& w) {
+  const std::size_t m = y.size();
+  std::vector<double> val, wt; std::vector<std::size_t> cnt;
+  val.reserve(m); wt.reserve(m); cnt.reserve(m);
+  for (std::size_t j = 0; j < m; ++j) {
+    val.push_back(y[j]); wt.push_back(w[j]); cnt.push_back(1);
+    while (val.size() > 1 && val[val.size() - 2] > val.back()) {
+      const std::size_t k = val.size() - 1;
+      const double ww = wt[k - 1] + wt[k];
+      val[k - 1] = (wt[k - 1] * val[k - 1] + wt[k] * val[k]) / ww;
+      wt[k - 1] = ww; cnt[k - 1] += cnt[k];
+      val.pop_back(); wt.pop_back(); cnt.pop_back();
+    }
+  }
+  std::size_t j = 0;
+  for (std::size_t b = 0; b < val.size(); ++b) for (std::size_t c = 0; c < cnt[b]; ++c) y[j++] = val[b];
+}
+
 }  // namespace ic_detail
 
 // NPMLE on the innermost intervals of `s`; w (may be null) are case weights (bootstrap counts)
@@ -143,37 +165,63 @@ inline TurnbullResult turnbull_fit(const TurnbullSupport& s, const double* w, in
     for (double& v : p) v /= tot;
   }
   double ll = ic_loglik(p, s.a, s.b, w, cum);
-  std::vector<double> p1, p2, q(J), rr(J), vv(J);
+  std::vector<double> F(J), Fn(J), Ft(J), g(J), h(J), pt(J);
   for (int it = 1; it <= max_iter; ++it) {
     r.iterations = it;
-    p1 = p; ic_em(p1, s.a, s.b, w, W, cum, d);
-    p2 = p1; ic_em(p2, s.a, s.b, w, W, cum, d);
-    double nr = 0.0, nv = 0.0;
-    for (std::size_t j = 0; j < J; ++j) { rr[j] = p1[j] - p[j]; vv[j] = p2[j] - p1[j] - rr[j]; nr += rr[j] * rr[j]; nv += vv[j] * vv[j]; }
-    std::vector<double> next = p2;
-    if (nv > 0.0 && nr > 0.0) {
-      double alpha = -std::sqrt(nr / nv);
-      if (alpha > -1.0) alpha = -1.0;
-      double tot = 0.0;
-      for (std::size_t j = 0; j < J; ++j) { q[j] = std::fmax(p[j] - 2.0 * alpha * rr[j] + alpha * alpha * vv[j], 0.0); tot += q[j]; }
-      if (tot > 0.0) {
-        for (double& v : q) v /= tot;
-        ic_em(q, s.a, s.b, w, W, cum, d);             // stabilising EM step
-        const double lq = ic_loglik(q, s.a, s.b, w, cum), l2 = ic_loglik(p2, s.a, s.b, w, cum);
-        if (std::isfinite(lq) && lq >= l2) next = q;
+    // ICM step on the distribution function F_j = p_0 + ... + p_j, j < J - 1 (F_{J-1} = 1)
+    if (J > 1) {
+      double run = 0.0;
+      for (std::size_t j = 0; j < J; ++j) { run += p[j]; F[j] = run; }
+      F[J - 1] = 1.0;
+      std::fill(g.begin(), g.end(), 0.0); std::fill(h.begin(), h.end(), 0.0);
+      bool ok = true;
+      for (std::size_t i = 0; i < n; ++i) {
+        const double wi = w ? w[i] : 1.0;
+        if (wi == 0.0) continue;
+        const int a = s.a[i], b = s.b[i];
+        const double P = F[b] - (a > 0 ? F[a - 1] : 0.0);
+        if (!(P > 0.0)) { ok = false; break; }
+        const double u = wi / P, v = wi / (P * P);
+        if (b < static_cast<int>(J) - 1) { g[b] += u; h[b] += v; }
+        if (a > 0) { g[a - 1] -= u; h[a - 1] += v; }
+      }
+      if (ok) {
+        const std::size_t m = J - 1;
+        std::vector<double> y(m), wt(m);
+        for (std::size_t j = 0; j < m; ++j) { wt[j] = h[j] > 0.0 ? h[j] : 1e-12; y[j] = F[j] + g[j] / wt[j]; }
+        ic_detail::pava(y, wt);
+        for (std::size_t j = 0; j < m; ++j) Fn[j] = std::fmin(std::fmax(y[j], 0.0), 1.0);
+        Fn[m] = 1.0;
+        double alpha = 1.0;
+        for (int ls = 0; ls < 30; ++ls) {
+          double prev = 0.0;
+          for (std::size_t j = 0; j < J; ++j) {
+            Ft[j] = F[j] + alpha * (Fn[j] - F[j]);
+            pt[j] = std::fmax(Ft[j] - prev, 0.0);
+            prev = Ft[j];
+          }
+          const double lt = ic_loglik(pt, s.a, s.b, w, cum);
+          if (std::isfinite(lt) && lt >= ll) {
+            double tot = 0.0;
+            for (double v : pt) tot += v;
+            for (std::size_t j = 0; j < J; ++j) p[j] = pt[j] / tot;
+            ll = ic_loglik(p, s.a, s.b, w, cum);
+            break;
+          }
+          alpha *= 0.5;
+        }
       }
     }
-    const double lnew = ic_loglik(next, s.a, s.b, w, cum);
-    p.swap(next);
+    // EM step (also gives the gradient for the Kuhn-Tucker check)
+    ic_em(p, s.a, s.b, w, W, cum, d);
+    const double lnew = ic_loglik(p, s.a, s.b, w, cum);
     const double dll = lnew - ll;
     ll = lnew;
-    if (it % 5 == 0 || dll < tol) {
-      ic_gradient(p, s.a, s.b, w, cum, d);
-      double mx = 0.0;
-      for (std::size_t j = 0; j < J; ++j) mx = std::fmax(mx, d[j] / W);
-      r.kkt = mx - 1.0;
-      if (r.kkt < 1e-7 && std::fabs(dll) < tol) { r.converged = true; break; }
-    }
+    ic_gradient(p, s.a, s.b, w, cum, d);
+    double mx = 0.0;
+    for (std::size_t j = 0; j < J; ++j) mx = std::fmax(mx, d[j] / W);
+    r.kkt = mx - 1.0;
+    if (r.kkt < 1e-8 && std::fabs(dll) < tol) { r.converged = true; break; }
   }
   // masses that the algorithm drives to zero only asymptotically
   {

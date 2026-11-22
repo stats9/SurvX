@@ -106,7 +106,9 @@
   turnbull1976 = c("Turnbull (1976)", "Turnbull BW (1976). The empirical distribution function with arbitrarily grouped, censored and truncated data. Journal of the Royal Statistical Society, Series B 38:290-295."),
   peto1973 = c("Peto (1973)", "Peto R (1973). Experimental survival curves for interval-censored data. Applied Statistics 22:86-91."),
   gentleman_geyer1994 = c("Gentleman & Geyer (1994)", "Gentleman R, Geyer CJ (1994). Maximum likelihood for interval censored data: consistency and computation. Biometrika 81:618-623."),
-  varadhan_roland2008 = c("Varadhan & Roland (2008)", "Varadhan R, Roland C (2008). Simple and globally convergent methods for accelerating the convergence of any EM algorithm. Scandinavian Journal of Statistics 35:335-353."),
+  groeneboom_wellner1992 = c("Groeneboom & Wellner (1992)", "Groeneboom P, Wellner JA (1992). Information Bounds and Nonparametric Maximum Likelihood Estimation. Birkhauser, Basel."),
+  jongbloed1998 = c("Jongbloed (1998)", "Jongbloed G (1998). The iterative convex minorant algorithm for nonparametric estimation. Journal of Computational and Graphical Statistics 7:310-321."),
+  wellner_zhan1997 = c("Wellner & Zhan (1997)", "Wellner JA, Zhan Y (1997). A hybrid algorithm for computation of the nonparametric maximum likelihood estimator from censored data. Journal of the American Statistical Association 92:945-959."),
   finkelstein1986 = c("Finkelstein (1986)", "Finkelstein DM (1986). A proportional hazards model for interval-censored failure time data. Biometrics 42:845-854."),
   fay_shaw2010 = c("Fay & Shaw (2010)", "Fay MP, Shaw PA (2010). Exact and asymptotic weighted logrank tests for interval censored data: the interval R package. Journal of Statistical Software 36(2):1-34."),
   lindsey_ryan1998 = c("Lindsey & Ryan (1998)", "Lindsey JC, Ryan LM (1998). Tutorial in biostatistics: methods for interval-censored data. Statistics in Medicine 17:219-238."),
@@ -137,7 +139,7 @@
            "kalbfleisch2002", "casella2002"),
   residuals = c("cox_snell1968", "schoenfeld1982", "therneau1990", "grambsch1994"),
   ph_test = c("grambsch1994", "therneau2000", "schoenfeld1982"),
-  turnbull = c("turnbull1976", "peto1973", "gentleman_geyer1994", "varadhan_roland2008", "finkelstein1986", "fay_shaw2010",
+  turnbull = c("turnbull1976", "peto1973", "gentleman_geyer1994", "groeneboom_wellner1992", "jongbloed1998", "wellner_zhan1997", "finkelstein1986", "fay_shaw2010",
                "efron1993", "sun2006"),
   Interval = c("turnbull1976", "lindsey_ryan1998", "sun2006"),
   adjusted_risk = c("robins1986", "hernan_robins2020", "cole_hernan2004", "neumann2016", "austin_stuart2015", "ozenne2020", "efron1993"),
@@ -202,7 +204,7 @@
     return(c(if (x@method != "ipw") "robins1986", if (x@method != "gformula") c("cole_hernan2004", if (x@kind == "competing") "neumann2016", "austin_stuart2015"),
              "hernan_robins2020", if (x@B > 0L) "efron1993"))
   if (S7::S7_inherits(x, TurnbullFit))
-    return(c("turnbull1976", "peto1973", "varadhan_roland2008", "gentleman_geyer1994",
+    return(c("turnbull1976", "peto1973", "wellner_zhan1997", "groeneboom_wellner1992", "jongbloed1998", "gentleman_geyer1994",
              if (!is.null(x@test)) c("finkelstein1986", "fay_shaw2010"), if (x@B > 0L) "efron1993"))
   if (S7::S7_inherits(x, TimeEffects)) {
     s <- x@settings; f <- x@forms
