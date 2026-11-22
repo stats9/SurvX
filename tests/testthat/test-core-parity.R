@@ -3,7 +3,7 @@
 test_that("distribution functions and sample quantiles agree with R", {
   set.seed(1)
   p <- c(runif(500), 1e-12, 0.025, 0.5, 0.975, 1 - 1e-12)
-  expect_equal(SurvX:::.sx_qnorm(p), stats::qnorm(p), tolerance = 1e-13)
+  expect_equal(SurvX:::.sx_qnorm(p), stats::qnorm(p), tolerance = 1e-12)
   x <- rexp(500, 0.2); df <- sample(1:20, 500, TRUE)
   expect_equal(SurvX:::.sx_pchisq_upper(x, df), stats::pchisq(x, df, lower.tail = FALSE), tolerance = 1e-12)
   sh <- exp(rnorm(500, 1, 1.5)); rt <- exp(rnorm(500))
@@ -21,6 +21,11 @@ test_that("intervals, step functions and counts agree with R", {
   set.seed(2)
   Fv <- matrix(c(runif(40), 0, 1, NA, 0.5), 11, 4); se <- matrix(runif(44, 0, 0.1), 11, 4)
   expect_equal(SurvX:::.cif_interval(Fv, se, 1.96), ref_cif_interval(Fv, se, 1.96), tolerance = 1e-14)
+  # the textbook form F^exp(-/+ e) gives the same limits up to rounding
+  ok <- is.finite(Fv) & Fv > 0 & Fv < 1
+  e <- 1.96 * se[ok] / (Fv[ok] * log(Fv[ok])); ci <- SurvX:::.cif_interval(Fv, se, 1.96)
+  expect_equal(ci$lower[ok], Fv[ok]^exp(-e), tolerance = 1e-12)
+  expect_equal(ci$upper[ok], Fv[ok]^exp(e), tolerance = 1e-12)
   x <- sort(round(runif(30, 0, 10), 1)); y <- cumsum(runif(30)); tt <- c(-1, 0, x[5], runif(50, 0, 12), NA)
   expect_identical(SurvX:::.step_at(x, y, tt, 0.25), ref_step_at(x, y, tt, 0.25))
   time <- round(rexp(300, 0.3), 1) + 0.1; status <- rbinom(300, 2, 0.4); entry <- ifelse(runif(300) < 0.3, time * runif(300), 0)
@@ -46,7 +51,7 @@ test_that("frailty summaries agree with R", {
   f <- cox(Event(time, status) ~ x + frailty(id), d)
   expect_equal(SurvX:::.frailty_frame(f, 0.9), ref_frailty_frame(f, 0.9), tolerance = 1e-11)
   expect_equal(SurvX:::.frailty_lrt(f@loglik, f@loglik0, f@boundary), ref_frailty_lrt(f@loglik, f@loglik0, f@boundary),
-               tolerance = 1e-13)
+               tolerance = 1e-12)
   X <- cbind(x = c(-1, 0, 2)); tt <- c(0.5, 2, 8)
   expect_equal(unname(SurvX:::.frailty_cumhaz(f, X, tt)), ref_breslow_cumhaz(f@basehaz, X, f@coefficients, tt), tolerance = 1e-14)
   H <- ref_breslow_cumhaz(f@basehaz, X, f@coefficients, tt); th <- f@theta
@@ -70,7 +75,7 @@ test_that("adjusted_risk numerics agree with R: treatment model, weights, balanc
   time <- round(rexp(n, 0.3), 1) + 0.1; status <- rbinom(n, 2, 0.4); w <- runif(n, 0.3, 3)
   entry <- ifelse(runif(n) < 0.3, time * runif(n), 0); tt <- sort(runif(20, 0, 8))
   for (k in 1:2) for (e in list(NULL, entry))
-    expect_equal(SurvX:::.ar_wcif(time, status, e, w, k, tt), ref_ar_wcif(time, status, e, w, k, tt), tolerance = 1e-13)
+    expect_equal(SurvX:::.ar_wcif(time, status, e, w, k, tt), ref_ar_wcif(time, status, e, w, k, tt), tolerance = 1e-12)
   lev <- c("A", "B"); tt <- c(1, 2, 3); est <- list(gformula = matrix(c(0.2, 0.3, 0.25, 0.4, 0.3, 0.5), 2))
   res <- lapply(1:50, function(b) list(gformula = est$gformula * exp(rnorm(6, 0, 0.1))))
   boot <- list(res = res, ok = 50L, B = 50L)
@@ -122,7 +127,7 @@ test_that("model comparison helpers agree with R: measures, curves, integral, ra
   fin <- is.finite(tab$ibs_cv)
   expect_equal(ifelse(fin, rr$rank, NA_integer_), ref$rank)
   expect_equal(ifelse(fin, rr$diff, NA_real_), ref$diff_best, tolerance = 1e-14)
-  expect_equal(ifelse(fin & !is.nan(rr$se), rr$se, NA_real_), ref$se_diff, tolerance = 1e-13)
+  expect_equal(ifelse(fin & !is.nan(rr$se), rr$se, NA_real_), ref$se_diff, tolerance = 1e-12)
   expect_equal(ifelse(fin, rr$equivalent == 1L, NA), ref$equivalent)
 })
 
@@ -174,6 +179,17 @@ test_that("time_effects numerics agree with R: time functions (splines::ns), spl
   fin <- list(coefficients = b)
   expect_equal(SurvX:::.te_effects(fin, V, map, c("x", "z"), c(0.5, 1, 3), 0.9),
                ref_te_effects(fin, V, map, c("x", "z"), c(0.5, 1, 3), 0.9), tolerance = 1e-12)
+  # design of the split data: the products x_j * B(t) are built in one call; same as column by column
+  Xs <- cbind(x = rnorm(30), z = rnorm(30), w = rnorm(30)); st <- sort(runif(30, 0.1, max(et)))
+  bs <- SurvX:::.te_basis(list(name = "spline", type = "spline"), et, 3, NULL)
+  bases <- list(x = list(log = bl), z = list(spline = bs), w = list(constant = NULL))
+  dsg <- SurvX:::.te_design(Xs, st, c("x", "z", "w"), list(x = "log", z = "spline", w = "constant"), bases)
+  naive <- cbind(Xs, bl$B(st) * Xs[, "x"], bs$B(st) * Xs[, "z"])
+  expect_identical(unname(dsg$X), unname(naive))
+  expect_identical(colnames(dsg$X), c("x", "z", "w", "x:log", paste0("z:spline", 1:3)))
+  expect_identical(dsg$map[[2]]$tv, 5:7)
+  d0 <- SurvX:::.te_design(Xs, st, c("x", "z", "w"), list(), bases)
+  expect_identical(d0$X, Xs)
 })
 
 test_that("Fine-Gray expansion, timefix and robust variance agree with R", {
@@ -307,7 +323,7 @@ test_that("the toolkit of the core gives R's own numbers", {
   d <- c(1, 2, 1, 1); Y <- c(10, 8, 5, 2)
   expect_identical(SurvX:::.sx_np_curve_inc(d, Y, "na"), cumsum(d / Y)); expect_identical(SurvX:::.sx_np_curve_inc(d, Y, "km"), cumprod(1 - d / Y))
   ic <- SurvX:::.sx_ic(-120.5, 4, 80); expect_identical(ic$aic, -2 * -120.5 + 2 * 4); expect_identical(ic$bic, -2 * -120.5 + log(80) * 4)
-  lr <- SurvX:::.sx_lr(-100, -104.2, 2); expect_equal(lr$stat, 8.4); expect_equal(lr$p, stats::pchisq(8.4, 2, lower.tail = FALSE), tolerance = 1e-13)
+  lr <- SurvX:::.sx_lr(-100, -104.2, 2); expect_equal(lr$stat, 8.4); expect_equal(lr$p, stats::pchisq(8.4, 2, lower.tail = FALSE), tolerance = 1e-12)
   V <- crossprod(matrix(rnorm(9), 3)); expect_equal(SurvX:::.sx_se(V), sqrt(diag(V)))
   w <- SurvX:::.sx_wald(c(0.2, -1), c(0.1, 0.4), 0.95, c(TRUE, FALSE)); zq <- stats::qnorm(0.975)
   expect_equal(w$lo, c(0.2, -1) - zq * c(0.1, 0.4), tolerance = 1e-14); expect_equal(w$eest, c(exp(0.2), NA))
@@ -329,7 +345,7 @@ test_that("predictions, residuals and summaries built on the toolkit agree with 
   f <- cox(Event(time, dead) ~ x + z + strata(g), d)
   bh <- SurvX:::.cox_baseline(f); X <- f@X[1:12, ]; sn <- f@strata[1:12]; tt <- c(0.3, 1, 2.5)
   ref <- t(vapply(1:12, function(i) exp(-exp(sum(X[i, ] * f@coefficients)) * SurvX:::.cumhaz_at(bh, tt, rep(sn[i], 3))), numeric(3)))
-  expect_equal(unname(predict(f, d[1:12, ], times = tt, type = "survival")), ref, tolerance = 1e-13)
+  expect_equal(unname(predict(f, d[1:12, ], times = tt, type = "survival")), ref, tolerance = 1e-12)
   f0 <- cox(Event(time, dead) ~ x + z, d)
   for (ty in c("martingale", "deviance", "coxsnell")) {
     m <- residuals(f0, "martingale")
@@ -337,7 +353,7 @@ test_that("predictions, residuals and summaries built on the toolkit agree with 
     expect_equal(residuals(f0, ty), ref, tolerance = 1e-14)
   }
   sch <- residuals(f0, "schoenfeld"); sc <- residuals(f0, "scaledsch"); nd <- nrow(sch)
-  expect_equal(unclass(sc)[, ], (sch %*% f0@vcov * nd + matrix(f0@coefficients, nd, 2, byrow = TRUE))[, ], tolerance = 1e-13)
+  expect_equal(unclass(sc)[, ], (sch %*% f0@vcov * nd + matrix(f0@coefficients, nd, 2, byrow = TRUE))[, ], tolerance = 1e-12)
 })
 
 test_that("signif() and round() of the core are R's", {

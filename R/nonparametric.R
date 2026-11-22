@@ -397,7 +397,9 @@ aj <- function(formula, data, level = 0.95) {
   tests <- NULL
   if (nlevels(f$group) > 1L) {
     tests <- do.call(rbind, lapply(seq_len(K), function(j) {
-      g <- tryCatch(gray_test(f$time, f$status, f$group, cause = j), error = function(e) NULL)
+      # the times come from Event(), which already applied (or, with timefix = FALSE, skipped) the
+      # rounding rule: not applied a second time here
+      g <- tryCatch(gray_test(f$time, f$status, f$group, cause = j, timefix = FALSE), error = function(e) NULL)
       if (is.null(g)) data.frame(cause = j, statistic = NA_real_, df = NA_integer_, p.value = NA_real_)
       else data.frame(cause = j, statistic = g$statistic, df = g$df, p.value = g$p.value)
     }))

@@ -244,7 +244,11 @@ acc_frailty <- function(d, label, ties = FALSE) {
     judged <- ds %in% c("weibull", "gompertz", "exponential")
     gain <- if (failed(p) || failed(r)) NA_real_ else tryCatch(p@loglik - attr(r, "loglik"), error = function(e) NA_real_)
     tl <- if (judged && !(is.finite(gain) && gain > 1e-3)) "optimiser" else "info"
-    nt <- if (is.finite(gain) && gain > 1e-3) sprintf("SurvX log-likelihood higher by %.2g: the reference did not reach the maximum", gain) else ""
+    nt <- if (!judged) {
+      # parfm multiplies the hazard of these baselines by exp(x'b) (a PH model); parsurv uses them as AFT
+      # models. The likelihoods belong to different models, so neither is judged nor compared in 1c.
+      "different models: parfm puts the covariates on the hazard, parsurv on the time scale (AFT); reported only"
+    } else if (is.finite(gain) && gain > 1e-3) sprintf("SurvX log-likelihood higher by %.2g: the reference did not reach the maximum", gain) else ""
     check("frailty", "parsurv + frailty()", "parfm::parfm", label, paste(ds, "log-likelihood"),
           if (failed(p)) p else attempt(p@loglik), if (failed(r)) r else attempt(attr(r, "loglik")), tol = tl, note = nt)
     check("frailty", "parsurv + frailty()", "parfm::parfm", label, paste(ds, "frailty variance"),

@@ -98,6 +98,15 @@
 
 ## Improvements to existing functions
 
+* `time_effects()` is faster, with identical results: the design of the split data (the products
+  of the covariates with the time functions) is built in one call of the compiled core instead of
+  one call per column, the comparison and effect tables are built once instead of row by row, and
+  the bootstrap refits no longer compute the effect curves used only for plots.
+* Confidence intervals of cumulative incidences (`aj()`, `predict()` and `cif_data()` of the
+  regression models) are computed about three times faster: `F^a` as `exp(a log F)` with one
+  logarithm per point (the same limits up to rounding, below 1e-12 relative). `aj()` no longer
+  applies the rounding rule for tied times a second time in Gray's test (the times from `Event()`
+  have it already, and with `Event(..., timefix = FALSE)` it is now skipped there too, as asked).
 * `directcif(estimation = "weighted")`: new argument `variance`. The default, `"ipcw"`, is a
   sandwich variance that includes the effect of estimating the censoring distribution (the exact
   influence of each subject with the Kaplan-Meier estimate recomputed; the discrete form of the
@@ -148,6 +157,9 @@
 
 ## Documentation and validation
 
+* Validation report: the section on which package reached the higher log-likelihood leaves out
+  the log-normal and log-logistic frailty models of `parfm`, which put the covariates on the hazard
+  while `parsurv()` uses them as AFT models; their likelihoods belong to different models.
 * New help pages `?Interval`, `?turnbull`, `?frailty`, `?time_effects`, `?adjusted_risk` and
   `?model_scan`; sections on interval-censored data in `?parsurv` and `?directcif`; `?cox` lists
   `frailty()`.

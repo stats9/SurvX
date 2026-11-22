@@ -480,17 +480,26 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
 # design of the split data with the chosen form of every column: base columns, then for every column
 # with a time-varying form the products x * B(t); `map` says where each column's coefficients are
 .te_design <- function(Xs, stop, term_of, sel, bases) {
-  cols <- list(Xs); map <- list(); off <- ncol(Xs)
+  map <- list(); off <- ncol(Xs)
+  Bs <- list(); src <- integer(0)                     # bases of the time-varying columns and their source column
   for (j in seq_len(ncol(Xs))) {
     tm <- term_of[j]; f <- sel[[tm]] %||% "constant"
     b <- bases[[tm]][[f]] %||% NULL
     if (is.null(b) || b$q == 0L) { map[[j]] <- list(col = j, form = "constant", tv = integer(0), basis = NULL); next }
     Bm <- b$B(stop)
-    cols[[length(cols) + 1L]] <- .sx_ew("mul", Bm, Xs[, j])
+    Bs[[length(Bs) + 1L]] <- Bm
+    src <- c(src, rep.int(j, ncol(Bm)))
     map[[j]] <- list(col = j, form = f, tv = off + seq_len(ncol(Bm)), basis = b)
     off <- off + ncol(Bm)
   }
-  X <- do.call(cbind, cols)
+  # all products x_j * B(t) in one call of the C++ core: the bases side by side times the matching
+  # covariate columns, element by element
+  X <- if (length(Bs)) {
+    Bmat <- do.call(cbind, Bs)
+    P <- .sx_ew("mul", Bmat, Xs[, src, drop = FALSE])
+    dim(P) <- dim(Bmat)
+    cbind(Xs, P)
+  } else Xs
   nm <- colnames(Xs)
   for (j in seq_along(map)) if (length(map[[j]]$tv))
     nm <- c(nm, paste0(colnames(Xs)[j], ":", map[[j]]$form, if (length(map[[j]]$tv) > 1L) seq_along(map[[j]]$tv) else ""))
@@ -545,7 +554,16 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
   base <- fitS(S$X)
   if (is.null(base)) stop(label, ": the model could not be fitted on the split data", call. = FALSE)
   # bases of every form for every term (piecewise without breaks: change point by profile likelihood)
-  bases <- list(); comp <- list()
+  bases <- list()
+  # one row of the comparison table per term and form; the columns grow as vectors and become one
+  # data frame at the end (no data frame per row)
+  cc <- list(term = character(0), form = character(0), label = character(0), loglik = numeric(0), npar = integer(0),
+             extra = integer(0), converged = logical(0))
+  add_comp <- function(term, form, label, loglik, npar, extra, converged) {
+    cc$term <<- c(cc$term, term); cc$form <<- c(cc$form, form); cc$label <<- c(cc$label, label)
+    cc$loglik <<- c(cc$loglik, as.double(loglik)); cc$npar <<- c(cc$npar, as.integer(npar))
+    cc$extra <<- c(cc$extra, as.integer(extra)); cc$converged <<- c(cc$converged, as.logical(converged))
+  }
   for (tm in terms) {
     bases[[tm]] <- list()
     cand <- scr$considered[scr$term == tm]
@@ -553,8 +571,7 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
     for (fs in spec$forms) {
       if (fs$type == "constant") {
         bases[[tm]][["constant"]] <- .te_basis(fs, et, spec$df, spec$breaks)
-        comp[[length(comp) + 1L]] <- data.frame(term = tm, form = "constant", label = "constant", loglik = base$loglik,
-                                                npar = length(base$coefficients), extra = 0L, converged = TRUE, stringsAsFactors = FALSE)
+        add_comp(tm, "constant", "constant", base$loglik, length(base$coefficients), 0L, TRUE)
         next
       }
       if (fs$type == "piecewise" && is.null(spec$breaks)) {
@@ -566,11 +583,9 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
           r <- fitS(dsg$X)
           if (!is.null(r) && (is.null(best) || r$loglik > best$r$loglik)) best <- list(r = r, b = bb)
         }
-        if (is.null(best)) { comp[[length(comp) + 1L]] <- data.frame(term = tm, form = fs$name, label = "step", loglik = NA_real_,
-                                                                      npar = NA_integer_, extra = 1L, converged = FALSE, stringsAsFactors = FALSE); next }
+        if (is.null(best)) { add_comp(tm, fs$name, "step", NA_real_, NA_integer_, 1L, FALSE); next }
         bases[[tm]][[fs$name]] <- best$b
-        comp[[length(comp) + 1L]] <- data.frame(term = tm, form = fs$name, label = best$b$label, loglik = best$r$loglik,
-                                                npar = length(best$r$coefficients), extra = 1L, converged = TRUE, stringsAsFactors = FALSE)
+        add_comp(tm, fs$name, best$b$label, best$r$loglik, length(best$r$coefficients), 1L, TRUE)
         next
       }
       bb <- tryCatch(.te_basis(fs, et, spec$df, spec$breaks), error = function(e) e)
@@ -578,14 +593,11 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
       dsg <- .te_design(S$X, S$stop, term_of, stats::setNames(list(fs$name), tm), stats::setNames(list(stats::setNames(list(bb), fs$name)), tm))
       r <- fitS(dsg$X)
       bases[[tm]][[fs$name]] <- bb
-      comp[[length(comp) + 1L]] <- data.frame(term = tm, form = fs$name, label = bb$label, loglik = if (is.null(r)) NA_real_ else r$loglik,
-                                              npar = if (is.null(r)) NA_integer_ else length(r$coefficients), extra = bb$extra,
-                                              converged = !is.null(r), stringsAsFactors = FALSE)
+      add_comp(tm, fs$name, bb$label, if (is.null(r)) NA_real_ else r$loglik, if (is.null(r)) NA_integer_ else length(r$coefficients),
+               bb$extra, !is.null(r))
     }
   }
-  comp <- if (length(comp)) do.call(rbind, comp) else
-    data.frame(term = character(0), form = character(0), label = character(0), loglik = numeric(0), npar = integer(0),
-               extra = integer(0), converged = logical(0), stringsAsFactors = FALSE)
+  comp <- .df(cc)
   comp$k <- comp$npar + comp$extra
   comp$ic <- .te_ic(comp$loglik, comp$k, nev, spec$criterion)
   ll0 <- base$loglik
@@ -632,9 +644,9 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
                                     "(more than max_rows rows); the forms are evaluated at these points"))
   # effects at chosen times and on a grid for plots
   tq <- sort(unique(times %||% .sx_signif(.sx_quantile(et, c(0.1, 0.25, 0.5, 0.75, 0.9), type = 1L), 2L)))
-  tg <- .sx_seq(min(et), max(et), 101L)
   eff <- .te_effects(fin, fin$vcov, dsg$map, term_of, tq, spec$level)
-  curve <- .te_effects(fin, fin$vcov, dsg$map, term_of, tg, spec$level)
+  # the curves for plots are not needed in bootstrap refits (keep = FALSE)
+  curve <- if (keep) .te_effects(fin, fin$vcov, dsg$map, term_of, .sx_seq(min(et), max(et), 101L), spec$level) else NULL
   out <- list(label = label, cause = k, kind = raw$kind, n = raw$n, nevent = nev, term_of = term_of, screening = scr,
               screening_columns = if (is.null(zp)) NULL else zp$columns, global = if (is.null(zp)) NULL else zp$global,
               comparison = comp, selected = unlist(sel), final = list(coefficients = fin$coefficients, vcov = fin$vcov,
@@ -661,10 +673,15 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
             as.double(z), est = double(nt), se = double(nt), hr = double(nt), lower = double(nt), upper = double(nt), p = double(nt),
             rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
     .sx_rc(r$rc, "time-varying effect")
-    data.frame(column = names(b)[j], term = term_of[j], form = m$form, time = tt, log_hr = r$est, se = r$se,
-               hr = r$hr, lower = r$lower, upper = r$upper, p = r$p, stringsAsFactors = FALSE)
+    r$column <- if (is.null(names(b))) NA_character_ else as.character(names(b)[j])
+    r$term <- as.character(term_of[j]); r$form <- as.character(m$form)
+    r
   })
-  do.call(rbind, out)
+  # one data frame for all columns (one row per column and time)
+  g <- function(f) unlist(lapply(out, `[[`, f), use.names = FALSE)
+  .df(list(column = rep(vapply(out, `[[`, "", "column"), each = nt), term = rep(vapply(out, `[[`, "", "term"), each = nt),
+           form = rep(vapply(out, `[[`, "", "form"), each = nt), time = rep(as.double(tt), length(out)),
+           log_hr = g("est"), se = g("se"), hr = g("hr"), lower = g("lower"), upper = g("upper"), p = g("p")))
 }
 
 # ----------------------------------------------------------------------------------------------

@@ -88,8 +88,11 @@ make_report <- function(cfg, out_dir, missing = character(0)) {
     tx("1b. ACCURACY: every comparison that did not pass", bad)
     # maximised log-likelihoods that differ: the higher one is the better maximum of the same likelihood
     if (!is.null(acc$ours_minus_ref)) {
+      # rows marked "different models" compare likelihoods of two different models: not a question of who
+      # reached the maximum, so they are left out
+      same_model <- if (is.null(acc$note)) rep(TRUE, nrow(acc)) else !grepl("^ *different models", ifelse(is.na(acc$note), "", acc$note))
       ll <- acc[grepl("log-likelihood$", acc$quantity) & !grepl("not below", acc$quantity) & is.finite(acc$ours_minus_ref) &
-                  abs(acc$ours_minus_ref) > 1e-4, , drop = FALSE]
+                  abs(acc$ours_minus_ref) > 1e-4 & same_model, , drop = FALSE]
       if (nrow(ll)) {
         ll$group <- paste(ll$func, "|", ll$reference, "|", ll$quantity)
         lt <- do.call(rbind, lapply(split(ll, ll$group), function(a) data.frame(

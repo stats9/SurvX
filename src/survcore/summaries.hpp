@@ -125,12 +125,18 @@ inline double quantile1_sorted(const std::vector<double>& x, double p) {
 // confidence intervals
 // ---------------------------------------------------------------------------------------------
 // cumulative incidence F with standard error se on the complementary log-log scale:
-// F^exp(-/+ z se / (F log F)); NaN where F is 0 or 1 or se is not finite
+// F^exp(-/+ z se / (F log F)); NaN where F is 0 or 1 or se is not finite.
+// F^a is computed as exp(a log F) with the log F already at hand: one log and three exp instead
+// of a log, two exp and two pow (pow is several times slower than exp in some C libraries, e.g.
+// on Windows, and this runs for every time point of every curve). Same value up to rounding:
+// relative difference below |a log F| x 2.2e-16.
 inline void cif_interval(double F, double se, double zq, double& lower, double& upper) {
   if (!(std::isfinite(F) && std::isfinite(se) && F > 0.0 && F < 1.0)) { lower = upper = kNaN; return; }
-  const double e = zq * se / (F * std::log(F));
-  lower = std::pow(F, std::exp(-e));
-  upper = std::pow(F, std::exp(e));
+  const double L = std::log(F);
+  const double e = zq * se / (F * L);
+  const double a = std::exp(e);
+  lower = std::exp(L / a);
+  upper = std::exp(L * a);
 }
 
 // ---------------------------------------------------------------------------------------------

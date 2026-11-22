@@ -57,7 +57,9 @@
   .sx_rc(r$rc, "confidence interval")
   lower <- upper <- Fv                                    # keeps dim and names
   storage.mode(lower) <- storage.mode(upper) <- "double"
-  lower[] <- ifelse(is.nan(r$lower), NA_real_, r$lower); upper[] <- ifelse(is.nan(r$upper), NA_real_, r$upper)
+  lo <- r$lower; up <- r$upper
+  lo[is.nan(lo)] <- NA_real_; up[is.nan(up)] <- NA_real_          # (no ifelse: this runs on every curve)
+  lower[] <- lo; upper[] <- up
   list(lower = lower, upper = upper)
 }
 

@@ -7,7 +7,8 @@
 ref_cif_interval <- function(Fv, se, zq) {
   ok <- is.finite(Fv) & is.finite(se) & Fv > 0 & Fv < 1
   e <- suppressWarnings(zq * se / (Fv * log(Fv)))
-  lower <- suppressWarnings(Fv^exp(-e)); upper <- suppressWarnings(Fv^exp(e))
+  # F^a written as exp(a log F), as the C++ core computes it (the same number up to rounding)
+  lower <- suppressWarnings(exp(log(Fv) / exp(e))); upper <- suppressWarnings(exp(log(Fv) * exp(e)))
   lower[!ok] <- NA_real_; upper[!ok] <- NA_real_
   list(lower = lower, upper = upper)
 }
