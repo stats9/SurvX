@@ -946,7 +946,7 @@ S7::method(predict, TimeEffects) <- function(object, newdata = NULL, times, caus
     nr <- nrow(Xn); m <- length(tj); K <- length(dHs)
     dH <- unlist(lapply(dHs, .rm))
     r <- .C("SX_cum_predict", as.integer(mode), as.integer(nr), as.integer(m), as.double(tj), as.integer(K), as.double(dH),
-            as.integer(cause0), as.integer(isTRUE(fit@product_limit)), length(times), as.double(times), out = double(nr * length(times)),
+            as.integer(cause0), as.integer(S7::prop_exists(fit, "product_limit") && isTRUE(fit@product_limit)), length(times), as.double(times), out = double(nr * length(times)),
             rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
     .sx_rc(r$rc, "prediction")
     .matrix_rm(r$out, nr, length(times))

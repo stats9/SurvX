@@ -1,3 +1,6 @@
+# the operator of SurvX, for the reference code below
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
 # The R implementations that were replaced by the C++ core (src/capi_support.cpp and later
 # modules), kept as references: test-core-parity.R checks that the core gives the same numbers.
 
@@ -634,7 +637,7 @@ ref_csc_cif_general <- function(object, Xn, sn, times, cause) {
 # tt(): splitting of follow-up
 ref_tt_split <- function(f, weights, tt) {
   time <- f$time; status <- f$status; n <- length(time)
-  entry <- f$entry SurvX:::`%||%` rep(0, n)
+  entry <- f$entry %||% rep(0, n)
   et <- sort(unique(time[status == 1L]))
   lo <- findInterval(entry, et)                      # event times <= entry
   hi <- findInterval(time, et, left.open = TRUE)     # event times < time
