@@ -180,4 +180,14 @@ void SX_direct_eval_ic(int* n, int* p, int* K, double* time, double* time2, int*
 void SX_turnbull(int* n, double* L, double* R, int* has_w, double* w, int* max_iter, double* tol, int* n_int, double* lo, double* hi, double* mass, int* a, int* b, double* info_d, int* info_i, int* rc) {
   *rc = sc_turnbull(*n, L, R, *has_w ? w : nullptr, *max_iter, *tol, n_int, lo, hi, mass, a, b, info_d, info_i);
 }
+void SX_par_frailty(int* n, int* p, int* dist, int* aft, int* nk, double* knots, double* time, int* status, double* X, int* cluster, int* C, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, double* shape, double* rate, int* rc) {
+  sc_fit_info f = sc_fit_info();
+  *rc = sc_par_frailty(*n, *p, *dist, *aft, *nk, knots, time, status, X, cluster, *C, init, *max_iter, *tol, theta, var, &f, shape, rate);
+  put(f, info_d, info_i);
+}
+void SX_cox_frailty(int* n, int* p, double* time, int* status, double* X, int* cluster, int* C, double* init, int* max_iter, double* tol, double* est, double* var, double* info_d, int* info_i, int* K, double* tk, double* hk, double* shape, double* rate, int* rc) {
+  sc_fit_info f = sc_fit_info();
+  *rc = sc_cox_frailty(*n, *p, time, status, X, cluster, *C, init, *max_iter, *tol, est, var, &f, K, tk, hk, shape, rate);
+  put(f, info_d, info_i);
+}
 }  // extern "C"

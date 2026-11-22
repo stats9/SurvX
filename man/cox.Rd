@@ -38,7 +38,7 @@ cox(formula, data, ties = c("efron", "breslow"), weights = NULL, robust = FALSE,
   \code{status} must be 0 (censored) or 1 (event); \code{time} must be positive and larger than
   \code{entry}. On the right-hand side, numeric covariates, factors, interactions (\code{a * b}),
   transformations (\code{log(x)}, \code{I(age / 10)}) and splines (\code{splines::ns(x, 3)}) work
-  as in \code{\link[stats]{lm}}. Two special terms are recognised:
+  as in \code{\link[stats]{lm}}. These special terms are recognised:
   \itemize{
     \item \code{strata(v1, v2, ...)}: a separate baseline hazard for every combination of the
       variables, with common covariate effects. Use it for a variable that violates proportional
@@ -50,6 +50,8 @@ cox(formula, data, ties = c("efron", "breslow"), weights = NULL, robust = FALSE,
       with the argument \code{tt}: \code{x + tt(x)} gives the log hazard ratio
       \eqn{\beta + \gamma g(t)} at time \eqn{t}. Use it when \code{\link{ph_test}} shows that the
       effect of \code{x} changes over time and that effect is of interest.
+    \item \code{frailty(id)}: a shared gamma frailty for the clusters \code{id}; the model is
+      fitted by its marginal likelihood and returns a \code{FrailtyFit} (see \code{\link{frailty}}).
   }}
 \item{data}{a data frame containing the variables of the formula. Rows with a missing value in
   any of these variables are removed (the number of rows used is shown by \code{nobs()} and in the

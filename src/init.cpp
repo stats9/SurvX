@@ -49,6 +49,8 @@ static const R_CMethodDef c_methods[] = {
   {"SX_direct_fit_ic", (DL_FUNC) &SX_direct_fit_ic, 23, NULL},
   {"SX_direct_eval_ic", (DL_FUNC) &SX_direct_eval_ic, 17, NULL},
   {"SX_turnbull", (DL_FUNC) &SX_turnbull, 16, NULL},
+  {"SX_par_frailty", (DL_FUNC) &SX_par_frailty, 21, NULL},
+  {"SX_cox_frailty", (DL_FUNC) &SX_cox_frailty, 20, NULL},
   {NULL, NULL, 0, NULL}
 };
 

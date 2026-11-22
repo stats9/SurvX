@@ -60,6 +60,7 @@ competing risks treat it correctly.
 | An effect measure without proportional hazards | `rmst()` |
 | How much would the risk change if everyone were treated? (adjusted, causal) | `adjusted_risk()` |
 | The event is only known to have happened between two visits (interval censoring) | `Interval()` with `turnbull()`, `parsurv()`, `directcif()` |
+| Subjects in clusters (centres, families, recurrent events) with shared unmeasured risk | `cox()` or `parsurv()` with `+ frailty(id)` |
 | How good are the predictions? Which model is best? | `brier_score()`, `compare_models()` |
 
 The same table is in `?SurvX`.

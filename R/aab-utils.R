@@ -34,14 +34,18 @@
 }
 
 .sx_frame <- function(formula, data, entry_ok = FALSE, what = "this function", specials_ok = FALSE, tt_ok = FALSE,
-                      interval_ok = FALSE) {
+                      interval_ok = FALSE, frailty_ok = FALSE) {
   if (missing(data) || is.null(data)) data <- environment(formula)
   # strata(), cluster() and tt() are read from the formula by SurvX itself (see .sx_specials_env), so
   # they work without survival and are never mistaken for ordinary covariates
-  tt0 <- stats::terms(formula, specials = c("strata", "cluster", "tt"), data = data)
+  tt0 <- stats::terms(formula, specials = c("strata", "cluster", "tt", "frailty"), data = data)
   sp <- attr(tt0, "specials")
-  has_sp <- !is.null(sp$strata) || !is.null(sp$cluster)
-  if (has_sp && !specials_ok)
+  if (!is.null(sp$frailty) && !frailty_ok)
+    stop("frailty() (shared gamma frailty) is available in cox() and parsurv(), not in ", what, call. = FALSE)
+  has_sp <- !is.null(sp$strata) || !is.null(sp$cluster) || !is.null(sp$frailty)
+  if (!is.null(sp$frailty) && (!is.null(sp$strata) || !is.null(sp$cluster) || !is.null(sp$tt)))
+    stop("frailty() cannot be combined with strata(), cluster() or tt()", call. = FALSE)
+  if ((!is.null(sp$strata) || !is.null(sp$cluster)) && !specials_ok)
     stop("strata() and cluster() are available in cox() and csc() with a Cox baseline, not in ", what, call. = FALSE)
   if (!is.null(sp$tt) && !tt_ok)
     stop("tt() (time-varying coefficients) is available in cox(), not in ", what, call. = FALSE)
@@ -64,11 +68,12 @@
   if (!entry_ok && !is_ic) .no_entry(y, what)
   tt <- attr(mf, "terms")
   strata <- NULL; strata_levels <- NULL; strata_vars <- NULL; cluster <- NULL; cluster_var <- NULL
+  frailty <- NULL; frailty_var <- NULL
   if (has_sp) {
     fac <- attr(tt, "factors")
     vars <- rownames(fac)
     drop_terms <- integer(0)
-    for (nm in c("strata", "cluster")) {
+    for (nm in c("strata", "cluster", "frailty")) {
       ix <- sp[[nm]]
       if (is.null(ix)) next
       for (i in ix) {
@@ -82,9 +87,12 @@
         g <- if (length(sv) == 1L) sv[[1L]] else interaction(sv, drop = TRUE, sep = ", ")
         g <- droplevels(as.factor(g))
         strata_levels <- levels(g); strata <- as.integer(g) - 1L; strata_vars <- vars[ix]
-      } else {
+      } else if (nm == "cluster") {
         if (length(ix) > 1L) stop("only one cluster() term is allowed", call. = FALSE)
         cluster <- mf[[vars[ix]]]; cluster_var <- vars[ix]
+      } else {
+        if (length(ix) > 1L) stop("only one frailty() term is allowed", call. = FALSE)
+        frailty <- mf[[vars[ix]]]; frailty_var <- vars[ix]
       }
     }
     tt <- if (length(unique(drop_terms)) == ncol(fac)) stats::terms(stats::update(formula, . ~ 1))
@@ -111,7 +119,7 @@
        entry = if (!is_ic && ncol(y) >= 3L) as.double(y[, 3L]) else NULL,
        time2 = if (is_ic) as.double(y[, 2L]) else NULL,
        strata = strata, strata_levels = strata_levels, strata_vars = strata_vars,
-       cluster = cluster, cluster_var = cluster_var, tt_cols = tt_cols)
+       cluster = cluster, cluster_var = cluster_var, tt_cols = tt_cols, frailty = frailty, frailty_var = frailty_var)
 }
 
 # environment in which strata() and cluster() mean what SurvX needs: strata() combines its
@@ -123,6 +131,7 @@
     if (length(a) == 1L) as.factor(a[[1L]]) else interaction(a, drop = TRUE, sep = sep)
   }
   e$cluster <- function(x) x
+  e$frailty <- function(x) x
   e$tt <- function(x) {
     if (!is.numeric(x) && !is.logical(x))
       stop("tt() needs a numeric covariate; for a factor, create 0/1 indicator variables", call. = FALSE)

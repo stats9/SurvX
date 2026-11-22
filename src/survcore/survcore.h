@@ -275,6 +275,13 @@ int sc_par_fit(int n, int p, int dist, int aft, int nk, const double* knots, con
 int sc_par_fit_ic(int n, int p, int dist, int aft, int nk, const double* knots, const double* time, const double* time2,
                   const int* type, const double* X, const double* init, int max_iter, double tol, double* theta,
                   double* var, sc_fit_info* info);
+/* Shared gamma frailty (survcore/frailty.hpp). */
+int sc_par_frailty(int n, int p, int dist, int aft, int nk, const double* knots, const double* time, const int* status,
+                   const double* X, const int* cluster, int C, const double* init, int max_iter, double tol,
+                   double* theta, double* var, sc_fit_info* info, double* shape, double* rate);
+int sc_cox_frailty(int n, int p, const double* time, const int* status, const double* X, const int* cluster, int C,
+                   const double* init, int max_iter, double tol, double* est, double* var, sc_fit_info* info,
+                   int* K_out, double* tk, double* hk, double* shape, double* rate);
 /* Turnbull NPMLE of a survival function from interval-censored data (survcore/interval.hpp). */
 int sc_turnbull(int n, const double* L, const double* R, const double* w, int max_iter, double tol, int* n_int,
                 double* lo, double* hi, double* mass, int* a, int* b, double* info_d, int* info_i);

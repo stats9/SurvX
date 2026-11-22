@@ -32,3 +32,4 @@ validation/validation_results/
 check_time_effects*
 check_adjusted_risk*
 check_interval*
+check_frailty*

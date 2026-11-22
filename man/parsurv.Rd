@@ -28,7 +28,8 @@ parsurv(formula, data, baseline = "weibull", scale = NULL, df = 3L, knots = NULL
 \item{formula}{\code{Event(time, status) ~ covariates} with status 0/1;
   \code{Event(time, status, entry = entry)} for delayed entry (left truncation);
   \code{Interval(left, right) ~ covariates} for interval-censored times (see the section
-  Interval-censored data). Covariates as in \code{\link[stats]{lm}}.}
+  Interval-censored data); \code{+ frailty(id)} for a shared gamma frailty of the clusters
+  \code{id} (see \code{\link{frailty}}). Covariates as in \code{\link[stats]{lm}}.}
 \item{data}{a data frame. Rows with missing values in the variables of the formula are removed.}
 \item{baseline}{the distribution:
   \tabular{lll}{

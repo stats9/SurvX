@@ -22,6 +22,7 @@ reference packages (see the \code{Validation} section of each help page).
   How does an effect change over time? \tab \code{\link{time_effects}} \cr
   Adjusted absolute risks and causal contrasts \tab \code{\link{adjusted_risk}} \cr
   Event times known only between two visits (interval censoring) \tab \code{\link{Interval}}, \code{\link{turnbull}}, \code{\link{parsurv}}, \code{\link{directcif}} \cr
+  Clustered subjects with shared unmeasured risk (frailty) \tab \code{\link{cox}} or \code{\link{parsurv}} with \code{+ \link{frailty}(id)} \cr
   How do covariates change the rate of each cause? \tab \code{\link{csc}} \cr
   How do covariates change the risk (cumulative incidence) of one cause? \tab \code{\link{fg}},
     \code{\link{directcif}} \cr

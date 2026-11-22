@@ -77,3 +77,4 @@ to the established package and write a text file and a PDF of the figures:
 |---|---|---|
 | `check_time_effects.R` | `time_effects()`, `adjusted_risk()` | `survival::coxph(tt = )` |
 | `check_interval.R` | `Interval()`, `turnbull()`, `parsurv()` and `directcif()` with interval-censored data | `survival::survreg(type = "interval2")`, `interval::icfit`/`ictest`, `icenReg::ic_np`, `flexsurv::flexsurvreg` (when installed) |
+| `check_frailty.R` | `cox()` and `parsurv()` with `frailty()` | `survival::coxph(frailty())`, `frailtyEM::emfrail`, `parfm::parfm` (when installed) |

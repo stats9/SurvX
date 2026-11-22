@@ -291,6 +291,31 @@ With competing risks and a known type of event, `directcif(Interval(left, right,
 fits the direct models for the cumulative incidence with $F_k(R) - F_k(L)$ (see the competing
 risks vignette).
 
+## 11. Clustered data: shared frailty
+
+When subjects come in clusters (patients in centres, members of a family, recurrent events of a
+person) they share unmeasured risk factors. `+ frailty(id)` gives every cluster a gamma-distributed
+factor that multiplies the hazards of its members; the hazard ratios then compare subjects within
+a cluster, and the frailty variance measures how much the clusters differ:
+
+```{r frailty}
+set.seed(4)
+C <- 60; m <- 5
+id <- rep(seq_len(C), each = m)
+z <- rgamma(C, 2, 2)[id]                                 # frailty variance 0.5
+age <- rnorm(C * m); trt <- rbinom(C * m, 1, 0.5)
+tt <- rweibull(C * m, 1.3, (0.1 * z * exp(0.4 * age - 0.6 * trt))^(-1 / 1.3))
+cs <- runif(C * m, 0, 15)
+cl <- data.frame(time = pmin(tt, cs), status = as.integer(tt <= cs), age, trt, id)
+fcf <- cox(Event(time, status) ~ age + trt + frailty(id), data = cl)
+fcf
+```
+
+`predict(fcf, newdata, times, frailty = "marginal")` gives the survival of a new cluster,
+`"conditional"` that of an average cluster and `"cluster"` that of an observed one given its data;
+`plot(fcf)` shows the estimated frailty of every cluster. `parsurv(... + frailty(id))` fits the
+same model with a parametric baseline.
+
 ## References
 
 * Kaplan EL, Meier P (1958). Nonparametric estimation from incomplete observations. *JASA*, 53,
@@ -309,6 +334,8 @@ risks vignette).
   period. *Mathematical Modelling*, 7, 1393-1512.
 * Cole SR, Hernan MA (2004). Adjusted survival curves with inverse probability weights. *Computer
   Methods and Programs in Biomedicine*, 75, 45-49.
+* Klein JP (1992). Semiparametric estimation of random effects using the Cox model based on the EM
+  algorithm. *Biometrics*, 48, 795-806.
 * Turnbull BW (1976). The empirical distribution function with arbitrarily grouped, censored and
   truncated data. *JRSS B*, 38, 290-295.
 * Finkelstein DM (1986). A proportional hazards model for interval-censored failure time data.

@@ -130,7 +130,8 @@
 #' @param formula \code{Event(time, status) ~ covariates} with status 0/1;
 #'   \code{Event(time, status, entry = entry)} for delayed entry (left truncation);
 #'   \code{Interval(left, right) ~ covariates} for interval-censored times (see the section
-#'   Interval-censored data). Covariates as in \code{\link[stats]{lm}}.
+#'   Interval-censored data); \code{+ frailty(id)} for a shared gamma frailty of the clusters
+#'   \code{id} (see \code{\link{frailty}}). Covariates as in \code{\link[stats]{lm}}.
 #' @param data a data frame. Rows with missing values in the variables of the formula are removed.
 #' @param baseline the distribution:
 #'   \tabular{lll}{
@@ -359,7 +360,8 @@ parsurv <- function(formula, data, baseline = "weibull", scale = NULL, df = 3L, 
   cl <- match.call()
   dist <- .par_dist(baseline)
   scale <- .par_scale(dist, scale)
-  f <- .sx_frame(formula, data, entry_ok = TRUE, what = "parsurv()", interval_ok = TRUE)
+  f <- .sx_frame(formula, data, entry_ok = TRUE, what = "parsurv()", interval_ok = TRUE, frailty_ok = TRUE)
+  if (!is.null(f$frailty)) return(.par_frailty(cl, f, dist, scale, init, max_iter, tol, df, knots, cuts))
   if (!is.null(f$time2)) {
     if (any(f$status > 1L))
       stop("parsurv() is for one event; for interval-censored competing risks use directcif()", call. = FALSE)

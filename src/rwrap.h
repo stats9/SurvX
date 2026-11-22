@@ -48,6 +48,8 @@ void SX_par_fit_ic(int* n, int* p, int* dist, int* aft, int* nk, double* knots, 
 void SX_direct_fit_ic(int* n, int* p, int* K, double* time, double* time2, int* cause, double* X, int* alpha_free, double* alpha_value, int* baseline, int* n_knots, double* knots, int* constraint, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, double* diag, int* rc);
 void SX_direct_eval_ic(int* n, int* p, int* K, double* time, double* time2, int* cause, double* X, int* alpha_free, double* alpha_value, int* baseline, int* n_knots, double* knots, double* theta, double* loglik, double* grad, double* info_matrix, int* rc);
 void SX_turnbull(int* n, double* L, double* R, int* has_w, double* w, int* max_iter, double* tol, int* n_int, double* lo, double* hi, double* mass, int* a, int* b, double* info_d, int* info_i, int* rc);
+void SX_par_frailty(int* n, int* p, int* dist, int* aft, int* nk, double* knots, double* time, int* status, double* X, int* cluster, int* C, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, double* shape, double* rate, int* rc);
+void SX_cox_frailty(int* n, int* p, double* time, int* status, double* X, int* cluster, int* C, double* init, int* max_iter, double* tol, double* est, double* var, double* info_d, int* info_i, int* K, double* tk, double* hk, double* shape, double* rate, int* rc);
 #ifdef __cplusplus
 }
 #endif

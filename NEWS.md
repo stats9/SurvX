@@ -1,5 +1,13 @@
 # SurvX (development version)
 
+* Shared gamma frailty models: `+ frailty(id)` in the formula of `cox()` (Breslow baseline profiled
+  out by EM, Newton on the profile likelihood of the coefficients and the frailty variance, whose
+  curvature gives standard errors that account for the estimation of the variance) and of
+  `parsurv()` (every family, marginal likelihood with exact derivatives). The output gives the
+  conditional hazard ratios, the frailty variance with its interval, the likelihood ratio test of
+  no frailty (half chi-square), Kendall's tau, the empirical Bayes frailty of every cluster, and
+  `predict(fit, frailty = "marginal" | "conditional" | "cluster")`; `plot()` draws the cluster
+  frailties or the marginal and conditional survival curves.
 * Interval-censored data (the event is only known to lie between two visits):
   * New `Interval(left, right, cause)` outcome: interval-, left- and right-censored and exact times
     can be mixed in one data set.

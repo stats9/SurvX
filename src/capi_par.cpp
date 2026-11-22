@@ -11,6 +11,7 @@
 #include "survcore/parametric.hpp"
 #include "survcore/cure.hpp"
 #include "survcore/interval.hpp"
+#include "survcore/frailty.hpp"
 
 using namespace survcore;
 
@@ -97,6 +98,70 @@ int sc_par_fit_ic(int n, int p, int dist, int aft, int nk, const double* knots, 
   if (info) {
     info->loglik_init = r.ll_init; info->loglik = r.ll; info->grad_maxabs = r.grad_maxabs;
     info->iterations = r.iterations; info->converged = r.converged; info->flags = r.flags; info->n_events = events;
+  }
+  return 0;
+} catch (...) { return -9; }
+
+// Shared gamma frailty, parametric baseline (survcore/frailty.hpp): cluster 0-based in 0..C-1;
+// init has the parameters of the family and phi = log theta last; shape, rate (length C) receive the
+// posterior of every cluster frailty.
+int sc_par_frailty(int n, int p, int dist, int aft, int nk, const double* knots, const double* time, const int* status,
+                   const double* X, const int* cluster, int C, const double* init, int max_iter, double tol,
+                   double* theta, double* var, sc_fit_info* info, double* shape, double* rate) try {
+  ParSpec sp;
+  if (n <= 0 || C <= 0 || !time || !status || !cluster || !init || (p > 0 && !X) || !spec_of(dist, aft, p, nk, knots, sp)) return -1;
+  int events = 0;
+  for (int i = 0; i < n; ++i) {
+    if (!std::isfinite(time[i]) || !(time[i] > 0.0) || cluster[i] < 0 || cluster[i] >= C) return -2;
+    for (int j = 0; j < p; ++j) if (!std::isfinite(X[static_cast<std::size_t>(i) * p + j])) return -2;
+    if (status[i]) ++events;
+  }
+  if (!events) return -3;
+  ParData dat; dat.n = n; dat.time = time; dat.status = status; dat.X = X;
+  ParFrailtyModel m{sp, dat, cluster, C};
+  const std::size_t P = sp.npar() + 1;
+  FitResult r = par_newton(m, std::vector<double>(init, init + P), max_iter, tol);
+  for (std::size_t j = 0; j < P; ++j) theta[j] = r.beta[j];
+  if (var) for (std::size_t j = 0; j < P * P; ++j) var[j] = r.var.n == P ? r.var.a[j] : kNaN;
+  if (info) {
+    info->loglik_init = r.ll_init; info->loglik = r.ll; info->grad_maxabs = r.grad_maxabs;
+    info->iterations = r.iterations; info->converged = r.converged; info->flags = r.flags; info->n_events = events;
+  }
+  if (shape && rate) {
+    std::vector<double> a, b;
+    m.posterior(r.beta, a, b);
+    for (int c = 0; c < C; ++c) { shape[c] = a[c]; rate[c] = b[c]; }
+  }
+  return 0;
+} catch (...) { return -9; }
+
+// Shared gamma frailty, Breslow baseline: est = (beta, phi); tk, hk (room for n) receive the distinct
+// event times and the baseline hazard jumps (K of them in *K_out)
+int sc_cox_frailty(int n, int p, const double* time, const int* status, const double* X, const int* cluster, int C,
+                   const double* init, int max_iter, double tol, double* est, double* var, sc_fit_info* info,
+                   int* K_out, double* tk, double* hk, double* shape, double* rate) try {
+  if (n <= 0 || C <= 0 || !time || !status || !cluster || !init || (p > 0 && !X)) return -1;
+  int events = 0;
+  for (int i = 0; i < n; ++i) {
+    if (!std::isfinite(time[i]) || !(time[i] > 0.0) || cluster[i] < 0 || cluster[i] >= C) return -2;
+    for (int j = 0; j < p; ++j) if (!std::isfinite(X[static_cast<std::size_t>(i) * p + j])) return -2;
+    if (status[i]) ++events;
+  }
+  if (!events) return -3;
+  const CoxFrailtyData d = cox_frailty_data(n, p, time, status, X, cluster, C);
+  CoxFrailtyResult r = cox_frailty_fit(d, std::vector<double>(init, init + p + 1), max_iter, tol);
+  const std::size_t P = p + 1;
+  for (std::size_t j = 0; j < P; ++j) est[j] = r.est[j];
+  if (var) for (std::size_t j = 0; j < P * P; ++j) var[j] = r.var.n == P ? r.var.a[j] : kNaN;
+  if (info) {
+    info->loglik_init = kNaN; info->loglik = r.ll; info->grad_maxabs = kNaN;
+    info->iterations = r.iterations; info->converged = r.converged; info->flags = r.flags; info->n_events = events;
+  }
+  if (K_out) *K_out = d.K;
+  if (tk && hk) for (int k = 0; k < d.K; ++k) { tk[k] = d.tk[k]; hk[k] = r.state.h.size() == static_cast<std::size_t>(d.K) ? r.state.h[k] : kNaN; }
+  if (shape && rate) {
+    const double th = std::exp(r.est[p]);
+    for (int c = 0; c < C; ++c) { shape[c] = 1.0 / th + d.D[c]; rate[c] = 1.0 / th + r.state.Lam[c]; }
   }
   return 0;
 } catch (...) { return -9; }

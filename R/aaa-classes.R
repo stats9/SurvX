@@ -206,6 +206,26 @@ HazardFit <- S7::new_class("HazardFit", package = "SurvX",
   ))
 
 # result of adjusted_risk(): risks by treatment value and their contrasts, by method
+# shared gamma frailty models: cox(... + frailty(id)) and parsurv(... + frailty(id))
+FrailtyFit <- S7::new_class("FrailtyFit", parent = SurvXFit, package = "SurvX",
+  properties = list(
+    kind = S7::class_character,          # "cox" or "parametric"
+    base = S7::class_any,                # parametric: a ParSurvFit with the baseline parameters
+    theta = S7::class_numeric,
+    theta_se = S7::class_numeric,
+    vcov_full = S7::class_any,           # coefficients and log(theta)
+    boundary = S7::class_logical,
+    loglik0 = S7::class_numeric,         # without frailty
+    lrt = S7::class_any,
+    cluster = S7::class_any,             # cluster labels
+    cluster_index = S7::class_integer,   # 1-based cluster of every row
+    cluster_var = S7::class_character,
+    shape = S7::class_numeric,
+    rate = S7::class_numeric,
+    basehaz = S7::class_any,             # cox: data.frame(time, hazard) of the Breslow jumps
+    loglik_null = S7::class_numeric
+  ))
+
 TurnbullFit <- S7::new_class("TurnbullFit", package = "SurvX",
   properties = list(
     model_call = S7::class_any,

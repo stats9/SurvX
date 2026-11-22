@@ -103,6 +103,13 @@
   austin_stuart2015 = c("Austin & Stuart (2015)", "Austin PC, Stuart EA (2015). Moving towards best practice when using inverse probability of treatment weighting (IPTW) using the propensity score to estimate causal treatment effects in observational studies. Statistics in Medicine 34:3661-3679."),
   hernan_robins2020 = c("Hernan & Robins (2020)", "Hernan MA, Robins JM (2020). Causal Inference: What If. Chapman and Hall/CRC, Boca Raton."),
   ozenne2020 = c("Ozenne et al. (2020)", "Ozenne BMH, Scheike TH, Staerk L, Gerds TA (2020). On the estimation of average treatment effects with right-censored time to event outcome and competing risks. Biometrical Journal 62:751-763."),
+  clayton1978 = c("Clayton (1978)", "Clayton DG (1978). A model for association in bivariate life tables and its application in epidemiological studies of familial tendency in chronic disease incidence. Biometrika 65:141-151."),
+  klein1992 = c("Klein (1992)", "Klein JP (1992). Semiparametric estimation of random effects using the Cox model based on the EM algorithm. Biometrics 48:795-806."),
+  nielsen1992 = c("Nielsen et al. (1992)", "Nielsen GG, Gill RD, Andersen PK, Sorensen TIA (1992). A counting process approach to maximum likelihood estimation in frailty models. Scandinavian Journal of Statistics 19:25-43."),
+  murphy_vdv2000 = c("Murphy & van der Vaart (2000)", "Murphy SA, van der Vaart AW (2000). On profile likelihood. Journal of the American Statistical Association 95:449-465."),
+  self_liang1987 = c("Self & Liang (1987)", "Self SG, Liang KY (1987). Asymptotic properties of maximum likelihood estimators and likelihood ratio tests under nonstandard conditions. Journal of the American Statistical Association 82:605-610."),
+  duchateau2008 = c("Duchateau & Janssen (2008)", "Duchateau L, Janssen P (2008). The Frailty Model. Springer, New York."),
+  balan_putter2019 = c("Balan & Putter (2019)", "Balan TA, Putter H (2019). frailtyEM: an R package for estimating semiparametric shared frailty models. Journal of Statistical Software 90(7):1-29."),
   turnbull1976 = c("Turnbull (1976)", "Turnbull BW (1976). The empirical distribution function with arbitrarily grouped, censored and truncated data. Journal of the Royal Statistical Society, Series B 38:290-295."),
   peto1973 = c("Peto (1973)", "Peto R (1973). Experimental survival curves for interval-censored data. Applied Statistics 22:86-91."),
   gentleman_geyer1994 = c("Gentleman & Geyer (1994)", "Gentleman R, Geyer CJ (1994). Maximum likelihood for interval censored data: consistency and computation. Biometrika 81:618-623."),
@@ -139,6 +146,7 @@
            "kalbfleisch2002", "casella2002"),
   residuals = c("cox_snell1968", "schoenfeld1982", "therneau1990", "grambsch1994"),
   ph_test = c("grambsch1994", "therneau2000", "schoenfeld1982"),
+  frailty = c("clayton1978", "klein1992", "nielsen1992", "murphy_vdv2000", "self_liang1987", "duchateau2008", "balan_putter2019"),
   turnbull = c("turnbull1976", "peto1973", "gentleman_geyer1994", "groeneboom_wellner1992", "jongbloed1998", "wellner_zhan1997", "finkelstein1986", "fay_shaw2010",
                "efron1993", "sun2006"),
   Interval = c("turnbull1976", "lindsey_ryan1998", "sun2006"),
@@ -203,6 +211,11 @@
   if (S7::S7_inherits(x, AdjustedRisk))
     return(c(if (x@method != "ipw") "robins1986", if (x@method != "gformula") c("cole_hernan2004", if (x@kind == "competing") "neumann2016", "austin_stuart2015"),
              "hernan_robins2020", if (x@B > 0L) "efron1993"))
+  if (S7::S7_inherits(x, FrailtyFit))
+    return(c("clayton1978", if (x@kind == "cox") c("klein1992", "nielsen1992", "murphy_vdv2000", "breslow1974")
+             else c("kalbfleisch2002", if (x@base@dist == "rp") "royston_parmar2002", if (x@base@dist == "pwexp") "friedman1982",
+                    if (x@base@dist == "gengamma") c("prentice1974", "cox2007")),
+             "self_liang1987", "duchateau2008"))
   if (S7::S7_inherits(x, TurnbullFit))
     return(c("turnbull1976", "peto1973", "wellner_zhan1997", "groeneboom_wellner1992", "jongbloed1998", "gentleman_geyer1994",
              if (!is.null(x@test)) c("finkelstein1986", "fay_shaw2010"), if (x@B > 0L) "efron1993"))
