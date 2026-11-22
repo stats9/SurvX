@@ -2,6 +2,41 @@
 
 ## New methods
 
+* **Further measures of prediction performance** (C++ core, `src/survcore/assess.hpp`):
+  * New `cindex()`: Harrell's and Uno's concordance index, and with competing risks the C index of
+    Wolbers et al. (2009), with the infinitesimal-jackknife standard error of
+    `survival::concordance`, in O(n log n) time (binary indexed trees). For a fitted model it uses
+    the linear predictor (Cox) or the predicted risk at one time. The summaries of `cox()`, `csc()`
+    and `parsurv()` show Harrell's C. C is not added to the comparison tables: it is not a proper
+    measure for risks at a time horizon (Blanche, Kattan & Gerds 2019).
+  * Standard errors of the Brier score and the AUC from influence functions with the censoring
+    weights taken as known (as `riskRegression::Score(conservative = TRUE)`):
+    `brier_score(se = TRUE)`, `auc_t(se = TRUE)`.
+  * `calibration()` also returns the observed/expected ratio with its interval and the integrated
+    calibration index ICI with E50 and E90 (Austin, Harrell & van Klaveren 2020; Cox or Fine-Gray
+    calibration model on a natural spline of cloglog(risk)), and the smooth calibration curve.
+  * `compare_models()`, `cv_compare()` and `model_scan()` (`x@per_time`) report, apparent and
+    cross-validated, the standard errors of the Brier score and AUC, the paired difference of each
+    model from the one with the lowest Brier score with its standard error and p-value, O/E with its
+    interval, ICI, E50 and E90. All existing columns are kept. `print()` shows them; `plot()` has
+    the measures `"ici"` and `"oe"` and draws intervals for the Brier score, AUC and O/E.
+  * `model_scan()` adds the time-averaged (integrated) AUC over the grid (`iauc_cv`) and the mean
+    ICI (`ici_cv`) to its table and printout.
+  * New `decision_curve()`: net benefit of deciding by predicted risks at a time horizon over a
+    range of thresholds, against treating all and none (Vickers & Elkin 2006; Kaplan-Meier or
+    Aalen-Johansen among subjects above the threshold, Vickers et al. 2008), with `print()`,
+    `plot()` and `as.data.frame()`.
+  * New `anova()` method: likelihood-ratio tests of nested models (Cox and cause-specific Cox:
+    partial likelihood, as `survival::anova.coxph`; parametric, cure, frailty, joint and
+    constrained direct models: full likelihood). Refused for Fine-Gray and weighted direct models,
+    whose pseudo-likelihoods do not give valid tests.
+  * New C API entries `sc_assess`, `sc_concordance`, `sc_net_benefit`, `sc_smooth_calibration` and
+    `sc_compare_models3` (the comparison that also returns the predicted risks it scored). The
+    memory check covers them (gcc ASan + UBSan and clang UBSan: 26592 calls; valgrind: 6648 calls, 0 errors, no leaks; invalid inputs refused 11 of 11).
+  * Validation suite (`validation/R/07_assess.R`): against `survival::concordance`,
+    `riskRegression::Score`, `survival::survfit`, `survival::coxph` with `splines::ns`,
+    `survival::finegray`, `dcurves::dca`, `survival::anova.coxph` and `survreg`.
+
 * **Interval-censored data** (the event is only known to lie between two visits):
   * New `Interval(left, right, cause)` outcome: interval-, left- and right-censored and exact times
     can be mixed in one data set.

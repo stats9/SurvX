@@ -22,6 +22,8 @@
 #' @param t the time horizon (a single number).
 #' @param cause cause of interest.
 #' @param groups number of risk groups for calibration.
+#' @param se also return the standard error (see Details).
+#' @param level confidence level of the interval of the AUC and of the observed/expected ratio.
 #' @details
 #' \subsection{Brier score}{
 #' \eqn{BS(t) = n^{-1} \sum_i \hat W_i(t) \{I(T_i \le t, \mathrm{cause}_i = 1) - \hat r_i\}^2},
@@ -43,6 +45,23 @@
 #' (Gerds, Andersen and Kattan 2014). The calibration error is the size-weighted mean absolute
 #' difference.
 #' }
+#' \subsection{Standard errors}{
+#' With \code{se = TRUE} the standard error of the Brier score and of the AUC is
+#' \eqn{\mathrm{sd}(\psi_i)/\sqrt{n}}, where \eqn{\psi_i} is the influence function of subject
+#' \eqn{i} with the censoring weights taken as known (Blanche et al. 2013): the "conservative"
+#' standard errors of \code{riskRegression::Score(conservative = TRUE)}. \code{\link{compare_models}}
+#' and \code{\link{cv_compare}} use the same influence functions for the paired difference of two
+#' models.
+#' }
+#' \subsection{Calibration in the large and smooth calibration}{
+#' \code{calibration()} also returns the observed/expected ratio: the Aalen-Johansen (Kaplan-Meier)
+#' risk at \eqn{t} over the mean predicted risk, with the interval
+#' \eqn{\exp\{\log(O/E) \pm z\, se(O)/O\}}; and the integrated calibration index of Austin, Harrell
+#' and van Klaveren (2020): a Cox model (with competing risks, a Fine-Gray model) of the outcome on a
+#' natural cubic spline of \eqn{\log\{-\log(1 - \hat r)\}} with knots at its 10th, 50th and 90th
+#' percentiles gives a calibrated risk for every subject; ICI, E50 and E90 are the mean, median and
+#' 90th percentile of its absolute difference from the predicted risk.
+#' }
 #' @section Interpreting the result:
 #' \itemize{
 #'   \item Brier score: 0 is perfect; a model that predicts 50\% for everybody scores 0.25. It
@@ -62,9 +81,13 @@
 #' risks. They are about 10 times faster than \code{Score} on \eqn{n = 10000}.
 #' @return
 #' \code{brier_score}: named vector with \code{brier}, \code{brier_null} (Aalen-Johansen
-#'   prediction for everyone) and \code{ipa = 1 - brier / brier_null}. \code{auc_t}: the AUC.
-#'   \code{calibration}: a data frame with mean predicted and observed (Aalen-Johansen) risk per
-#'   group; its attribute \code{"error"} is the size-weighted mean absolute difference.
+#'   prediction for everyone) and \code{ipa = 1 - brier / brier_null}, and with \code{se = TRUE}
+#'   \code{se}. \code{auc_t}: the AUC; with \code{se = TRUE} a vector with \code{auc}, \code{se},
+#'   \code{lower} and \code{upper}. \code{calibration}: a data frame with mean predicted and
+#'   observed (Aalen-Johansen) risk per group; its attribute \code{"error"} is the size-weighted mean
+#'   absolute difference, \code{"oe"} the observed/expected ratio with its interval, \code{"ici"},
+#'   \code{"e50"} and \code{"e90"} the smooth calibration measures and \code{"smooth"} the predicted
+#'   and calibrated risks (\code{NULL} when the calibration model cannot be fitted).
 #' @references
 #' Graf E, Schmoor C, Sauerbrei W, Schumacher M (1999) Assessment and comparison of prognostic
 #'   classification schemes for survival data. Statistics in Medicine 18:2529-2545.
@@ -81,6 +104,9 @@
 #'
 #' Gerds TA, Andersen PK, Kattan MW (2014) Calibration plots for risk prediction models in the
 #'   presence of competing risks. Statistics in Medicine 33:3191-3203.
+#'
+#' Austin PC, Harrell FE, van Klaveren D (2020) Graphical calibration curves and the integrated
+#'   calibration index (ICI) for survival models. Statistics in Medicine 39:2714-2742.
 #'
 #' All references: \code{sx_references("brier_score")}, \code{sx_references("auc_t")},
 #' \code{sx_references("calibration")}.
@@ -106,29 +132,34 @@
 #' plot(cal$predicted, cal$observed, xlim = c(0, 1), ylim = c(0, 1),
 #'      xlab = "predicted risk", ylab = "observed risk"); abline(0, 1, lty = 2)
 #' @export
-brier_score <- function(time, status, risk, t, cause = 1L) {
+brier_score <- function(time, status, risk, t, cause = 1L, se = FALSE) {
   n <- length(time)
   if (length(risk) != n) stop("risk must have one value per subject", call. = FALSE)
   r <- .C("SX_brier", as.integer(n), as.double(time), as.integer(status), as.integer(cause), as.double(risk), as.double(t),
           brier = double(1), null = double(1), ipa = double(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
   .sx_rc(r$rc, "brier_score")
-  c(brier = r$brier, brier_null = r$null, ipa = r$ipa)
+  out <- c(brier = r$brier, brier_null = r$null, ipa = r$ipa)
+  if (isTRUE(se)) out <- c(out, se = unname(.sx_assess(time, status, list(risk), t, cause)$a["brier_se", 1L, 1L]))
+  out
 }
 
 #' @rdname brier_score
 #' @export
-auc_t <- function(time, status, risk, t, cause = 1L) {
+auc_t <- function(time, status, risk, t, cause = 1L, se = FALSE, level = 0.95) {
   n <- length(time)
   if (length(risk) != n) stop("risk must have one value per subject", call. = FALSE)
   r <- .C("SX_auc", as.integer(n), as.double(time), as.integer(status), as.integer(cause), as.double(risk), as.double(t),
           auc = double(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
   .sx_rc(r$rc, "auc_t")
-  r$auc
+  if (!isTRUE(se)) return(r$auc)
+  s <- unname(.sx_assess(time, status, list(risk), t, cause)$a["auc_se", 1L, 1L])
+  z <- .sx_qnorm(.sx_upper_prob(level))
+  c(auc = r$auc, se = s, lower = max(0, r$auc - z * s), upper = min(1, r$auc + z * s))
 }
 
 #' @rdname brier_score
 #' @export
-calibration <- function(time, status, risk, t, cause = 1L, groups = 10L) {
+calibration <- function(time, status, risk, t, cause = 1L, groups = 10L, level = 0.95) {
   n <- length(time)
   if (length(risk) != n) stop("risk must have one value per subject", call. = FALSE)
   r <- .C("SX_calibration", as.integer(n), as.double(time), as.integer(status), as.integer(cause), as.double(risk), as.double(t),
@@ -136,7 +167,15 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L) {
           m = integer(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
   .sx_rc(r$rc, "calibration")
   k <- seq_len(r$m)
-  structure(data.frame(group = k, n = r$size[k], predicted = r$pred[k], observed = r$obs[k]), error = r$error)
+  a <- .sx_assess(time, status, list(risk), t, cause, groups, level)$a[, 1L, 1L]
+  sm <- .C("SX_smooth_calibration", as.integer(n), as.double(time), as.integer(status), as.integer(cause), as.double(risk),
+           as.double(t), observed = double(n), out = double(3), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  if (sm$rc < 0L) .sx_rc(sm$rc, "calibration")
+  o <- order(risk)
+  smooth <- if (sm$rc == 0L) data.frame(predicted = as.double(risk)[o], observed = sm$observed[o]) else NULL
+  structure(data.frame(group = k, n = r$size[k], predicted = r$pred[k], observed = r$obs[k]), error = r$error,
+            oe = unname(a[c("oe", "oe_lower", "oe_upper")]), ici = unname(a["ici"]), e50 = unname(a["e50"]), e90 = unname(a["e90"]),
+            smooth = smooth)
 }
 
 #' Compare direct, Fine-Gray and cause-specific Cox models
@@ -190,6 +229,24 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L) {
 #' within noise; prefer the simpler model when the measures are close. AIC can be compared only among
 #' models with a full likelihood of the same data (joint and constrained direct models, parametric
 #' cause-specific models); see Value.
+#' @section Columns of the table:
+#' Every measure is computed twice, from the predictions of the full-data fit (apparent) and from the
+#' pooled out-of-fold predictions (columns ending in \code{_cv}): \code{brier}, \code{ipa}, \code{auc},
+#' \code{calib_error} (see \code{\link{brier_score}}); \code{brier_se} and \code{auc_se}, standard
+#' errors from influence functions with the censoring weights taken as known (as
+#' \code{riskRegression::Score(conservative = TRUE)}); \code{oe}, \code{oe_lower}, \code{oe_upper},
+#' the observed (Aalen-Johansen) over the mean predicted risk with its interval; \code{ici},
+#' \code{e50}, \code{e90}, the smooth calibration measures of Austin, Harrell and van Klaveren (2020);
+#' \code{brier_diff}, \code{brier_diff_se}, \code{brier_diff_p} and \code{auc_diff},
+#' \code{auc_diff_se}, \code{auc_diff_p}, the paired difference from the model with the lowest Brier
+#' score at that time (named in \code{reference} and \code{reference_cv}), its standard error and the
+#' p-value of the test of no difference. The paired tests use the same subjects for every model, so
+#' they are much more sensitive than comparing two intervals. Cross-validated differences are an
+#' honest guide; their p-values are approximate because the pooled predictions are not independent.
+#'
+#' The concordance index (\code{\link{cindex}}) is deliberately not reported: it is not a proper
+#' measure for risks at a time horizon (Blanche, Kattan and Gerds 2019), so it can prefer a wrong
+#' model. The AUC at the horizon is its proper counterpart.
 #' @return
 #' an S7 object of class \code{ModelComparison}; \code{x@table} has one row per model and
 #'   time, \code{x@fit} one row per model. AIC is reported for the joint and constrained direct models
@@ -205,6 +262,10 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L) {
 #'   Biometrics 63:1283-1287.
 #'
 #' \emph{Measures:} see \code{\link{brier_score}}.
+#' Austin PC, Harrell FE, van Klaveren D (2020). Graphical calibration curves and the integrated
+#'   calibration index (ICI) for survival models. Statistics in Medicine 39:2714-2742.
+#' Blanche P, Kattan MW, Gerds TA (2019). The c-index is not proper for the evaluation of t-year
+#'   predicted risks. Biostatistics 20:347-357.
 #'
 #' All references: \code{sx_references("compare_models")}.
 #' @seealso
@@ -253,20 +314,21 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
   }
   if (length(cspec) && K < 2L) stop("constrained models need at least two causes", call. = FALSE)
   M <- nd + 2L
-  r <- .with_seed(seed, .C("SX_compare", as.integer(n), as.integer(p), as.integer(K), f$time, f$status, .rm(f$X), as.integer(cause),
+  r <- .with_seed(seed, .C("SX_compare3", as.integer(n), as.integer(p), as.integer(K), f$time, f$status, .rm(f$X), as.integer(cause),
           as.integer(nt), as.double(times), as.integer(folds), as.integer(nd),
           as.integer(unname(.base_codes[base])), as.integer(match(lk, c("PH", "PO", "GOR")) - 1L), rep(as.integer(df), nd),
           as.integer(match(est, c("joint", "weighted", "constrained")) - 1L), as.integer(unname(.cond_codes[cd])),
-          metrics = double(M * nt * 8L), fit = double(M * 5L), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX"))
+          metrics = double(M * nt * 8L), fit = double(M * 5L), risk = double(M * 2L * nt * n), rc = integer(1),
+          NAOK = TRUE, PACKAGE = "SurvX"))
   .sx_rc(r$rc, "compare_models")
   suffix <- ifelse(est == "joint", "", ifelse(est == "weighted", ", weighted", paste0(", constrained (G ", cd, ")")))
   names_m <- c(if (nd) paste0("direct ", base, " ", lk, suffix), "Fine-Gray", "cause-specific Cox")
-  a <- array(r$metrics, dim = c(2L, 4L, nt, M))                      # [apparent/cv, metric, time, model]
-  tab <- NULL
-  for (m in seq_len(M)) for (j in seq_len(nt))
-    tab <- rbind(tab, data.frame(model = names_m[m], time = times[j],
-                                 brier = a[1L, 1L, j, m], brier_cv = a[2L, 1L, j, m], ipa = a[1L, 2L, j, m], ipa_cv = a[2L, 2L, j, m],
-                                 auc = a[1L, 3L, j, m], auc_cv = a[2L, 3L, j, m], calib_error = a[1L, 4L, j, m], calib_error_cv = a[2L, 4L, j, m]))
+  # the predicted risks that the core scored, [subject, time, apparent/cross-validated, model]; all
+  # measures are computed from them by .assess_table (with those of the models fitted in R below)
+  rk <- array(r$risk, dim = c(n, nt, 2L, M))
+  keep_risk <- function(x) if (all(is.finite(x))) x else NULL
+  app <- lapply(seq_len(M), function(m) keep_risk(matrix(rk[, , 1L, m], n, nt)))
+  cvr <- lapply(seq_len(M), function(m) if (folds >= 2L) keep_risk(matrix(rk[, , 2L, m], n, nt)) else NULL)
   ft <- .matrix_rm(r$fit, M, 5L)
   fit <- data.frame(model = names_m, loglik = ft[, 1L], npar = ft[, 2L], aic = ft[, 3L], flags = ft[, 4L], folds_not_converged = ft[, 5L])
   fit$aic[!is.finite(fit$aic)] <- NA_real_
@@ -290,8 +352,8 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
     })
     names(cf) <- vapply(cspec, `[[`, "", "name")
     funs <- c(funs, cf)
-    res <- .cv_run(formula, dd, f, funs, times, cause, folds, fold, 10L)
-    tab <- rbind(tab, res$table)
+    res <- .cv_run(formula, dd, f, funs, times, cause, folds, fold)
+    names_m <- c(names_m, names(funs)); app <- c(app, res$app); cvr <- c(cvr, res$cv)
     for (m in seq_along(funs)) {
       ft <- res$fits[[m]]
       ll <- if (is.null(ft)) NA_real_ else as.numeric(logLik(ft))
@@ -302,6 +364,7 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
                                    flags = if (ok) 0 else 1, folds_not_converged = res$failed[m]))
     }
   }
+  tab <- .assess_table(names_m, f$time, f$status, times, cause, app, if (folds >= 2L) cvr else NULL)
   ModelComparison(model_call = cl, table = tab, fit = fit, folds = as.integer(folds), cause = as.integer(cause))
 }
 
@@ -333,7 +396,9 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
 #' @section Interpreting the result:
 #' As for \code{\link{compare_models}}: judge the models on the cross-validated measures (lower Brier
 #' score and calibration error, higher IPA and AUC). The same folds are used for every model, so the
-#' comparison is paired.
+#' comparison is paired. The table has the same columns as that of \code{compare_models} (standard
+#' errors, paired differences from the best model, O/E and ICI; see the section "Columns of the
+#' table" there).
 #' @return
 #' an S7 object of class \code{ModelComparison}: \code{x@table} has one row per model and time
 #'   (columns ending in \code{_cv} are computed from the pooled out-of-fold predictions), \code{x@fit}
@@ -377,8 +442,9 @@ cv_compare <- function(formula, data, models, times, cause = 1L, folds = 5L, see
     if (!is.null(f$frailty)) fold <- .scan_folds_cluster(f$frailty, folds, seed)   # whole clusters
     else fold <- .sx_folds(rep(0L, n), folds, seed)
   }
-  res <- .cv_run(formula, data, f, models, times, cause, folds, fold, groups)
-  tab <- res$table; fit <- NULL
+  res <- .cv_run(formula, data, f, models, times, cause, folds, fold)
+  tab <- .assess_table(names(models), f$time, f$status, times, cause, res$app, if (folds >= 2L) res$cv else NULL, groups)
+  fit <- NULL
   for (m in seq_len(M)) {
     ft <- res$fits[[m]]
     is_direct <- !is.null(ft) && S7::S7_inherits(ft, DirectCIFFit)
@@ -407,26 +473,23 @@ cv_compare <- function(formula, data, models, times, cause = 1L, folds = 5L, see
   stats::predict(fit, newdata = nd, times = times, cause = cause)
 }
 
-# Apparent and K-fold cross-validated measures of a named list of fitting functions; fold: the fold of
-# every row of data (1..folds). Returns the table, the full-data fits and the number of failed folds.
-.cv_run <- function(formula, data, f, models, times, cause, folds, fold, groups = 10L) {
+# Apparent and K-fold cross-validated predictions of a named list of fitting functions; fold: the
+# fold of every row of data (1..folds). Returns the full-data fits, the number of failed folds and
+# the predicted risks (n x nt) of the full-data fits (app) and pooled out of fold (cv; NULL when a
+# fold failed or folds < 2), to be scored by .assess_table.
+.cv_run <- function(formula, data, f, models, times, cause, folds, fold) {
   n <- length(f$time); nt <- length(times); M <- length(models)
   risk_of <- function(fun, train, test) {
     fit <- tryCatch(fun(formula, train), error = function(e) NULL)
     if (is.null(fit)) return(NULL)
     r <- tryCatch(.cv_predict(fit, test, times, cause), error = function(e) NULL)
-    if (is.null(r) || !is.matrix(r) || nrow(r) != nrow(test) || any(!is.finite(r))) return(NULL)
+    if (is.null(r) || !is.matrix(r) || nrow(r) != nrow(test) || ncol(r) != nt || any(!is.finite(r))) return(NULL)
     list(fit = fit, risk = r)
   }
-  measures <- function(risk) {
-    if (is.null(risk)) return(matrix(NA_real_, nt, 4L))
-    unname(.sx_measures(f$time, f$status, risk, times, cause, groups)[, c("brier", "ipa", "auc", "calib"), drop = FALSE])
-  }
-  tab <- NULL; fits <- vector("list", M); failed <- integer(M)
+  fits <- vector("list", M); failed <- integer(M); app <- vector("list", M); cv <- vector("list", M)
   for (m in seq_len(M)) {
     full <- risk_of(models[[m]], data, data)
-    app <- measures(if (is.null(full)) NULL else full$risk)
-    cvm <- matrix(NA_real_, nt, 4L)
+    if (!is.null(full)) { fits[[m]] <- full$fit; app[[m]] <- unname(full$risk) }
     if (folds >= 2L) {
       pooled <- matrix(NA_real_, n, nt)
       for (k in seq_len(folds)) {
@@ -434,14 +497,10 @@ cv_compare <- function(formula, data, models, times, cause = 1L, folds = 5L, see
         r <- risk_of(models[[m]], data[!te, , drop = FALSE], data[te, , drop = FALSE])
         if (is.null(r)) failed[m] <- failed[m] + 1L else pooled[te, ] <- r$risk
       }
-      if (failed[m] == 0L) cvm <- measures(pooled)
+      if (failed[m] == 0L) cv[[m]] <- pooled
     }
-    tab <- rbind(tab, data.frame(model = names(models)[m], time = times,
-                                 brier = app[, 1L], brier_cv = cvm[, 1L], ipa = app[, 2L], ipa_cv = cvm[, 2L],
-                                 auc = app[, 3L], auc_cv = cvm[, 3L], calib_error = app[, 4L], calib_error_cv = cvm[, 4L]))
-    if (!is.null(full)) fits[[m]] <- full$fit
   }
-  list(table = tab, fits = fits, failed = failed)
+  list(fits = fits, failed = failed, app = app, cv = cv)
 }
 
 # constrained = list(list(), list(timing = ~ age), list(cond = "lognormal", shape = ~ x)): one

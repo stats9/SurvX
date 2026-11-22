@@ -424,3 +424,21 @@ void SX_hazard_increments(int* nb, double* btime, double* bcum, int* bstr, int* 
 void SX_collinear(int* n, int* p, double* X, double* tol, int* out, int* ndep, int* rc) { *rc = sc_collinear(*n, *p, X, *tol, out, ndep); }
 
 }  // extern "C"
+
+void SX_compare3(int* n, int* p, int* K, double* time, int* cause, double* X, int* interest, int* nt, double* times, int* folds, int* n_direct, int* baseline, int* link, int* spline_df, int* estimation, int* cond, double* out_metrics, double* out_fit, double* out_risk, int* rc) {
+  RStream rs;
+  *rc = sc_compare_models3(*n, *p, *K, time, cause, X, *interest, *nt, times, *folds, 0,
+                           *n_direct, baseline, link, spline_df, estimation, cond, out_metrics, out_fit, out_risk);
+}
+void SX_assess(int* n, double* time, int* cause, int* interest, int* nt, double* times, int* M, double* risk, int* groups, double* z, double* out, int* ref, int* rc) {
+  *rc = sc_assess(*n, time, cause, *interest, *nt, times, *M, risk, *groups, *z, out, ref);
+}
+void SX_concordance(int* n, double* time, int* cause, int* interest, double* risk, double* tau, int* uno, double* out, double* dfbeta, int* rc) {
+  *rc = sc_concordance(*n, time, cause, *interest, risk, *tau, *uno, out, dfbeta);
+}
+void SX_net_benefit(int* n, double* time, int* cause, int* interest, double* pred, double* t, int* m, double* thr, double* nb, double* nb_all, int* rc) {
+  *rc = sc_net_benefit(*n, time, cause, *interest, pred, *t, *m, thr, nb, nb_all);
+}
+void SX_smooth_calibration(int* n, double* time, int* cause, int* interest, double* pred, double* t, double* observed, double* out, int* rc) {
+  *rc = sc_smooth_calibration(*n, time, cause, *interest, pred, *t, observed, out);
+}

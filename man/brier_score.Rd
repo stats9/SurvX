@@ -18,11 +18,11 @@ with competing risks, under right censoring:
 (\code{\link{compare_models}}, \code{\link{cv_compare}}), which call these functions.
 }
 \usage{
-brier_score(time, status, risk, t, cause = 1L)
+brier_score(time, status, risk, t, cause = 1L, se = FALSE)
 
-auc_t(time, status, risk, t, cause = 1L)
+auc_t(time, status, risk, t, cause = 1L, se = FALSE, level = 0.95)
 
-calibration(time, status, risk, t, cause = 1L, groups = 10L)
+calibration(time, status, risk, t, cause = 1L, groups = 10L, level = 0.95)
 }
 \arguments{
 \item{time,status}{follow-up time and status (0 = censored, 1..K = cause) of the subjects whose
@@ -34,6 +34,8 @@ calibration(time, status, risk, t, cause = 1L, groups = 10L)
 \item{t}{the time horizon (a single number).}
 \item{cause}{cause of interest.}
 \item{groups}{number of risk groups for calibration.}
+\item{se}{also return the standard error (see Details).}
+\item{level}{confidence level of the interval of the AUC and of the observed/expected ratio.}
 }
 \details{
 \subsection{Brier score}{
@@ -56,6 +58,23 @@ predicted risk is compared with the Aalen-Johansen estimate of the observed risk
 (Gerds, Andersen and Kattan 2014). The calibration error is the size-weighted mean absolute
 difference.
 }
+\subsection{Standard errors}{
+With \code{se = TRUE} the standard error of the Brier score and of the AUC is
+\eqn{\mathrm{sd}(\psi_i)/\sqrt{n}}, where \eqn{\psi_i} is the influence function of subject
+\eqn{i} with the censoring weights taken as known (Blanche et al. 2013): the "conservative"
+standard errors of \code{riskRegression::Score(conservative = TRUE)}. \code{\link{compare_models}}
+and \code{\link{cv_compare}} use the same influence functions for the paired difference of two
+models.
+}
+\subsection{Calibration in the large and smooth calibration}{
+\code{calibration()} also returns the observed/expected ratio: the Aalen-Johansen (Kaplan-Meier)
+risk at \eqn{t} over the mean predicted risk, with the interval
+\eqn{\exp\{\log(O/E) \pm z\, se(O)/O\}}; and the integrated calibration index of Austin, Harrell
+and van Klaveren (2020): a Cox model (with competing risks, a Fine-Gray model) of the outcome on a
+natural cubic spline of \eqn{\log\{-\log(1 - \hat r)\}} with knots at its 10th, 50th and 90th
+percentiles gives a calibrated risk for every subject; ICI, E50 and E90 are the mean, median and
+90th percentile of its absolute difference from the predicted risk.
+}
 }
 \section{Interpreting the result}{
 \itemize{
@@ -66,6 +85,9 @@ difference.
   \item AUC: 0.5 is no discrimination, 1 perfect; 0.7 to 0.8 is common for clinical models. AUC
     ignores calibration: a model can rank well and still predict wrong risks.
   \item Calibration: points near the diagonal (mean predicted = observed) and a small error.
+    O/E = 1 means the average risk is right (O/E = 1.2: the model predicts 20\% too few events);
+    an ICI of 0.02 means the predicted risks are on average 2 percentage points from the calibrated
+    risks.
 }
 Measured on the data used for fitting, all three are optimistic; use cross-validation or
 external data for an honest assessment.
@@ -74,13 +96,22 @@ external data for an honest assessment.
 In the validation suite of the package (\url{https://github.com/stats9/SurvX}, directory
 \code{validation}), the Brier score, that of the null model and the AUC agree with
 \code{riskRegression::Score} to \eqn{2 \times 10^{-14}} on 82 data sets with and without competing
-risks. They are about 10 times faster than \code{Score} on \eqn{n = 10000}.
+risks. They are about 10 times faster than \code{Score} on \eqn{n = 10000}. The standard errors
+equal those of \code{Score(conservative = TRUE, se.fit = TRUE)}; the O/E equals the Aalen-Johansen
+estimate of \code{survival::survfit}; ICI, E50 and E90 equal a calibration model fitted with
+\code{survival::coxph} and \code{splines::ns} (validation suite, \code{validation/R/07_assess.R}).
 }
 \value{
 \code{brier_score}: named vector with \code{brier}, \code{brier_null} (Aalen-Johansen
-  prediction for everyone) and \code{ipa = 1 - brier / brier_null}. \code{auc_t}: the AUC.
+  prediction for everyone) and \code{ipa = 1 - brier / brier_null}, and with \code{se = TRUE}
+  \code{se}. \code{auc_t}: the AUC; with \code{se = TRUE} a vector with \code{auc}, \code{se},
+  \code{lower} and \code{upper}.
   \code{calibration}: a data frame with mean predicted and observed (Aalen-Johansen) risk per
-  group; its attribute \code{"error"} is the size-weighted mean absolute difference.
+  group; its attribute \code{"error"} is the size-weighted mean absolute difference, \code{"oe"}
+  the observed/expected ratio with its interval (three numbers), \code{"ici"}, \code{"e50"} and
+  \code{"e90"} the smooth calibration measures and \code{"smooth"} a data frame of the predicted
+  and calibrated risks, ordered by predicted risk (\code{NULL} when the calibration model cannot be
+  fitted, for example when all predicted risks are equal).
 }
 \references{
 Graf E, Schmoor C, Sauerbrei W, Schumacher M (1999) Assessment and comparison of prognostic
@@ -98,6 +129,9 @@ Blanche P, Dartigues J-F, Jacqmin-Gadda H (2013) Estimating and comparing time-d
 
 Gerds TA, Andersen PK, Kattan MW (2014) Calibration plots for risk prediction models in the
   presence of competing risks. Statistics in Medicine 33:3191-3203.
+
+Austin PC, Harrell FE, van Klaveren D (2020) Graphical calibration curves and the integrated
+  calibration index (ICI) for survival models. Statistics in Medicine 39:2714-2742.
 
 All references: \code{sx_references("brier_score")}, \code{sx_references("auc_t")},
 \code{sx_references("calibration")}.

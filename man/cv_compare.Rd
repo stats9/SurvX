@@ -31,7 +31,9 @@ cv_compare(formula, data, models, times, cause = 1L, folds = 5L, seed = 1L,
 \section{Interpreting the result}{
 As for \code{\link{compare_models}}: judge the models on the cross-validated measures (lower Brier
 score and calibration error, higher IPA and AUC). The same folds are used for every model, so the
-comparison is paired.
+comparison is paired. The table has the same columns as that of \code{compare_models} (standard
+errors, paired differences from the best model, O/E and ICI; see the section "Columns of the
+table" there).
 }
 \value{
 an S7 object of class \code{ModelComparison}: \code{x@table} has one row per model and time

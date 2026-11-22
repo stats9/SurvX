@@ -121,7 +121,18 @@
   lindsey_ryan1998 = c("Lindsey & Ryan (1998)", "Lindsey JC, Ryan LM (1998). Tutorial in biostatistics: methods for interval-censored data. Statistics in Medicine 17:219-238."),
   sun2006 = c("Sun (2006)", "Sun J (2006). The Statistical Analysis of Interval-censored Failure Time Data. Springer, New York."),
   hudgens2001 = c("Hudgens et al. (2001)", "Hudgens MG, Satten GA, Longini IM (2001). Nonparametric maximum likelihood estimation for competing risks survival data subject to interval censoring and truncation. Biometrics 57:74-80."),
-  buchholz2011 = c("Buchholz & Sauerbrei (2011)", "Buchholz A, Sauerbrei W (2011). Comparison of procedures to assess non-linear and time-varying effects in multivariable models for survival data. Biometrical Journal 53:308-331.")
+  buchholz2011 = c("Buchholz & Sauerbrei (2011)", "Buchholz A, Sauerbrei W (2011). Comparison of procedures to assess non-linear and time-varying effects in multivariable models for survival data. Biometrical Journal 53:308-331."),
+  # further performance measures
+  harrell1982 = c("Harrell et al. (1982)", "Harrell FE, Califf RM, Pryor DB, Lee KL, Rosati RA (1982). Evaluating the yield of medical tests. JAMA 247:2543-2546."),
+  uno2011 = c("Uno et al. (2011)", "Uno H, Cai T, Pencina MJ, D'Agostino RB, Wei LJ (2011). On the C-statistics for evaluating overall adequacy of risk prediction procedures with censored survival data. Statistics in Medicine 30:1105-1117."),
+  wolbers2009 = c("Wolbers et al. (2009)", "Wolbers M, Koller MT, Witteman JCM, Steyerberg EW (2009). Prognostic models with competing risks: methods and application to coronary risk prediction. Epidemiology 20:555-561."),
+  blanche2019 = c("Blanche et al. (2019)", "Blanche P, Kattan MW, Gerds TA (2019). The c-index is not proper for the evaluation of t-year predicted risks. Biostatistics 20:347-357."),
+  therneau_concordance = c("Therneau & Atkinson (2024)", "Therneau T, Atkinson E (2024). Concordance. Vignette of the R package survival."),
+  austin2020 = c("Austin et al. (2020)", "Austin PC, Harrell FE, van Klaveren D (2020). Graphical calibration curves and the integrated calibration index (ICI) for survival models. Statistics in Medicine 39:2714-2742."),
+  vickers2006 = c("Vickers & Elkin (2006)", "Vickers AJ, Elkin EB (2006). Decision curve analysis: a novel method for evaluating prediction models. Medical Decision Making 26:565-574."),
+  vickers2008 = c("Vickers et al. (2008)", "Vickers AJ, Cronin AM, Elkin EB, Gonen M (2008). Extensions to decision curve analysis, a novel method for evaluating diagnostic tests, prediction models and molecular markers. BMC Medical Informatics and Decision Making 8:53."),
+  heagerty2005 = c("Heagerty & Zheng (2005)", "Heagerty PJ, Zheng Y (2005). Survival model predictive accuracy and ROC curves. Biometrics 61:92-105."),
+  wilks1938 = c("Wilks (1938)", "Wilks SS (1938). The large-sample distribution of the likelihood ratio for testing composite hypotheses. Annals of Mathematical Statistics 9:60-62.")
 )
 
 # what each key is used for, by topic; values are character vectors of keys
@@ -155,13 +166,17 @@
                    "buchholz2011", "fine_gray1999", "geskus2011", "lin_wei1989", "efron1993"),
   dist_plot = c("klein2003", "collett2015", "nelson1972", "cox_snell1968"),
   hazard_plot = c("nelson1972", "ramlau1983", "muller_wang1994", "klein2003"),
-  brier_score = c("graf1999", "gerds2006", "kattan2018"),
+  brier_score = c("graf1999", "gerds2006", "kattan2018", "blanche2013"),
   auc_t = c("blanche2013"),
-  calibration = c("gerds2014", "aalen_johansen1978"),
-  compare_models = c("stone1974", "graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", "hastie2009", "gerds2007", "akaike1974"),
-  model_scan = c("graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", "hastie2009", "akaike1974", "burnham2002",
-                 "putter2007", "latouche2013"),
-  cv_compare = c("hastie2009", "gerds2007", "graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014"),
+  calibration = c("gerds2014", "aalen_johansen1978", "austin2020"),
+  compare_models = c("stone1974", "graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", "austin2020", "hastie2009", "gerds2007",
+                     "akaike1974", "blanche2019"),
+  model_scan = c("graf1999", "gerds2006", "kattan2018", "blanche2013", "heagerty2005", "gerds2014", "austin2020", "hastie2009", "akaike1974",
+                 "burnham2002", "putter2007", "latouche2013"),
+  cv_compare = c("hastie2009", "gerds2007", "graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", "austin2020", "blanche2019"),
+  cindex = c("harrell1982", "uno2011", "wolbers2009", "therneau_concordance", "blanche2019"),
+  decision_curve = c("vickers2006", "vickers2008", "aalen_johansen1978"),
+  anova = c("wilks1938", "cox1972"),
   cif_plot = c("aalen_johansen1978", "benichou1990", "efron1993", "casella2002"),
   cif_data = c("aalen_johansen1978", "benichou1990", "efron1993", "casella2002"),
   estimates = c("wald1943", "casella2002", "white1982"),
@@ -172,7 +187,8 @@
 # keys behind one fitted object: the method itself and the options that were used
 .method_keys <- function(x) {
   if (S7::S7_inherits(x, CoxFit))
-    return(c("cox1972", if (x@ties == "efron") "efron1977" else "breslow1974", "breslow1974", .design_keys(x)))
+    return(c("cox1972", if (x@ties == "efron") "efron1977" else "breslow1974", "breslow1974", .design_keys(x),
+             if (is.null(x@entry) && is.null(x@strata) && is.null(x@tt) && is.null(x@weights)) "harrell1982"))
   if (S7::S7_inherits(x, FineGrayFit))
     return(c("fine_gray1999", if (!is.null(x@entry)) c("geskus2011", "andersen_gill1982"),
              if (identical(x@variance, "robust")) (if (is.null(x@entry)) "white1982" else "lin_wei1989"),
@@ -205,7 +221,8 @@
   if (S7::S7_inherits(x, KMFit)) return(c("kaplan_meier1958", "greenwood1926", "brookmeyer1982", if (!is.null(x@test)) "mantel1966"))
   if (S7::S7_inherits(x, AJFit)) return(c("aalen_johansen1978", "andersen1993", "kalbfleisch2002", if (!is.null(x@tests)) "gray1988"))
   if (S7::S7_inherits(x, HazardFit)) return(c("nelson1972", "aalen1978", if (!is.null(x@bandwidth)) c("ramlau1983", "muller_wang1994", "patil1993", "hall_marron1991")))
-  if (S7::S7_inherits(x, ModelComparison)) return(c("graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", if (x@folds >= 2L) "hastie2009"))
+  if (S7::S7_inherits(x, ModelComparison)) return(c("graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", "austin2020",
+                                                     if (x@folds >= 2L) "hastie2009"))
   if (S7::S7_inherits(x, PHTest)) return(c("grambsch1994", "therneau2000"))
   if (S7::S7_inherits(x, ModelScan)) return(.topics$model_scan)
   if (S7::S7_inherits(x, AdjustedRisk))

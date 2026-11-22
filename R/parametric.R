@@ -679,6 +679,9 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
     out <- c(out, "", "Baseline distribution (natural scale)", .table_lines(stats::setNames(.natural_baseline(x, level), c("", "estimate", paste(.pct(level), "CI")))))
   }
   out <- c(out, "", .fit_line(x))
+  if (!.is_ic(x) && is.null(x@entry) && nrow(eb) > 0L)
+    out <- c(out, .cindex_line(tryCatch(1 - stats::predict(x, times = stats::median(x@time), type = "survival")[, 1L],
+                                        error = function(e) rep(NA_real_, length(x@time))), x@time, x@status))
   if (detail)
     out <- c(out, "",
              if (x@scale == "AFT") "TR > 1: the event happens later (times are stretched); TR < 1: earlier."

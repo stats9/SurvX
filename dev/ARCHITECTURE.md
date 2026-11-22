@@ -41,7 +41,11 @@ summaries, Finkelstein test, bootstrap bands), `phtest.hpp` (score tests of prop
 and Holm adjustment), `timeeffects.hpp` (splitting of follow-up, time functions including the
 natural spline basis of `splines::ns`, time-varying effects, cumulative predictions) and
 `expand.hpp` (Fine-Gray data with delayed entry, merging of tied times, sandwich variance). Their
-entry points are in `src/capi_support.cpp`.
+entry points are in `src/capi_support.cpp`. `assess.hpp` holds the further performance measures
+(concordance index with binary indexed trees and its infinitesimal-jackknife variance, influence
+functions of the IPCW Brier score and AUC for standard errors and paired differences, O/E, smooth
+calibration with ICI/E50/E90, net benefit); its entry points are in `src/capi_assess.cpp`, and
+`assess_models()` scores every model of a comparison in one call.
 
 Random draws (bootstrap resamples, permutations, cross-validation folds) are uniform indices
 from one source (`draw_index` in `compare.hpp`). By default it is `splitmix64` started at the seed

@@ -170,6 +170,29 @@ int main() {
       I bs2 = {0, 0, 3}; I est2 = {0, 1, 2};
       tally(sc_compare_models2(n, p, 2, d.time.data(), c2.data(), X, 1, 2, tm.data(), 3, 5, 3, bs2.data(), lk.data(), sdf.data(), est2.data(), cnd.data(),
                                met.data(), fit.data()));
+      V rk(static_cast<size_t>(M) * 2 * 2 * n);
+      tally(sc_compare_models3(n, p, 2, d.time.data(), c2.data(), X, 1, 2, tm.data(), 3, 5, 3, bs2.data(), lk.data(), sdf.data(), est2.data(), cnd.data(),
+                               met.data(), fit.data(), rk.data()));
+    }
+    // ---- further measures: all measures of three risk vectors, concordance, net benefit, smooth calibration
+    {
+      const int M = 3; V tm = {0.4, 1.0, 2.5}; const int nt = 3;
+      V rk(static_cast<size_t>(M) * nt * n);
+      for (int m = 0; m < M; ++m) for (int j = 0; j < nt; ++j) for (int i = 0; i < n; ++i)
+        rk[(static_cast<size_t>(m) * nt + j) * n + i] = m == 2 ? 0.3 : std::fmin(0.999, (j + 1) * 0.2 * U() + (m == 0 ? 0.1 * d.cause[i] : 0.0));
+      V out(static_cast<size_t>(M) * nt * 19); I ref(nt);
+      tally(sc_assess(n, d.time.data(), d.cause.data(), 1, nt, tm.data(), M, rk.data(), 10, 1.96, out.data(), ref.data()));
+      V sc(n), o6(6), dfb(n);
+      for (int i = 0; i < n; ++i) sc[i] = std::round(4 * N()) / 4;
+      for (int uno = 0; uno < 2; ++uno) {
+        tally(sc_concordance(n, d.time.data(), d.cause.data(), 1, sc.data(), 1e300, uno, o6.data(), dfb.data()));
+        tally(sc_concordance(n, d.time.data(), d.cause.data(), 1, sc.data(), 1.0, uno, o6.data(), nullptr));
+      }
+      V thr = {0.0, 0.05, 0.2, 0.5, 0.9}, nb(5), nba(5);
+      tally(sc_net_benefit(n, d.time.data(), d.cause.data(), 1, rk.data(), 1.0, 5, thr.data(), nb.data(), nba.data()));
+      V obs(n), ici(3);
+      tally(sc_smooth_calibration(n, d.time.data(), d.cause.data(), 1, rk.data(), 1.0, obs.data(), ici.data()));
+      tally(sc_smooth_calibration(n, d.time.data(), d.cause.data(), 1, rk.data() + 2 * nt * n, 1.0, nullptr, ici.data()));
     }
     // ---- parametric models, interval censoring, cure, frailty, cause-specific parametric
     {
@@ -259,6 +282,10 @@ int main() {
     ++tried; refused += sc_cox_frailty(n, 1, t.data(), s.data(), t.data(), cl.data(), 5, nullptr, 10, 1e-8, e.data(), vv.data(), &info, &Ko, tk.data(), hk.data(), sh.data(), rt.data()) != 0;
     I bad = {9}; I af = {0}; V av = {0}; I nk = {0}; V th(8), var(64), dg(5);
     ++tried; refused += sc_directcif_fit(n, 0, 1, t.data(), s.data(), nullptr, af.data(), av.data(), bad.data(), nk.data(), nullptr, 0, nullptr, 10, 1e-8, th.data(), var.data(), &info, dg.data()) != 0;
+  }
+  { const int n = 10; V t(n, 1.0), r(n, 0.2), o(19 * 2), o6(6); I c(n, 1), ref(2);
+    ++tried; refused += sc_assess(0, t.data(), c.data(), 1, 1, t.data(), 1, r.data(), 10, 1.96, o.data(), ref.data()) != 0;
+    ++tried; refused += sc_concordance(n, t.data(), c.data(), 1, nullptr, 1e300, 0, o6.data(), nullptr) != 0;
   }
   std::printf("calls %d (rc != 0: %d), invalid inputs refused %d of %d\n", calls, nonzero, refused, tried);
   return 0;

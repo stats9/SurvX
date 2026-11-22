@@ -55,6 +55,25 @@ within noise; prefer the simpler model when the measures are close. AIC can be c
 models with a full likelihood of the same data (joint and constrained direct models, parametric
 cause-specific models); see Value.
 }
+\section{Columns of the table}{
+Every measure is computed twice, from the predictions of the full-data fit (apparent) and from the
+pooled out-of-fold predictions (columns ending in \code{_cv}): \code{brier}, \code{ipa}, \code{auc},
+\code{calib_error} (see \code{\link{brier_score}}); \code{brier_se} and \code{auc_se}, standard
+errors from influence functions with the censoring weights taken as known (as
+\code{riskRegression::Score(conservative = TRUE)}); \code{oe}, \code{oe_lower}, \code{oe_upper},
+the observed (Aalen-Johansen) over the mean predicted risk with its interval; \code{ici},
+\code{e50}, \code{e90}, the smooth calibration measures of Austin, Harrell and van Klaveren (2020);
+\code{brier_diff}, \code{brier_diff_se}, \code{brier_diff_p} and \code{auc_diff},
+\code{auc_diff_se}, \code{auc_diff_p}, the paired difference from the model with the lowest Brier
+score at that time (named in \code{reference} and \code{reference_cv}), its standard error and the
+p-value of the test of no difference. The paired tests use the same subjects for every model, so
+they are much more sensitive than comparing two intervals. Cross-validated differences are an
+honest guide; their p-values are approximate because the pooled predictions are not independent.
+
+The concordance index (\code{\link{cindex}}) is deliberately not reported: it is not a proper
+measure for risks at a time horizon (Blanche, Kattan and Gerds 2019), so it can prefer a wrong
+model. The AUC at the horizon is its proper counterpart.
+}
 \value{
 an S7 object of class \code{ModelComparison}; \code{x@table} has one row per model and
   time, \code{x@fit} one row per model. AIC is reported for the joint and constrained direct models
@@ -71,6 +90,10 @@ Gerds TA, Schumacher M (2007). Efron-type measures of prediction error for survi
   Biometrics 63:1283-1287.
 
 \emph{Measures:} see \code{\link{brier_score}}.
+Austin PC, Harrell FE, van Klaveren D (2020). Graphical calibration curves and the integrated
+  calibration index (ICI) for survival models. Statistics in Medicine 39:2714-2742.
+Blanche P, Kattan MW, Gerds TA (2019). The c-index is not proper for the evaluation of t-year
+  predicted risks. Biostatistics 20:347-357.
 
 All references: \code{sx_references("compare_models")}.
 }

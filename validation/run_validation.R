@@ -26,8 +26,8 @@ args <- commandArgs(trailingOnly = TRUE)
 here <- tryCatch(dirname(normalizePath(sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1]))),
                  error = function(e) getwd())
 if (is.na(here) || !dir.exists(file.path(here, "R"))) here <- getwd()
-WORKER_FILES <- normalizePath(file.path(here, "R", c("00_common.R", "03_simulation.R", "06_new_methods.R")))
-for (f in c("00_common.R", "01_accuracy.R", "02_speed.R", "03_simulation.R", "04_stability.R", "05_report.R", "06_new_methods.R"))
+WORKER_FILES <- normalizePath(file.path(here, "R", c("00_common.R", "03_simulation.R", "06_new_methods.R", "07_assess.R")))
+for (f in c("00_common.R", "01_accuracy.R", "02_speed.R", "03_simulation.R", "04_stability.R", "05_report.R", "06_new_methods.R", "07_assess.R"))
   source(file.path(here, "R", f))
 
 cfg <- make_config(args)

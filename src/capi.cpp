@@ -616,7 +616,15 @@ int sc_calibration(int n, const double* time, const int* cause, int interest, co
 int sc_compare_models2(int n, int p, int K, const double* time, const int* cause, const double* X,
                        int interest, int nt, const double* times, int folds, unsigned long long seed,
                        int n_direct, const int* baseline, const int* link, const int* spline_df,
-                       const int* estimation, const int* cond, double* out_metrics, double* out_fit) try {
+                       const int* estimation, const int* cond, double* out_metrics, double* out_fit) {
+  return sc_compare_models3(n, p, K, time, cause, X, interest, nt, times, folds, seed, n_direct, baseline, link, spline_df,
+                            estimation, cond, out_metrics, out_fit, nullptr);
+}
+
+int sc_compare_models3(int n, int p, int K, const double* time, const int* cause, const double* X,
+                       int interest, int nt, const double* times, int folds, unsigned long long seed,
+                       int n_direct, const int* baseline, const int* link, const int* spline_df,
+                       const int* estimation, const int* cond, double* out_metrics, double* out_fit, double* out_risk) try {
   if (int rc = check_direct(n, p, K, time, cause, X)) return rc;
   if (p < 1 || nt < 1 || !times || !out_metrics || interest < 1 || interest > K || folds > n || n_direct < 0) return -1;
   if (n_direct > 0 && (!baseline || !link)) return -1;
@@ -633,6 +641,7 @@ int sc_compare_models2(int n, int p, int K, const double* time, const int* cause
   const CompareResult r = compare_models(ch, n, p, K, time, cause, X, interest, std::vector<double>(times, times + nt), folds, seed);
   for (std::size_t i = 0; i < r.metrics.size(); ++i) out_metrics[i] = r.metrics[i];
   if (out_fit) for (std::size_t i = 0; i < r.fit.size(); ++i) out_fit[i] = r.fit[i];
+  if (out_risk) for (std::size_t i = 0; i < r.risk.size(); ++i) out_risk[i] = r.risk[i];
   return 0;
 } catch (...) { return -9; }
 

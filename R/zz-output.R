@@ -249,6 +249,8 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
            sprintf("Fit: log partial likelihood %.2f | AIC %.2f | %d coefficients", x@loglik, .sx_aic(x@loglik, df), df),
            sprintf("     likelihood ratio test against no covariates: chi-square %.2f on %d df, p %s", lr, df,
                    if (startsWith(pv, "<")) sub("<", "< ", pv) else paste("=", pv)))
+  if (is.null(x@entry) && is.null(x@strata) && is.null(x@tt) && is.null(x@weights) && df > 0L)
+    out <- c(out, .cindex_line(x@X %*% x@coefficients, x@time, x@status))
   if (detail)
     out <- c(out, sprintf("     log partial likelihood without covariates: %.3f; iterations: %d", x@loglik_null, x@iterations), "",
              "HR > 1: the event occurs at a higher rate; HR < 1: at a lower rate.",
@@ -308,6 +310,8 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
     pv <- .pval(lrt$p)
     out <- c(out, sprintf("Fit: log partial likelihood %.2f | AIC %.2f | LR test %.2f on %d df, p %s", m$loglik,
                           .sx_aic(m$loglik, pk), lr, pk, if (startsWith(pv, "<")) sub("<", "< ", pv) else paste("=", pv)),
+             if (is.null(x@entry) && is.null(x@strata) && pk > 0L)
+               .cindex_line(x@X %*% m$coefficients, x@time, as.integer(x@status == k), ", other causes as censored"),
              .status_lines(m$converged, m$flags))
   }
   if (detail)
@@ -646,9 +650,14 @@ S7::method(print, ModelComparison) <- function(x, ...) {
   for (t in unique(tab$time)) {
     s <- tab[tab$time == t, , drop = FALSE]
     s <- s[order(s[[col("brier")]], na.last = TRUE), , drop = FALSE]
-    df <- data.frame(model = s$model, brier = .num(s[[col("brier")]], 4L), ipa = .num(.sx_pct(s[[col("ipa")]]), 1L), auc = .num(s[[col("auc")]], 3L),
-                     cal = .num(s[[col("calib_error")]], 3L), stringsAsFactors = FALSE)
-    names(df) <- c("model (best first)", "Brier", "IPA %", "AUC", "calibration error")
+    v <- function(nm) s[[col(nm)]] %||% rep(NA_real_, nrow(s))
+    se_txt <- function(est, se, d) ifelse(is.finite(se), paste0(.num(est, d), " (", .num(se, d), ")"), .num(est, d))
+    dif <- ifelse(is.finite(v("brier_diff_p")), paste0(.num(v("brier_diff"), 4L), " (p ", .pval(v("brier_diff_p")), ")"),
+                  ifelse(is.finite(v("brier_diff")) & v("brier_diff") == 0, "best", "-"))
+    df <- data.frame(model = s$model, brier = se_txt(s[[col("brier")]], v("brier_se"), 4L), dif = dif,
+                     ipa = .num(.sx_pct(s[[col("ipa")]]), 1L), auc = se_txt(s[[col("auc")]], v("auc_se"), 3L),
+                     cal = .num(s[[col("calib_error")]], 3L), oe = .num(v("oe"), 2L), ici = .num(v("ici"), 3L), stringsAsFactors = FALSE)
+    names(df) <- c("model (best first)", "Brier (SE)", "difference from best", "IPA %", "AUC (SE)", "calibration error", "O/E", "ICI")
     out <- c(out, "", paste0("Time horizon ", format(t, trim = TRUE)), .table_lines(df))
   }
   ft <- x@fit
@@ -665,6 +674,11 @@ S7::method(print, ModelComparison) <- function(x, ...) {
            "IPA: gain over a prediction that ignores the covariates, in percent (larger is better; 0 = no gain).",
            "AUC: probability that a subject with the event by that time has the higher predicted risk.",
            "Calibration error: mean absolute difference between predicted and observed risk in risk groups.",
+           "Difference from best: Brier score minus that of the best model, with the p-value of the paired test",
+           "(standard errors from influence functions with the censoring weights taken as known, as riskRegression::Score).",
+           "O/E: observed (Aalen-Johansen) over mean predicted risk (1 = calibrated in the large); ICI: mean absolute",
+           "difference between the predicted risk and a smooth calibration curve (Austin et al. 2020).",
+           "The C index is not shown: it is not a proper measure for risks at a time horizon (see ?compare_models).",
            "AIC is shown for models fitted by a full likelihood of the data: joint and constrained direct models and",
            "parametric cause-specific hazards; it can be compared among these models only.", "",
            .method_lines(.method_keys(x)))
@@ -676,7 +690,7 @@ S7::method(summary, ModelComparison) <- function(object, ...) object@table
 
 S7::method(as.data.frame, ModelComparison) <- function(x, ...) x@table
 
-S7::method(plot, ModelComparison) <- function(x, measure = c("ipa", "brier", "auc", "calib_error"), times = NULL,
+S7::method(plot, ModelComparison) <- function(x, measure = c("ipa", "brier", "auc", "calib_error", "ici", "oe"), times = NULL,
                                                highlight = TRUE, reference = TRUE, col = "#0072B2", main = NULL,
                                                cex = 0.85, ...) {
   measure <- match.arg(measure)
@@ -685,14 +699,18 @@ S7::method(plot, ModelComparison) <- function(x, measure = c("ipa", "brier", "au
   tab <- x@table
   tt <- unique(tab$time); if (!is.null(times)) tt <- tt[tt %in% times]
   if (!length(tt)) stop("none of the requested times is in the comparison", call. = FALSE)
-  smaller <- measure %in% c("brier", "calib_error")
+  if (is.null(tab[[nm]])) stop("this comparison has no column ", nm, " (made by an older version of SurvX)", call. = FALSE)
+  smaller <- measure %in% c("brier", "calib_error", "ici")
   label <- c(ipa = "IPA (gain over the null model)", brier = "Brier score (smaller is better)",
-             auc = "AUC (larger is better)", calib_error = "calibration error (smaller is better)")[[measure]]
+             auc = "AUC (larger is better)", calib_error = "calibration error (smaller is better)",
+             ici = "ICI, integrated calibration index (smaller is better)",
+             oe = "observed / expected risk (closest to 1 is best)")[[measure]]
   if (cv) label <- paste0(label, ", ", x@folds, "-fold cross-validated")
   # one common order of the models, best on top: mean rank over the time horizons
   mods <- unique(tab$model)
+  key <- function(v) if (measure == "oe") abs(v - 1) else if (smaller) v else -v      # smaller key = better
   rk <- sapply(tt, function(t) { s <- tab[tab$time == t, , drop = FALSE]; v <- s[[nm]][match(mods, s$model)]
-                                 rank(if (smaller) v else -v, na.last = "keep") })
+                                 rank(key(v), na.last = "keep") })
   ord <- order(.sx_rowmeans(matrix(rk, nrow = length(mods)), na.rm = TRUE), decreasing = TRUE)
   mods <- mods[ord]; ny <- length(mods); nt <- length(tt)
   # the labels are written once, at the left; their width is measured with the font metrics of the
@@ -708,14 +726,25 @@ S7::method(plot, ModelComparison) <- function(x, measure = c("ipa", "brier", "au
                 mgp = c(2, 0.5, 0), tcl = -0.25)
   for (j in seq_len(nt)) {
     s <- tab[tab$time == tt[j], , drop = FALSE]; v <- s[[nm]][match(mods, s$model)]
+    # 95% intervals of the Brier score and AUC (influence functions), of O/E (Aalen-Johansen)
+    se_nm <- if (measure %in% c("brier", "auc")) paste0(measure, "_se", if (cv) "_cv") else NULL
+    lo <- hi <- rep(NA_real_, ny)
+    if (!is.null(se_nm) && !is.null(s[[se_nm]])) { se <- s[[se_nm]][match(mods, s$model)]; lo <- v - 1.959964 * se; hi <- v + 1.959964 * se }
+    if (measure == "oe" && !is.null(s[[paste0("oe_lower", if (cv) "_cv")]])) {
+      lo <- s[[paste0("oe_lower", if (cv) "_cv")]][match(mods, s$model)]; hi <- s[[paste0("oe_upper", if (cv) "_cv")]][match(mods, s$model)]
+    }
     graphics::par(mai = c(0.35, if (j == 1L) lab_in else 0.1, 0.3, 0.1) * c(cex, 1, cex, 1))
-    xr <- range(c(v, if (reference && measure == "ipa") 0), finite = TRUE); xr <- xr + c(-1, 1) * 0.08 * max(diff(xr), 1e-8)
+    xr <- range(c(v, lo, hi, if (reference && measure == "ipa") 0, if (reference && measure == "oe") 1), finite = TRUE)
+    xr <- xr + c(-1, 1) * 0.08 * max(diff(xr), 1e-8)
     graphics::plot(NA, xlim = xr, ylim = c(0.5, ny + 0.5), yaxt = "n", xaxt = "n", xlab = "", ylab = "", bty = "l", ...)
     at <- pretty(xr, n = 3L); at <- at[at >= xr[1L] & at <= xr[2L]]
     graphics::axis(1L, at = at, labels = format(at, trim = TRUE), cex.axis = 0.85)
     graphics::abline(h = seq_len(ny), col = "grey92", lwd = 0.8)
     if (reference && measure == "ipa") graphics::abline(v = 0, lty = 2, col = "grey55")
-    best <- if (all(is.na(v))) integer(0) else if (smaller) which.min(v) else which.max(v)
+    if (reference && measure == "oe") graphics::abline(v = 1, lty = 2, col = "grey55")
+    ok <- is.finite(lo) & is.finite(hi)
+    if (any(ok)) graphics::segments(lo[ok], seq_len(ny)[ok], hi[ok], seq_len(ny)[ok], col = "grey50", lwd = 1.2)
+    best <- if (all(is.na(v))) integer(0) else which.min(key(v))
     pc <- rep(col, ny); if (highlight && length(best)) pc[best] <- "#D55E00"
     graphics::points(v, seq_len(ny), pch = 19, col = pc, cex = 1.1)
     graphics::title(main = paste("time", format(tt[j], trim = TRUE)), font.main = 1, cex.main = 1, line = 0.6)
@@ -825,6 +854,14 @@ S7::method(logLik, CSCFit) <- function(object, ...) {
 #'   \item{\code{coef}, \code{vcov}, \code{confint}, \code{logLik}, \code{AIC}, \code{BIC}, \code{nobs}}{as
 #'     usual; coefficients are on the scale used for estimation (log ratios, log or logit baseline
 #'     parameters). For \code{csc()} fits \code{coef}, \code{vcov} and \code{confint} return one element per cause.}
+#'   \item{\code{anova(fit1, fit2, ...)}}{likelihood-ratio tests of nested models of the same kind fitted to
+#'     the same data, smallest first: twice the gain in log-likelihood against a chi-squared
+#'     distribution with the number of added parameters. Cox and cause-specific Cox models use the log
+#'     partial likelihood (as \code{anova.coxph} of the survival package, with which the tests agree);
+#'     parametric, cure, frailty, joint and constrained direct models the full log-likelihood. Fine-Gray
+#'     and weighted direct models maximise pseudo-likelihoods, for which the test is not valid; there
+#'     \code{anova} stops and points to the Wald tests of \code{summary()}. The result is a data frame of
+#'     class \code{"anova"}.}
 #'   \item{\code{estimates(fit)}, \code{as.data.frame(fit)}}{all of this in one data frame, including the
 #'     exponentiated effects (the same table for every regression model; for frailty models
 #'     \code{as.data.frame(fit, what = "frailty")} gives the frailty of every cluster).}
@@ -838,13 +875,16 @@ S7::method(logLik, CSCFit) <- function(object, ...) {
 #'     median survival with its confidence limits, survival or cumulative incidence with confidence
 #'     intervals and numbers at risk at chosen times, tests between groups, curves with confidence bands.}
 #'   \item{\code{print}, \code{summary}, \code{plot}, \code{as.data.frame} for \code{compare_models()} and \code{cv_compare()}}{
-#'     models ranked by the Brier score at every time horizon, with a short explanation of each measure.}
+#'     models ranked by the Brier score at every time horizon, with the standard errors of the Brier
+#'     score and AUC, the difference from the best model with its p-value, the observed/expected ratio
+#'     and the ICI, and a short explanation of each measure.}
 #'   \item{\code{plot(x, measure = "ipa", times = NULL, highlight = TRUE, reference = TRUE, col, main, cex = 0.85)} for a comparison}{
 #'     one panel per time horizon with the models in the same order in every panel (best on top, by the
 #'     mean rank over the horizons); the best model at each horizon is drawn in orange
 #'     (\code{highlight = FALSE} switches this off) and, for the IPA, a dashed line marks no gain over the
-#'     null model (\code{reference = FALSE} switches it off). \code{measure} is one of \code{"ipa"},
-#'     \code{"brier"}, \code{"auc"}, \code{"calib_error"}.}
+#'     null model (\code{reference = FALSE} switches it off; for the O/E the line marks 1). \code{measure} is
+#'     one of \code{"ipa"}, \code{"brier"}, \code{"auc"}, \code{"calib_error"}, \code{"ici"}, \code{"oe"};
+#'     the Brier score, AUC and O/E are drawn with their 95\% intervals.}
 #'   \item{\code{cex}}{every plot (\code{plot()} of \code{km()}, of a comparison, and \code{cif_plot()}) has a
 #'     \code{cex} argument for the size of all text, default 0.85; titles, captions and axis titles are
 #'     wrapped to the width of the device so that they never run off the page.}

@@ -165,9 +165,12 @@ The fold assignment, ranking and standard errors are tested in the test suite of
 An S7 object of class \code{ModelScan}. \code{x@table} (also \code{as.data.frame(x)}) has one
 row per model: \code{model}, \code{family}, \code{likelihood} (\code{"full"}, \code{"partial"},
 \code{"pseudo"}), \code{fitted}, \code{converged}, \code{loglik}, \code{npar}, \code{aic},
-\code{delta_aic}, \code{ibs_cv}, \code{ipa_cv}, \code{auc_cv}, \code{calib_cv},
+\code{delta_aic}, \code{ibs_cv}, \code{ipa_cv}, \code{auc_cv} (mean over \code{times}), \code{iauc_cv}
+(time-averaged AUC over the grid: trapezoidal integral over the grid points where the AUC is
+defined, divided by their range), \code{calib_cv}, \code{ici_cv} (mean ICI over \code{times}),
 \code{np_distance}, \code{folds_failed}, \code{checks}, \code{rank}, \code{diff_best},
-\code{se_diff}, \code{equivalent}. Also \code{x@per_time} (measures at each of \code{times}),
+\code{se_diff}, \code{equivalent}. Also \code{x@per_time} (measures at each of \code{times},
+with the standard errors, paired differences, O/E and ICI of \code{\link{compare_models}}),
 \code{x@brier} (cross-validated Brier score on the grid), \code{x@effects} (with
 \code{goal = "effect"}) and \code{x@fits} (the models fitted to the full data, for further use).
 

@@ -166,6 +166,9 @@ struct CompareResult {
   std::vector<double> metrics;
   // fit[model * 5 + {0 loglik, 1 npar, 2 aic, 3 flags, 4 number of folds whose fit did not converge}]
   std::vector<double> fit;
+  // risk[((model * 2 + which) * nt + t) * n + i]: the predicted risks that were scored (which = 0
+  // full-data fit, 1 pooled out-of-fold predictions; NaN where a fit failed)
+  std::vector<double> risk;
 };
 
 inline std::uint64_t splitmix64(std::uint64_t& s) {       // Steele, Lea & Flood (2014), OOPSLA
@@ -221,7 +224,11 @@ inline CompareResult compare_models(const std::vector<DirectChoice>& choices, st
   res.fit.assign(COMPARE_MODELS * 5, std::nan(""));
   const std::vector<double> tv(time, time + n);
   const std::vector<int> cv(cause, cause + n);
+  res.risk.assign(static_cast<std::size_t>(COMPARE_MODELS) * 2 * nt * n, std::nan(""));
   auto score = [&](int model, const std::vector<double>& risk, int which) {
+    for (std::size_t t = 0; t < nt; ++t)
+      for (std::size_t i = 0; i < n; ++i)
+        res.risk[((static_cast<std::size_t>(model) * 2 + static_cast<std::size_t>(which)) * nt + t) * n + i] = risk[i * nt + t];
     std::vector<double> pr(n);
     for (std::size_t t = 0; t < nt; ++t) {
       bool ok = true;

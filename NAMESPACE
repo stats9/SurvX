@@ -3,7 +3,7 @@ export(Event, km, aj, rmst, logrank_test, gray_test, cox, fg, csc, directcif,
        brier_score, auc_t, calibration, compare_models, cv_compare, estimates, cif_data, cif_plot,
        parsurv, hazard_np, hazard_plot, ph_test, dist_plot,
        sx_references, cure, tt_effect, model_scan, report, time_effects, adjusted_risk,
-       Interval, turnbull)
+       Interval, turnbull, cindex, decision_curve)
 S3method("[", SurvXEvent)
 S3method(is.na, SurvXEvent)
 S3method(print, SurvXEvent)
@@ -12,6 +12,10 @@ S3method(is.na, SurvXInterval)
 S3method(print, SurvXInterval)
 S3method(format, SurvXInterval)
 S3method(as.character, SurvXInterval)
+S3method(print, SurvXConcordance)
+S3method(print, DecisionCurve)
+S3method(plot, DecisionCurve)
+S3method(as.data.frame, DecisionCurve)
 importFrom(utils, globalVariables)
-importFrom(stats, coef, vcov, nobs, logLik, predict, confint, formula, getCall, terms, model.matrix, residuals)
+importFrom(stats, anova, coef, vcov, nobs, logLik, predict, confint, formula, getCall, terms, model.matrix, residuals)
 if (getRversion() < "4.3.0") importFrom("S7", "@")

@@ -18,6 +18,14 @@ of R work as for \code{lm()} or \code{survival::coxph()}.
   \item{\code{coef}, \code{vcov}, \code{confint}, \code{logLik}, \code{AIC}, \code{BIC}, \code{nobs}}{as
     usual; coefficients are on the scale used for estimation (log ratios, log or logit baseline
     parameters). For \code{csc()} fits \code{coef}, \code{vcov} and \code{confint} return one element per cause.}
+  \item{\code{anova(fit1, fit2, ...)}}{likelihood-ratio tests of nested models of the same kind fitted to
+    the same data, smallest first: twice the gain in log-likelihood against a chi-squared
+    distribution with the number of added parameters. Cox and cause-specific Cox models use the log
+    partial likelihood (as \code{anova.coxph} of the survival package, with which the tests agree);
+    parametric, cure, frailty, joint and constrained direct models the full log-likelihood. Fine-Gray
+    and weighted direct models maximise pseudo-likelihoods, for which the test is not valid; there
+    \code{anova} stops and points to the Wald tests of \code{summary()}. The result is a data frame of
+    class \code{"anova"}.}
   \item{\code{estimates(fit)}, \code{as.data.frame(fit)}}{all of this in one data frame, including the
     exponentiated effects (the same table for every regression model; for frailty models
     \code{as.data.frame(fit, what = "frailty")} gives the frailty of every cluster).}
@@ -31,13 +39,16 @@ of R work as for \code{lm()} or \code{survival::coxph()}.
     median survival with its confidence limits, survival or cumulative incidence with confidence
     intervals and numbers at risk at chosen times, tests between groups, curves with confidence bands.}
   \item{\code{print}, \code{summary}, \code{plot}, \code{as.data.frame} for \code{compare_models()} and \code{cv_compare()}}{
-    models ranked by the Brier score at every time horizon, with a short explanation of each measure.}
+    models ranked by the Brier score at every time horizon, with the standard errors of the Brier
+    score and AUC, the difference from the best model with its p-value, the observed/expected ratio
+    and the ICI, and a short explanation of each measure.}
   \item{\code{plot(x, measure = "ipa", times = NULL, highlight = TRUE, reference = TRUE, col, main, cex = 0.85)} for a comparison}{
     one panel per time horizon with the models in the same order in every panel (best on top, by the
     mean rank over the horizons); the best model at each horizon is drawn in orange
     (\code{highlight = FALSE} switches this off) and, for the IPA, a dashed line marks no gain over the
-    null model (\code{reference = FALSE} switches it off). \code{measure} is one of \code{"ipa"},
-    \code{"brier"}, \code{"auc"}, \code{"calib_error"}.}
+    null model (\code{reference = FALSE} switches it off; for the O/E the line marks 1). \code{measure} is
+    one of \code{"ipa"}, \code{"brier"}, \code{"auc"}, \code{"calib_error"}, \code{"ici"}, \code{"oe"};
+    the Brier score, AUC and O/E are drawn with their 95\% intervals.}
   \item{Objects with their own methods}{\code{\link{turnbull}} (\code{TurnbullFit}),
     \code{\link{frailty}} models (\code{FrailtyFit}), \code{\link{time_effects}}
     (\code{TimeEffects}), \code{\link{adjusted_risk}} (\code{AdjustedRisk}) and

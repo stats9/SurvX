@@ -114,6 +114,11 @@ void SX_hazard_residuals(int* n, double* H, int* status, int* type, double* out,
 void SX_grid(int* kind, double* from, double* to, double* by, int* n, int* cap, double* out, int* m, int* rc);
 void SX_hazard_increments(int* nb, double* btime, double* bcum, int* bstr, int* nr, int* rstr, int* m, double* tj, double* LP, int* lp_by_time, double* out, int* rc);
 void SX_collinear(int* n, int* p, double* X, double* tol, int* out, int* ndep, int* rc);
+void SX_compare3(int* n, int* p, int* K, double* time, int* cause, double* X, int* interest, int* nt, double* times, int* folds, int* n_direct, int* baseline, int* link, int* spline_df, int* estimation, int* cond, double* out_metrics, double* out_fit, double* out_risk, int* rc);
+void SX_assess(int* n, double* time, int* cause, int* interest, int* nt, double* times, int* M, double* risk, int* groups, double* z, double* out, int* ref, int* rc);
+void SX_concordance(int* n, double* time, int* cause, int* interest, double* risk, double* tau, int* uno, double* out, double* dfbeta, int* rc);
+void SX_net_benefit(int* n, double* time, int* cause, int* interest, double* pred, double* t, int* m, double* thr, double* nb, double* nb_all, int* rc);
+void SX_smooth_calibration(int* n, double* time, int* cause, int* interest, double* pred, double* t, double* observed, double* out, int* rc);
 #ifdef __cplusplus
 }
 #endif

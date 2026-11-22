@@ -122,6 +122,15 @@
   unname(.sx_measures(time, status, risk, grid, cause)[, 1:2, drop = FALSE])
 }
 
+# time-averaged value of a curve on the grid: trapezoidal integral over the grid points where it is
+# defined, divided by their range (integrated AUC; Heagerty & Zheng 2005, with uniform weights)
+.scan_mean_curve <- function(grid, y) {
+  ok <- is.finite(y)
+  if (sum(ok) < 2L) return(NA_real_)
+  x <- grid[ok]; v <- y[ok]; k <- length(x)
+  sum(diff(x) * (v[-1L] + v[-k]) / 2) / (x[k] - x[1L])
+}
+
 # the non-parametric estimate of the event probability of the cause at the times (no covariates)
 .scan_np <- function(time, status, cause, at) {
   r <- .C("SX_np_curve", length(time), as.double(time), as.integer(status), as.integer(cause), length(at), as.double(at),
@@ -340,9 +349,12 @@
 #' An S7 object of class \code{ModelScan}. \code{x@table} (also \code{as.data.frame(x)}) has one
 #' row per model: \code{model}, \code{family}, \code{likelihood} (\code{"full"}, \code{"partial"},
 #' \code{"pseudo"}), \code{fitted}, \code{converged}, \code{loglik}, \code{npar}, \code{aic},
-#' \code{delta_aic}, \code{ibs_cv}, \code{ipa_cv}, \code{auc_cv}, \code{calib_cv},
+#' \code{delta_aic}, \code{ibs_cv}, \code{ipa_cv}, \code{auc_cv} (mean over \code{times}), \code{iauc_cv}
+#' (time-averaged AUC over the grid: trapezoidal integral over the grid points where the AUC is
+#' defined, divided by their range), \code{calib_cv}, \code{ici_cv} (mean ICI over \code{times}),
 #' \code{np_distance}, \code{folds_failed}, \code{checks}, \code{rank}, \code{diff_best},
-#' \code{se_diff}, \code{equivalent}. Also \code{x@per_time} (measures at each of \code{times}),
+#' \code{se_diff}, \code{equivalent}. Also \code{x@per_time} (measures at each of \code{times},
+#' with the standard errors, paired differences, O/E and ICI of \code{\link{compare_models}}),
 #' \code{x@brier} (cross-validated Brier score on the grid), \code{x@effects} (with
 #' \code{goal = "effect"}) and \code{x@fits} (the models fitted to the full data, for further use).
 #'
@@ -473,6 +485,7 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
   fold <- if (frail) .scan_folds_cluster(f$frailty, folds, seed) else .scan_folds(f$status, folds, seed)
   fits <- vector("list", M); names(fits) <- vapply(cand, `[[`, "", "name")
   rows <- list(); per_time <- list(); bcurve <- list(); foldibs <- matrix(NA_real_, M, folds)
+  pooled_t <- vector("list", M); iauc <- rep(NA_real_, M)
   np_grid <- .scan_np(f$time, f$status, cause, at)
   risk_ok <- function(r, nn) !is.null(r) && is.matrix(r) && nrow(r) == nn && ncol(r) == length(at) && all(is.finite(r))
   for (m in seq_len(M)) {
@@ -501,7 +514,10 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
     ll <- .scan_loglik(full)
     ibs <- ipa <- aucm <- calm <- NA_real_
     if (failed == 0L) {
-      bc <- .scan_brier_curve(f$time, f$status, pooled[, ig, drop = FALSE], grid, cause)
+      bm <- .sx_measures(f$time, f$status, pooled[, ig, drop = FALSE], grid, cause)
+      bc <- unname(bm[, 1:2, drop = FALSE])
+      iauc[m] <- .scan_mean_curve(grid, bm[, "auc"])
+      pooled_t[[m]] <- pooled[, it, drop = FALSE]
       ibs <- .scan_integrate(grid, bc[, 1L]); ibs0 <- .scan_integrate(grid, bc[, 2L])
       ipa <- .sx_ew("complement", .sx_ew("div", ibs, ibs0))
       bcurve[[m]] <- data.frame(model = cd$name, time = grid, brier_cv = bc[, 1L], brier_null = bc[, 2L])
@@ -517,6 +533,20 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
                             np_distance = npd, folds_failed = failed, checks = .scan_checks(full, cd, n), stringsAsFactors = FALSE)
   }
   tab <- do.call(rbind, rows)
+  # further measures at the times, from the pooled out-of-fold predictions of all models together
+  # (paired differences from the model with the lowest Brier score at each time)
+  tab$iauc_cv <- iauc
+  tab$ici_cv <- NA_real_
+  if (any(!vapply(pooled_t, is.null, logical(1)))) {
+    A <- .sx_assess(f$time, f$status, pooled_t, times, cause, 10L)
+    refn <- ifelse(is.na(A$ref), NA_character_, vapply(cand, `[[`, "", "name")[ifelse(is.na(A$ref), 1L, A$ref)])
+    for (m in seq_len(M)) {
+      if (is.null(pooled_t[[m]]) || m > length(per_time) || is.null(per_time[[m]])) next
+      for (nm in .assess_new) per_time[[m]][[paste0(nm, "_cv")]] <- A$a[nm, , m]
+      per_time[[m]]$reference_cv <- refn
+      im <- A$a["ici", , m]; tab$ici_cv[m] <- if (any(is.finite(im))) mean(im[is.finite(im)]) else NA_real_
+    }
+  }
   # AIC within the group of models with a full likelihood of the same data
   full_lik <- tab$likelihood == "full" & tab$fitted & is.finite(tab$loglik)
   tab$aic <- ifelse(full_lik, .sx_aic(tab$loglik, tab$npar), NA_real_)
@@ -567,8 +597,8 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
   out <- c(paste0("Model scan: ", what),
            paste0("  Subjects: ", x@n, "   censored: ", cnt[1L], "   ", ev_text),
            paste0("  Models fitted: ", sum(tab$fitted), " of ", nrow(tab), "   depth: ", x@depth, "   ", x@folds, "-fold cross-validation"),
-           sprintf("  Integrated Brier score over (0, %s]; AUC and calibration error at t = %s", format(signif(max(x@grid), 3L)),
-                   paste(format(x@times), collapse = ", ")))
+           sprintf("  Integrated Brier score and time-averaged AUC (iAUC) over (0, %s]; AUC, calibration error and ICI at t = %s",
+                   format(signif(max(x@grid), 3L)), paste(format(x@times), collapse = ", ")))
   if (x@type == "single" && x@plateau) out <- c(out, "  The Kaplan-Meier curve levels off: cure models were included.")
   cv <- tryCatch(x@cluster_var, error = function(e) NULL)
   if (!is.null(cv))
@@ -578,8 +608,8 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
   if (nrow(sh)) {
     df <- data.frame(rank = ifelse(is.na(sh$rank), "-", as.character(sh$rank)), model = sh$model,
                      IBS = .num(sh$ibs_cv, 4L), `diff (SE)` = ifelse(is.finite(sh$diff_best), paste0(.num(sh$diff_best, 4L), " (", .num(sh$se_diff, 4L), ")"), "-"),
-                     IPA = .num(sh$ipa_cv, 3L), AUC = .num(sh$auc_cv, 3L), calib = .num(sh$calib_cv, 3L),
-                     dAIC = .num(sh$delta_aic, 1L), checks = sh$checks, check.names = FALSE, stringsAsFactors = FALSE)
+                     IPA = .num(sh$ipa_cv, 3L), AUC = .num(sh$auc_cv, 3L), iAUC = .num(sh$iauc_cv %||% rep(NA_real_, nrow(sh)), 3L), calib = .num(sh$calib_cv, 3L),
+                     ICI = .num(sh$ici_cv %||% rep(NA_real_, nrow(sh)), 3L), dAIC = .num(sh$delta_aic, 1L), checks = sh$checks, check.names = FALSE, stringsAsFactors = FALSE)
     names(df)[1L] <- "rank"
     out <- c(out, "", "Cross-validated prediction (lower IBS and calibration error, higher IPA and AUC are better)", .table_lines(df))
     if (!detail && sum(tab$fitted) > top) out <- c(out, paste0("  ... and ", sum(tab$fitted) - top, " more (summary() shows all)"))
@@ -783,8 +813,15 @@ S7::method(report, ModelScan) <- function(x, file = "model_scan_report.html", wi
             "<h2>Summary</h2>", paste0("<pre>", paste(gsub("<", "&lt;", .scan_lines(x, detail = TRUE)), collapse = "\n"), "</pre>"),
             "<h2>All models</h2>", .html_table(show),
             "<h2>Figures</h2>", img("ranking"), img("fit"), img("brier"), img("calibration"),
-            if (!is.null(x@per_time)) c("<h2>Measures at each time</h2>", .html_table(within(x@per_time, {
-              brier_cv <- .num(brier_cv, 4L); ipa_cv <- .num(ipa_cv, 3L); auc_cv <- .num(auc_cv, 3L); calib_cv <- .num(calib_cv, 3L) }))),
+            if (!is.null(x@per_time)) c("<h2>Measures at each time</h2>", .html_table({
+              pt <- x@per_time
+              keep <- intersect(c("model", "time", "brier_cv", "brier_se_cv", "brier_diff_p_cv", "ipa_cv", "auc_cv", "auc_se_cv",
+                                  "calib_cv", "oe_cv", "ici_cv"), names(pt))
+              pt <- pt[, keep, drop = FALSE]
+              for (nm in setdiff(keep, c("model", "time")))
+                pt[[nm]] <- if (nm == "brier_diff_p_cv") .pval(pt[[nm]]) else .num(pt[[nm]], if (startsWith(nm, "brier")) 4L else 3L)
+              pt
+            })),
             if (!is.null(x@effects)) c("<h2>Effects of the covariates</h2>", .html_table(within(x@effects, {
               estimate <- .num(estimate, 3L); lower <- .num(lower, 3L); upper <- .num(upper, 3L); p <- .pval(p) }))),
             "<h2>Methods</h2>", methods,

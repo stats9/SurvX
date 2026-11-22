@@ -284,5 +284,6 @@ acc_new_methods <- function(cfg) {
     }
   }
   progress_tick()
+  acc_assess(cfg)
   invisible()
 }
