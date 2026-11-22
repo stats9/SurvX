@@ -138,6 +138,21 @@ inline double reduce(int code, std::size_t n, const double* x, std::size_t strid
   }
 }
 
+// colMeans / rowMeans of R: a long double sum divided by the count, without the correction pass
+// of mean() (the two differ in the last bit where long double is double, as on ARM64 macOS)
+inline double r_colmean(std::size_t n, const double* x, std::size_t stride, bool na_rm) {
+  long double s = 0.0L;
+  std::size_t k = 0;
+  for (std::size_t i = 0; i < n; ++i) {
+    const double y = x[i * stride];
+    if (std::isnan(y)) { if (na_rm) continue; return y; }
+    s += y; ++k;
+  }
+  if (k == 0) return std::nan("");
+  s /= static_cast<long double>(k);
+  return static_cast<double>(s);
+}
+
 // ---- curves from event counts ---------------------------------------------------------------------
 // mode 0 Nelson-Aalen H = cumsum(d / Y), 1 exp(-H), 2 Kaplan-Meier cumprod(1 - d / Y); running sums
 // and products in long double, as R's cumsum() and cumprod()

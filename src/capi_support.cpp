@@ -698,8 +698,8 @@ int sc_reduce(int code, int n, const double* x, int na_rm, double* out) try {
 // by_row = 0: means of the nc columns of M (nr x nc, row-major); 1: means of the nr rows
 int sc_means(int nr, int nc, const double* M, int by_row, int na_rm, double* out) try {
   if (nr < 0 || nc < 0 || (nr > 0 && nc > 0 && !M) || ((by_row ? nr : nc) > 0 && !out)) return -1;
-  if (by_row) for (int i = 0; i < nr; ++i) out[i] = reduce(RD_MEAN, static_cast<std::size_t>(nc), M + static_cast<std::size_t>(i) * nc, 1, na_rm != 0);
-  else for (int j = 0; j < nc; ++j) out[j] = reduce(RD_MEAN, static_cast<std::size_t>(nr), M + j, static_cast<std::size_t>(nc), na_rm != 0);
+  if (by_row) for (int i = 0; i < nr; ++i) out[i] = r_colmean(static_cast<std::size_t>(nc), M + static_cast<std::size_t>(i) * nc, 1, na_rm != 0);
+  else for (int j = 0; j < nc; ++j) out[j] = r_colmean(static_cast<std::size_t>(nr), M + j, static_cast<std::size_t>(nc), na_rm != 0);
   return 0;
 } catch (...) { return -9; }
 
