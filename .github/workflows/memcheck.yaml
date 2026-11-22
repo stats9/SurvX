@@ -29,7 +29,7 @@ jobs:
             src/capi.cpp src/capi_par.cpp src/capi_support.cpp src/capi_assess.cpp -o memcheck_support
       - name: Run
         run: |
-          ./memcheck | tee memcheck.log && grep -q "invalid inputs refused 9 of 9" memcheck.log
+          ./memcheck | tee memcheck.log && grep -q "invalid inputs refused 11 of 11" memcheck.log
           ./memcheck_support | tee support.log && grep -q "invalid inputs refused 9 of 9" support.log
 
   ubsan-clang:
@@ -45,7 +45,7 @@ jobs:
             validation/memcheck/memcheck_support.cpp src/capi.cpp src/capi_par.cpp src/capi_support.cpp src/capi_assess.cpp -o memcheck_support
       - name: Run
         run: |
-          ./memcheck | tee memcheck.log && grep -q "invalid inputs refused 9 of 9" memcheck.log
+          ./memcheck | tee memcheck.log && grep -q "invalid inputs refused 11 of 11" memcheck.log
           ./memcheck_support | tee support.log && grep -q "invalid inputs refused 9 of 9" support.log
 
   valgrind:
