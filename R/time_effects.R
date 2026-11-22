@@ -46,8 +46,10 @@
 #'   which the whole procedure (screening, choice of the forms, final fit) is repeated. \code{0}
 #'   (default): none. 200 or more gives percentile intervals that include the choice of the forms
 #'   and the frequency with which each form is chosen.
-#' @param seed seed of the bootstrap; the state of the random number generator of the session is
-#'   restored afterwards.
+#' @param seed seed of the bootstrap: a whole number, or \code{NULL} to take the seed from the
+#'   random numbers of the session (so that \code{set.seed()} before the call governs the result).
+#'   All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the
+#'   session's generator is left as it was.
 #' @param max_rows largest number of rows of the data split at every event time. Beyond it, follow-up
 #'   is split at quantiles of the event times instead, and the result says so.
 #' @details
@@ -256,6 +258,7 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
                          screen = c("holm", "unadjusted", "all"), alpha = 0.05, criterion = c("aic", "bic"),
                          transform = c("km", "rank", "identity", "log"), df = 3L, breaks = NULL, times = NULL,
                          level = 0.95, bootstrap = 0L, seed = 1L, max_rows = 5e6) {
+  seed <- .resolve_seed(seed)
   cl <- match.call()
   screen <- match.arg(screen); criterion <- match.arg(criterion); transform <- match.arg(transform)
   if (!is.numeric(alpha) || length(alpha) != 1L || !(alpha > 0 && alpha < 1)) stop("alpha must be a number between 0 and 1", call. = FALSE)
@@ -294,6 +297,8 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
     kind <- "csc"; units <- seq_len(fit@K); ties <- fit@ties; w <- NULL; robust <- isTRUE(fit@robust)
   } else if (S7::S7_inherits(fit, FineGrayFit)) {
     kind <- "fg"; units <- fit@cause; ties <- "breslow"; w <- NULL; robust <- TRUE
+  } else if (S7::S7_inherits(fit, FrailtyFit)) {
+    stop("time_effects() is not available for models with frailty(); give it the model without frailty()", call. = FALSE)
   } else {
     stop("time_effects() takes a model fitted by cox(), by csc() with a Cox baseline, or by fg()", call. = FALSE)
   }
@@ -366,31 +371,41 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
 # function B(t) (a matrix with q columns), q, the number of parameters spent on choosing it
 # (a change point estimated from the data), a label and a description for the reader
 .te_basis <- function(fs, et, df, breaks, brk = NULL) {
-  tpos <- function(t) pmax(t, min(et) / 2)
-  tm <- stats::median(et)
+  tmin <- min(et)
+  tm <- .sx_quantile(et, 0.5)                           # the median of the event times
+  # the built-in forms are evaluated by the C++ core (survcore/timeeffects.hpp)
+  core <- function(form, b = numeric(0), kn = numeric(0), bk = c(0, 1)) {
+    q <- switch(form, 1L, 1L, length(b), length(kn) + 1L)
+    function(t) {
+      t <- as.double(t); nt <- length(t)
+      r <- .C("SX_te_basis", as.integer(form), as.integer(nt), t, as.double(tmin), as.double(tm), length(b), as.double(b),
+              length(kn), as.double(kn), as.double(bk[1L]), as.double(bk[2L]), out = double(nt * q), rc = integer(1),
+              NAOK = TRUE, PACKAGE = "SurvX")
+      .sx_rc(r$rc, "time function")
+      .matrix_rm(r$out, nt, q)
+    }
+  }
   switch(fs$type,
     constant = list(name = "constant", q = 0L, extra = 0L, B = NULL, label = "constant",
                     describe = "constant over time (proportional hazards)"),
-    log = list(name = fs$name, q = 1L, extra = 0L, B = function(t) cbind(log(tpos(t) / tm)), tmed = tm,
+    log = list(name = fs$name, q = 1L, extra = 0L, B = core(1L), tmed = tm,
                label = "log-linear in time", describe = paste0("log hazard ratio changes linearly in log(time); centred at t = ", format(signif(tm, 3L)))),
-    linear = list(name = fs$name, q = 1L, extra = 0L, B = function(t) cbind(t - tm), tmed = tm,
+    linear = list(name = fs$name, q = 1L, extra = 0L, B = core(2L), tmed = tm,
                   label = "linear in time", describe = paste0("log hazard ratio changes linearly in time; centred at t = ", format(signif(tm, 3L)))),
     piecewise = {
       b <- brk %||% breaks
       b <- sort(unique(b))
       list(name = fs$name, q = length(b), extra = if (is.null(breaks)) 1L else 0L,
-           B = function(t) matrix(vapply(b, function(s) as.numeric(t > s), numeric(length(t))), nrow = length(t)),
+           B = core(3L, b = b),
            breaks = b, label = if (length(b) == 1L) paste0("step at t = ", format(signif(b, 3L))) else "steps",
            describe = paste0("one hazard ratio before and one after t = ", paste(format(signif(b, 3L)), collapse = ", "),
                              if (is.null(breaks)) " (change point chosen from the data)" else ""))
     },
     spline = {
-      lt <- log(et)
-      kn <- if (df > 1L) stats::quantile(lt, seq_len(df - 1L) / df, names = FALSE, type = 7) else numeric(0)
+      lt <- .sx_ew("log", et)
+      kn <- if (df > 1L) .sx_quantile(lt, .sx_ew("div", seq_len(df - 1L), df), type = 7L) else numeric(0)
       bk <- range(lt)
-      list(name = fs$name, q = df, extra = 0L,
-           B = function(t) { b <- splines::ns(log(tpos(t)), knots = kn, Boundary.knots = bk, intercept = FALSE)
-                             matrix(as.numeric(b), nrow = length(t)) },
+      list(name = fs$name, q = df, extra = 0L, B = core(4L, kn = kn, bk = bk),
            knots = kn, boundary = bk, label = paste0("spline in log time (", df, " df)"),
            describe = paste0("smooth change: natural cubic spline in log(time) with ", df, " degrees of freedom"))
     },
@@ -428,64 +443,38 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
   r
 }
 
-# cut every row (start, stop] at the event times et strictly inside it (as cox() does for tt())
+# cut every row (start, stop] at the event times et strictly inside it (as cox() does for tt()); C++ core
 .te_split <- function(start, stop, status, et) {
-  lo <- findInterval(start, et)
-  hi <- findInterval(stop, et, left.open = TRUE)
-  rows <- pmax(hi - lo, 0L) + 1L
-  idx <- rep.int(seq_along(stop), rows)
-  r <- sequence(rows)
-  ci <- lo[idx] + r
-  last <- r == rows[idx]
-  list(idx = idx, stop = ifelse(last, stop[idx], et[pmin(ci, length(et))]),
-       start = ifelse(r == 1L, start[idx], et[pmax(ci - 1L, 1L)]), status = ifelse(last, status[idx], 0L))
+  n <- length(stop); cap <- .te_split_size(start, stop, et)
+  r <- .C("SX_te_split", as.integer(n), as.double(start), as.double(stop), as.integer(status), length(et), as.double(et),
+          as.integer(cap), idx = integer(cap), s0 = double(cap), s1 = double(cap), st = integer(cap), nrow = integer(1), rc = integer(1),
+          NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "splitting of follow-up")
+  k <- seq_len(r$nrow)
+  list(idx = r$idx[k] + 1L, stop = r$s1[k], start = r$s0[k], status = r$st[k])
 }
 
-.te_split_size <- function(start, stop, et) sum(as.numeric(pmax(findInterval(stop, et, left.open = TRUE) - findInterval(start, et), 0L) + 1L))
+.te_split_size <- function(start, stop, et) {
+  r <- .C("SX_te_split_size", length(stop), as.double(start), as.double(stop), length(et), as.double(et), out = double(1),
+          rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "splitting of follow-up")
+  r$out
+}
 
-# function of time used by the screening test at the event rows of the risk-set sums
+# the time scale of the score test: a transform code of the C++ core (weighted Kaplan-Meier for
+# Fine-Gray rows with censoring weights)
 .te_gfun <- function(transform, time, status, entry, w, weighted) {
-  force(transform)
-  function(rows, tev) {
-    if (transform == "km" && weighted) {
-      et <- sort(unique(time[status == 1L]))
-      d <- vapply(et, function(s) sum(w[status == 1L & time == s]), numeric(1))
-      Y <- vapply(et, function(s) sum(w[time >= s & (if (is.null(entry)) TRUE else entry < s)]), numeric(1))
-      S <- cumprod(1 - d / Y)
-      return(1 - c(1, S)[match(tev, et)])
-    }
-    .time_transform(time, status, tev, transform, entry, rows)
-  }
+  if (transform == "km" && weighted) "km_weighted" else transform
 }
 
-# score test of a constant effect (Grambsch & Therneau 1994), per column, per term and globally
+# score test of a constant effect (Grambsch & Therneau 1994), per column, per term and globally (C++ core)
 .te_zph <- function(time, status, X, beta, vcov, gfun, w, entry, strata, term_of) {
-  rs <- .cox_risksets(time, status, X, beta, w, entry, strata)
-  sch <- X[rs$rows, , drop = FALSE] - rs$xbar
-  g0 <- gfun(rs$rows, rs$time)
-  g <- g0 - mean(g0)
-  p <- ncol(X); nd <- length(rs$rows)
-  U <- colSums(sch * g)
-  Ibb <- apply(rs$V, c(2L, 3L), sum)
-  Ibg <- apply(rs$V * g, c(2L, 3L), sum)
-  Igg <- apply(rs$V * g^2, c(2L, 3L), sum)
-  A <- Igg - t(Ibg) %*% solve(Ibb, Ibg)
-  chi_col <- vapply(seq_len(p), function(j) U[j]^2 / A[j, j], numeric(1))
-  terms <- unique(term_of)
-  chi_term <- vapply(terms, function(tm) {
-    j <- which(term_of == tm)
-    drop(t(U[j]) %*% solve(A[j, j, drop = FALSE], U[j]))
-  }, numeric(1))
-  df_term <- vapply(terms, function(tm) sum(term_of == tm), integer(1))
-  glob <- drop(t(U) %*% solve(A, U))
-  scaled <- sch %*% vcov * nd + matrix(beta, nd, p, byrow = TRUE)
-  colnames(scaled) <- colnames(X)
-  list(columns = data.frame(column = colnames(X), term = term_of, chisq = chi_col, df = 1L,
-                            p = stats::pchisq(chi_col, 1L, lower.tail = FALSE), stringsAsFactors = FALSE),
-       terms = data.frame(term = terms, chisq = unname(chi_term), df = unname(df_term),
-                          p = stats::pchisq(unname(chi_term), unname(df_term), lower.tail = FALSE), stringsAsFactors = FALSE),
-       global = c(chisq = glob, df = p, p = stats::pchisq(glob, p, lower.tail = FALSE)),
-       resid = list(time = rs$time, g = g0, y = scaled))
+  z <- .ph_core(time, status, X, beta, vcov, gfun, w, entry, strata, term_of)
+  r <- z$r; p <- ncol(X)
+  list(columns = data.frame(column = colnames(X), term = term_of, chisq = r$chi_col, df = 1L, p = r$p_col, stringsAsFactors = FALSE),
+       terms = data.frame(term = z$terms, chisq = r$chi_term, df = as.integer(r$df_term), p = r$p_term, stringsAsFactors = FALSE),
+       global = c(chisq = r$chi_glob, df = p, p = r$p_glob),
+       resid = list(time = r$ev_time[z$k], g = r$g[z$k], y = z$scaled))
 }
 
 # design of the split data with the chosen form of every column: base columns, then for every column
@@ -497,7 +486,7 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
     b <- bases[[tm]][[f]] %||% NULL
     if (is.null(b) || b$q == 0L) { map[[j]] <- list(col = j, form = "constant", tv = integer(0), basis = NULL); next }
     Bm <- b$B(stop)
-    cols[[length(cols) + 1L]] <- Xs[, j] * Bm
+    cols[[length(cols) + 1L]] <- .sx_ew("mul", Bm, Xs[, j])
     map[[j]] <- list(col = j, form = f, tv = off + seq_len(ncol(Bm)), basis = b)
     off <- off + ncol(Bm)
   }
@@ -509,7 +498,7 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
   list(X = X, map = map)
 }
 
-.te_ic <- function(ll, k, d, criterion) if (criterion == "aic") -2 * ll + 2 * k else -2 * ll + log(d) * k
+.te_ic <- function(ll, k, d, criterion) if (criterion == "aic") .sx_aic(ll, k) else .sx_bic(ll, k, d)
 
 .te_unit <- function(raw, k, spec, times = NULL, keep = TRUE) {
   u <- .te_rows(raw, k)
@@ -528,7 +517,7 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
   zp <- tryCatch(.te_zph(u$stop, u$status, u$X, r0$coefficients, r0$vcov, gf, u$w, if (u$has_entry) u$start else NULL,
                          u$strata, term_of), error = function(e) NULL)
   scr <- if (is.null(zp)) data.frame(term = terms, chisq = NA_real_, df = NA_integer_, p = NA_real_) else zp$terms
-  scr$p_holm <- if (all(is.na(scr$p))) NA_real_ else stats::p.adjust(scr$p, "holm")
+  scr$p_holm <- if (all(is.na(scr$p))) NA_real_ else .sx_p_holm(scr$p)
   scr$considered <- switch(spec$screen,
                            holm = !is.na(scr$p_holm) & scr$p_holm < spec$alpha,
                            unadjusted = !is.na(scr$p) & scr$p < spec$alpha,
@@ -542,7 +531,7 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
   if (.te_split_size(u$start, u$stop, et) > spec$max_rows) {
     m <- 400L
     repeat {
-      eg <- unique(stats::quantile(et, seq(0, 1, length.out = m), type = 1, names = FALSE))
+      eg <- unique(.sx_quantile(et, .sx_seq(0, 1, m), type = 1L))
       if (.te_split_size(u$start, u$stop, eg) <= spec$max_rows || m <= 25L) break
       m <- m %/% 2L
     }
@@ -569,7 +558,7 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
         next
       }
       if (fs$type == "piecewise" && is.null(spec$breaks)) {
-        cands <- unique(stats::quantile(et, seq(0.2, 0.8, by = 0.1), type = 1, names = FALSE))
+        cands <- unique(.sx_quantile(et, .sx_seq_by(0.2, 0.8, 0.1), type = 1L))
         best <- NULL
         for (b0 in cands) {
           bb <- .te_basis(fs, et, spec$df, NULL, brk = b0)
@@ -600,9 +589,10 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
   comp$k <- comp$npar + comp$extra
   comp$ic <- .te_ic(comp$loglik, comp$k, nev, spec$criterion)
   ll0 <- base$loglik
-  comp$lr <- 2 * (comp$loglik - ll0)
   comp$lr_df <- comp$k - length(base$coefficients)
-  comp$p_lr <- ifelse(comp$lr_df > 0 & is.finite(comp$lr), stats::pchisq(pmax(comp$lr, 0), pmax(comp$lr_df, 1), lower.tail = FALSE), NA_real_)
+  t <- .sx_lr(comp$loglik, ll0, comp$lr_df)
+  comp$lr <- t$stat
+  comp$p_lr <- ifelse(comp$lr_df > 0 & is.finite(comp$lr), t$p, NA_real_)
   comp$delta <- NA_real_
   sel <- list()
   for (tm in terms) {
@@ -635,21 +625,21 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
   vm <- fin$vcov
   if (!is.null(S$cluster)) fin$vcov <- .cox_robust(fin, S$stop, S$status, dsg$X, S$w, raw$ties, S$start, S$strata, S$cluster)
   any_tv <- any(vapply(sel, function(f) f != "constant", logical(1)))
-  lr_all <- 2 * (fin$loglik - ll0); lr_df <- length(fin$coefficients) - length(base$coefficients)
+  lr_df <- length(fin$coefficients) - length(base$coefficients); lr_all <- .sx_lr(fin$loglik, ll0, lr_df)$stat
   if (raw$kind == "fg") notes <- c(notes, paste0("the Fine-Gray log-likelihood is a weighted pseudo-likelihood: ", toupper(spec$criterion),
                                                   " and likelihood ratio tests are guides, not exact tests"))
   if (grid) notes <- c(notes, paste0("follow-up was split at ", length(cut), " quantiles of the event times instead of every event time ",
                                     "(more than max_rows rows); the forms are evaluated at these points"))
   # effects at chosen times and on a grid for plots
-  tq <- sort(unique(times %||% signif(stats::quantile(et, c(0.1, 0.25, 0.5, 0.75, 0.9), type = 1, names = FALSE), 2L)))
-  tg <- seq(min(et), max(et), length.out = 101L)
+  tq <- sort(unique(times %||% .sx_signif(.sx_quantile(et, c(0.1, 0.25, 0.5, 0.75, 0.9), type = 1L), 2L)))
+  tg <- .sx_seq(min(et), max(et), 101L)
   eff <- .te_effects(fin, fin$vcov, dsg$map, term_of, tq, spec$level)
   curve <- .te_effects(fin, fin$vcov, dsg$map, term_of, tg, spec$level)
   out <- list(label = label, cause = k, kind = raw$kind, n = raw$n, nevent = nev, term_of = term_of, screening = scr,
               screening_columns = if (is.null(zp)) NULL else zp$columns, global = if (is.null(zp)) NULL else zp$global,
               comparison = comp, selected = unlist(sel), final = list(coefficients = fin$coefficients, vcov = fin$vcov,
               vcov_model = vm, loglik = fin$loglik, loglik_constant = ll0, lr = lr_all, lr_df = lr_df,
-              p = if (lr_df > 0) stats::pchisq(max(lr_all, 0), lr_df, lower.tail = FALSE) else NA_real_,
+              p = if (lr_df > 0) .sx_pchisq_upper(max(lr_all, 0), lr_df) else NA_real_,
               robust = !is.null(S$cluster), map = dsg$map),
               effects = eff, curve = curve, times = tq, event_times = et, any_tv = any_tv, notes = notes,
               constant = list(coefficients = base$coefficients, vcov = base$vcov), grid = grid)
@@ -662,21 +652,17 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
 
 # log hazard ratio of every column at times tt: beta + gamma' B(t), with the delta-method interval
 .te_effects <- function(fin, V, map, term_of, tt, level) {
-  b <- fin$coefficients; z <- .zq(level)
+  b <- fin$coefficients; z <- .zq(level); P <- length(b); nt <- length(tt)
   out <- lapply(map, function(m) {
     j <- m$col
-    if (!length(m$tv)) {
-      est <- rep(b[[j]], length(tt)); se <- rep(sqrt(V[j, j]), length(tt))
-    } else {
-      Bm <- m$basis$B(tt)
-      a <- cbind(1, Bm)
-      ix <- c(j, m$tv)
-      est <- drop(a %*% b[ix])
-      se <- sqrt(pmax(rowSums((a %*% V[ix, ix, drop = FALSE]) * a), 0))
-    }
-    data.frame(column = names(b)[j], term = term_of[j], form = m$form, time = tt, log_hr = est, se = se,
-               hr = exp(est), lower = exp(est - z * se), upper = exp(est + z * se),
-               p = 2 * stats::pnorm(-abs(est / se)), stringsAsFactors = FALSE)
+    q <- length(m$tv)
+    Bm <- if (q) m$basis$B(tt) else matrix(0, nt, 0L)
+    r <- .C("SX_te_effect", as.integer(nt), as.integer(q), .rm(Bm), as.integer(P), as.double(b), .rm(V), as.integer(c(j, m$tv) - 1L),
+            as.double(z), est = double(nt), se = double(nt), hr = double(nt), lower = double(nt), upper = double(nt), p = double(nt),
+            rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+    .sx_rc(r$rc, "time-varying effect")
+    data.frame(column = names(b)[j], term = term_of[j], form = m$form, time = tt, log_hr = r$est, se = r$se,
+               hr = r$hr, lower = r$lower, upper = r$upper, p = r$p, stringsAsFactors = FALSE)
   })
   do.call(rbind, out)
 }
@@ -688,8 +674,9 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
   cl <- raw$cluster %||% seq_len(raw$n)
   ids <- unique(cl)
   rows_of <- split(seq_along(cl), match(cl, ids))
-  res <- .with_seed(seed, lapply(seq_len(B), function(b) {
-    pick <- sample.int(length(ids), length(ids), replace = TRUE)
+  draws <- .sx_resample(length(ids), B, seed)
+  res <- lapply(seq_len(B), function(b) {
+    pick <- draws[b, ]
     rows <- unlist(rows_of[pick], use.names = FALSE)
     rb <- raw
     rb$time <- raw$time[rows]; rb$status <- raw$status[rows]; rb$X <- raw$X[rows, , drop = FALSE]
@@ -703,8 +690,8 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
       if (is.null(r)) return(NULL)
       list(selected = r$selected, effects = r$effects)
     })
-  }))
-  z <- 1 - (1 - spec$level) / 2
+  })
+  z <- .sx_upper_prob(spec$level)
   lapply(seq_along(units), function(q) {
     rr <- Filter(Negate(is.null), lapply(res, `[[`, q))
     nb <- length(rr)
@@ -713,7 +700,8 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
     forms <- unique(unlist(lapply(rr, `[[`, "selected")))
     freq <- do.call(rbind, lapply(terms, function(tm) {
       s <- vapply(rr, function(r) r$selected[[tm]], character(1))
-      data.frame(term = tm, form = forms, share = vapply(forms, function(f) mean(s == f), numeric(1)), stringsAsFactors = FALSE)
+      data.frame(term = tm, form = forms, share = vapply(forms, function(f) .sx_reduce("mean", as.double(s == f)), numeric(1)),
+                 stringsAsFactors = FALSE)
     }))
     freq <- freq[freq$share > 0, , drop = FALSE]
     e0 <- units[[q]]$effects
@@ -721,8 +709,8 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
     L <- vapply(rr, function(r) r$effects$log_hr[match(key, paste(r$effects$column, r$effects$time))], numeric(nrow(e0)))
     L <- matrix(L, nrow = nrow(e0))
     ci <- data.frame(column = e0$column, time = e0$time,
-                     lower = exp(apply(L, 1L, stats::quantile, probs = 1 - z, na.rm = TRUE, names = FALSE)),
-                     upper = exp(apply(L, 1L, stats::quantile, probs = z, na.rm = TRUE, names = FALSE)), stringsAsFactors = FALSE)
+                     lower = .sx_ew("exp", apply(L, 1L, .sx_quantile, probs = .sx_ew("complement", z))),
+                     upper = .sx_ew("exp", apply(L, 1L, .sx_quantile, probs = z)), stringsAsFactors = FALSE)
     list(B = B, ok = nb, freq = freq, ci = ci)
   })
 }
@@ -747,11 +735,11 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
     clear <- function(r) r$lower > 1 || r$upper < 1          # interval excludes 1
     shape <- if (sign(first$log_hr) != sign(last$log_hr) && clear(first) && clear(last)) {
       inr <- cv[cv$time >= first$time & cv$time <= last$time, , drop = FALSE]
-      cross <- which(diff(sign(inr$log_hr)) != 0)
+      sg <- sign(inr$log_hr); cross <- which(sg[-length(sg)] != sg[-1L])
       paste0("changes direction (from ", if (first$log_hr > 0) "above" else "below", " 1 to ", if (last$log_hr > 0) "above" else "below",
              " 1)", if (length(cross)) paste0(" near t = ", format(signif(inr$time[cross[1L] + 1L], 2L))) else "")
-    } else if (abs(last$log_hr - first$log_hr) < 0.05) "hardly changes between these times"
-      else if (abs(last$log_hr) < abs(first$log_hr)) "moves towards 1 (the effect weakens)"
+    } else if (.sx_ew("absdiff", last$log_hr, first$log_hr) < 0.05) "hardly changes between these times"
+      else if (.sx_ew("absdiff", last$log_hr, 0) < .sx_ew("absdiff", first$log_hr, 0)) "moves towards 1 (the effect weakens)"
       else "moves away from 1 (the effect strengthens)"
     out <- c(out, paste0("- ", .te_pretty(x, col), " (", m$basis$label, "): ", rn, " ", .num(first$hr, 2L), " (", .ci_text(first$lower, first$upper),
                          ") at t = ", format(first$time), ", ", .num(last$hr, 2L), " (", .ci_text(last$lower, last$upper), ") at t = ",
@@ -817,14 +805,14 @@ time_effects <- function(fit, forms = c("constant", "log", "piecewise", "spline"
       if (!is.null(bt$freq)) {
         fq <- bt$freq[bt$freq$term %in% u$screening$term, , drop = FALSE]
         fq <- fq[order(match(fq$term, u$screening$term), -fq$share), , drop = FALSE]
-        ft <- data.frame(term = .te_pretty(x, fq$term), form = fq$form, `chosen in` = paste0(round(100 * fq$share), "%"), check.names = FALSE)
+        ft <- data.frame(term = .te_pretty(x, fq$term), form = fq$form, `chosen in` = paste0(.sx_round(.sx_pct(fq$share)), "%"), check.names = FALSE)
         out <- c(out, "", paste0("Stability of the choice (", bt$ok, " of ", bt$B, " bootstrap samples)"), .table_lines(ft))
         top <- tapply(fq$share, fq$term, max)
         tvs <- names(u$selected)[u$selected != "constant"]
         unst <- intersect(names(top)[top < 0.5], tvs)
-        cst <- vapply(tvs, function(tm) sum(fq$share[fq$term == tm & fq$form != "constant"]), numeric(1))
+        cst <- vapply(tvs, function(tm) .sx_reduce("sum", fq$share[fq$term == tm & fq$form != "constant"]), numeric(1))
         if (length(tvs)) out <- c(out, paste0("  Share of the samples with a time-varying effect: ",
-                                              paste0(.te_pretty(x, tvs), " ", round(100 * cst), "%", collapse = ", "), "."))
+                                              paste0(.te_pretty(x, tvs), " ", .sx_round(.sx_pct(cst)), "%", collapse = ", "), "."))
         if (length(unst)) out <- c(out, paste0("  The form is not well determined for ", paste(.te_pretty(x, unst), collapse = ", "),
                                                " (no form chosen in half of the samples): report the hazard ratios at a few times, ",
                                                "with the bootstrap intervals, rather than the form."))
@@ -854,9 +842,8 @@ S7::method(as.data.frame, TimeEffects) <- function(x, row.names = NULL, optional
     screening = u$screening,
     forms = u$comparison[, c("term", "form", "label", "loglik", "k", "ic", "delta", "lr", "lr_df", "p_lr", "converged", "chosen")],
     coefficients = {
-      b <- u$final$coefficients; se <- sqrt(diag(u$final$vcov))
-      data.frame(term = names(b), estimate = unname(b), se = unname(se), z = unname(b / se),
-                 p = 2 * stats::pnorm(-abs(unname(b / se))), stringsAsFactors = FALSE)
+      b <- u$final$coefficients; se <- .sx_se(u$final$vcov); w <- .sx_wald(b, se, 0.95, FALSE)
+      data.frame(term = names(b), estimate = unname(b), se = unname(se), z = w$z, p = w$p, stringsAsFactors = FALSE)
     },
     stability = {
       if (is.null(x@bootstrap)) stop("no bootstrap: use time_effects(..., bootstrap = 200)", call. = FALSE)
@@ -899,8 +886,8 @@ S7::method(plot, TimeEffects) <- function(x, term = NULL, cause = NULL, residual
   for (pn in panels) {
     u <- pn$u; cn <- pn$col
     cv <- u$curve[u$curve$column == cn, , drop = FALSE]
-    f <- if (scale == "ratio") identity else log
-    tr <- if (scale == "ratio") exp else identity
+    f <- if (scale == "ratio") identity else function(v) .sx_ew("log", v)
+    tr <- if (scale == "ratio") function(v) .sx_ew("exp", v) else identity
     y <- f(cv$hr); lo <- f(cv$lower); hi <- f(cv$upper)
     rs <- u$resid
     pts <- NULL
@@ -911,12 +898,12 @@ S7::method(plot, TimeEffects) <- function(x, term = NULL, cause = NULL, residual
       if (length(pts$t) > 1000L) { s <- seq(1L, length(pts$t), length.out = 1000L); pts <- list(t = pts$t[s], y = pts$y[s]) }
     }
     # the range of the curve and its band, widened by half on the log scale; residuals outside it are clipped
-    lr <- range(log(c(cv$lower, cv$upper, exp(u$constant$coefficients[[cn]]))), na.rm = TRUE)
+    lr <- range(.sx_ew("log", c(cv$lower, cv$upper, .sx_ew("exp", u$constant$coefficients[[cn]]))), na.rm = TRUE)
     lr <- lr + c(-0.5, 0.5) * max(diff(lr), 0.1)
-    yl <- if (scale == "ratio") exp(lr) else lr
+    yl <- if (scale == "ratio") .sx_ew("exp", lr) else lr
     graphics::plot(cv$time, y, type = "n", ylim = yl, log = if (scale == "ratio") "y" else "", xlab = "Time",
                    ylab = if (scale == "ratio") rn else paste0("log ", rn), ...)
-    if (!is.null(pts)) graphics::points(pts$t, if (scale == "ratio") exp(pts$y) else pts$y, pch = 16, cex = 0.4, col = "grey75")
+    if (!is.null(pts)) graphics::points(pts$t, if (scale == "ratio") .sx_ew("exp", pts$y) else pts$y, pch = 16, cex = 0.4, col = "grey75")
     graphics::polygon(c(cv$time, rev(cv$time)), c(lo, rev(hi)), col = grDevices::adjustcolor(col, 0.2), border = NA)
     graphics::lines(cv$time, y, lwd = 2, col = col)
     graphics::abline(h = tr(0), lty = 3, col = "grey40")
@@ -932,12 +919,6 @@ S7::method(plot, TimeEffects) <- function(x, term = NULL, cause = NULL, residual
   invisible(x)
 }
 
-# cumulative function along each row of a matrix, keeping the matrix shape
-.te_rowcum <- function(M, f) {
-  if (!ncol(M)) return(M)
-  out <- t(apply(M, 1L, f))
-  matrix(out, nrow = nrow(M), ncol = ncol(M))
-}
 
 # predictions with the time-varying effects: survival (cox), cumulative incidence (fg, csc)
 S7::method(predict, TimeEffects) <- function(object, newdata = NULL, times, cause = 1L, ...) {
@@ -951,40 +932,35 @@ S7::method(predict, TimeEffects) <- function(object, newdata = NULL, times, caus
     bh <- .cox_baseline_raw(b, sp$stop, sp$status, sp$X, sp$w, sp$ties, sp$start, sp$strata)
     tj <- sort(unique(bh$time))
     nb <- ncol(fit@X)
-    lp0 <- drop(Xn %*% b[seq_len(nb)])
-    LP <- matrix(lp0, nrow(Xn), length(tj))
-    for (m in u$final$map) if (length(m$tv)) LP <- LP + outer(Xn[, m$col], rep(1, length(tj))) * matrix(drop(m$basis$B(tj) %*% b[m$tv]), nrow(Xn), length(tj), byrow = TRUE)
-    st <- if (is.null(sn)) rep(0L, nrow(Xn)) else sn
-    dH <- matrix(0, nrow(Xn), length(tj))
-    for (s in unique(st)) {
-      bs <- bh[bh$stratum == s, , drop = FALSE]
-      if (!nrow(bs)) next
-      inc <- diff(c(0, bs$cumhaz))
-      j <- match(bs$time, tj)
-      i <- which(st == s)
-      dH[i, j] <- outer(rep(1, length(i)), inc) * exp(LP[i, j, drop = FALSE])
+    nr <- nrow(Xn); m <- length(tj)
+    LP <- matrix(.sx_linpred(Xn, b[seq_len(nb)]), nr, m)         # x'b + sum of x_j B_j(t)'b_j (C++ core)
+    for (mp in u$final$map) if (length(mp$tv)) {
+      g <- .sx_linpred(mp$basis$B(tj), b[mp$tv])                 # B_j(t)'b_j at the grid times
+      LP <- .sx_ew("add", LP, .sx_ew("mul", matrix(Xn[, mp$col], nr, m), rep(g, each = nr)))
     }
-    list(t = tj, dH = dH)
+    st <- if (is.null(sn)) rep(0L, nr) else sn
+    list(t = tj, dH = .sx_hazard_inc(bh, st, tj, LP))
   }
-  at <- function(tj, M) {                            # value of the cumulative matrix M (rows x tj) at times
-    k <- findInterval(times, tj)
-    out <- matrix(0, nrow(M), length(times))
-    for (q in seq_along(times)) if (k[q] > 0L) out[, q] <- M[, k[q]]
-    out
+  # survival or cumulative incidence at `times` from the hazard increments (C++ core)
+  cum <- function(mode, tj, dHs, cause0 = 0L) {
+    nr <- nrow(Xn); m <- length(tj); K <- length(dHs)
+    dH <- unlist(lapply(dHs, .rm))
+    r <- .C("SX_cum_predict", as.integer(mode), as.integer(nr), as.integer(m), as.double(tj), as.integer(K), as.double(dH),
+            as.integer(cause0), as.integer(isTRUE(fit@product_limit)), length(times), as.double(times), out = double(nr * length(times)),
+            rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+    .sx_rc(r$rc, "prediction")
+    .matrix_rm(r$out, nr, length(times))
   }
   out <- switch(object@kind,
-    cox = { h <- haz(object@units[[1L]]); exp(-at(h$t, .te_rowcum(h$dH, cumsum))) },
-    fg = { h <- haz(object@units[[1L]]); 1 - exp(-at(h$t, .te_rowcum(h$dH, cumsum))) },
+    cox = { h <- haz(object@units[[1L]]); cum(0L, h$t, list(h$dH)) },
+    fg = { h <- haz(object@units[[1L]]); cum(1L, h$t, list(h$dH)) },
     csc = {
       hs <- lapply(object@units, haz)
       tj <- sort(unique(unlist(lapply(hs, `[[`, "t"))))
       dk <- lapply(hs, function(h) { M <- matrix(0, nrow(Xn), length(tj)); M[, match(h$t, tj)] <- h$dH; M })
-      tot <- Reduce(`+`, dk)
-      S <- if (isTRUE(fit@product_limit)) .te_rowcum(pmax(1 - tot, 0), cumprod) else exp(-.te_rowcum(tot, cumsum))
-      Sm <- cbind(1, S[, -ncol(S), drop = FALSE])
       k <- match(as.integer(cause), vapply(object@units, `[[`, integer(1), "cause"))
       if (is.na(k)) stop("cause ", cause, " is not in the model", call. = FALSE)
-      at(tj, .te_rowcum(Sm * dk[[k]], cumsum))
+      cum(2L, tj, dk, k - 1L)
     })
   dimnames(out) <- list(NULL, paste0("t=", times))
   out

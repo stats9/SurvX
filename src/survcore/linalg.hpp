@@ -70,4 +70,31 @@ inline Mat chol_inverse(const Mat& L) {
   return inv;
 }
 
+// Solve A X = B (A n x n, B n x m, both row-major in vectors) by LU decomposition with partial
+// pivoting, as LAPACK dgesv; returns false when A is exactly singular.
+inline bool lu_solve(std::size_t n, std::vector<double> A, std::vector<double>& B, std::size_t m) {
+  for (std::size_t k = 0; k < n; ++k) {
+    std::size_t piv = k;
+    for (std::size_t i = k + 1; i < n; ++i) if (std::fabs(A[i * n + k]) > std::fabs(A[piv * n + k])) piv = i;
+    if (A[piv * n + k] == 0.0) return false;
+    if (piv != k) {
+      for (std::size_t j = 0; j < n; ++j) std::swap(A[k * n + j], A[piv * n + j]);
+      for (std::size_t j = 0; j < m; ++j) std::swap(B[k * m + j], B[piv * m + j]);
+    }
+    for (std::size_t i = k + 1; i < n; ++i) {
+      const double f = A[i * n + k] / A[k * n + k];
+      if (f == 0.0) continue;
+      for (std::size_t j = k + 1; j < n; ++j) A[i * n + j] -= f * A[k * n + j];
+      for (std::size_t j = 0; j < m; ++j) B[i * m + j] -= f * B[k * m + j];
+    }
+  }
+  for (std::size_t kk = n; kk-- > 0;)
+    for (std::size_t j = 0; j < m; ++j) {
+      double v = B[kk * m + j];
+      for (std::size_t c = kk + 1; c < n; ++c) v -= A[kk * n + c] * B[c * m + j];
+      B[kk * m + j] = v / A[kk * n + kk];
+    }
+  return true;
+}
+
 }  // namespace survcore

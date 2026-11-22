@@ -1,0 +1,65 @@
+# Memory and undefined-behaviour check of the whole C++ core (validation/memcheck): every entry
+# point of the C API under AddressSanitizer + UBSan (gcc), UBSan (clang) and valgrind. Needs no R.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+name: C++ memcheck
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sanitizers:
+    runs-on: ubuntu-latest
+    name: ASan + UBSan (gcc)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          g++ -std=c++17 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined \
+            -fno-sanitize-recover=undefined -Isrc validation/memcheck/memcheck_capi.cpp \
+            src/capi.cpp src/capi_par.cpp src/capi_support.cpp -o memcheck
+          g++ -std=c++17 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined \
+            -fno-sanitize-recover=undefined -Isrc validation/memcheck/memcheck_support.cpp \
+            src/capi.cpp src/capi_par.cpp src/capi_support.cpp -o memcheck_support
+      - name: Run
+        run: |
+          ./memcheck | tee memcheck.log && grep -q "invalid inputs refused 9 of 9" memcheck.log
+          ./memcheck_support | tee support.log && grep -q "invalid inputs refused 9 of 9" support.log
+
+  ubsan-clang:
+    runs-on: ubuntu-latest
+    name: UBSan (clang, trap mode)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          clang++ -std=c++17 -O1 -g -fsanitize=undefined -fsanitize-trap=undefined -Isrc \
+            validation/memcheck/memcheck_capi.cpp src/capi.cpp src/capi_par.cpp src/capi_support.cpp -o memcheck
+          clang++ -std=c++17 -O1 -g -fsanitize=undefined -fsanitize-trap=undefined -Isrc \
+            validation/memcheck/memcheck_support.cpp src/capi.cpp src/capi_par.cpp src/capi_support.cpp -o memcheck_support
+      - name: Run
+        run: |
+          ./memcheck | tee memcheck.log && grep -q "invalid inputs refused 9 of 9" memcheck.log
+          ./memcheck_support | tee support.log && grep -q "invalid inputs refused 9 of 9" support.log
+
+  valgrind:
+    runs-on: ubuntu-latest
+    name: valgrind
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Build
+        run: |
+          g++ -std=c++17 -O2 -g -DREPS=9 -Isrc validation/memcheck/memcheck_capi.cpp src/capi.cpp src/capi_par.cpp src/capi_support.cpp -o memcheck_vg
+          g++ -std=c++17 -O2 -g -DREPS=12 -Isrc validation/memcheck/memcheck_support.cpp src/capi.cpp src/capi_par.cpp src/capi_support.cpp -o support_vg
+      - name: Run
+        run: |
+          valgrind --error-exitcode=9 --leak-check=full --errors-for-leak-kinds=definite,indirect ./memcheck_vg
+          valgrind --error-exitcode=9 --leak-check=full --errors-for-leak-kinds=definite,indirect ./support_vg

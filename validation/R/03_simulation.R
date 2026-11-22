@@ -256,7 +256,24 @@ sim_one <- function(rep, n, seed) {
   add(res_rows("gamma frailty, clusters of 4", "cox ignoring the clusters (naive)", b,
                attempt(cox(Event(time, status) ~ x1 + x2, dfr)), judged = FALSE))
 
-  # non-parametric estimators: coverage of the pointwise intervals (one group, Weibull(1.3, 2))
+  # constrained direct model with time ratios of the competing causes (gen_aft in 06_new_methods.R);
+  # the model without them is reported for the risk of cause 2 at t = 1 (it ignores the timing)
+  da <- gen_aft(max(400L, n))
+  fa <- attempt(directcif(Event(time, status) ~ x1 + x2, da, estimation = "constrained", cause = 1, cond = "weibull", timing = ~ x2))
+  add(res_rows("constrained CIF, AFT timing", "directcif(timing = ~ x2)", c(x1 = 0.5, x2 = -0.3), fa, cause = 1, role = "beta"))
+  add(res_rows("constrained CIF, AFT timing", "directcif(timing = ~ x2), cause 2", c(time_x2 = 0.5), fa, cause = 2, role = "timing"))
+  add(res_rows("constrained CIF, AFT timing", "directcif(timing = ~ x2), cause 3", c(time_x2 = -0.4), fa, cause = 3, role = "timing"))
+  nd <- data.frame(x1 = 0, x2 = 1.5); tr <- aft_true_F2(1, 0, 1.5)
+  for (m in c("with timing", "without timing (naive)")) {
+    ff <- if (m == "with timing") fa
+          else attempt(directcif(Event(time, status) ~ x1 + x2, da, estimation = "constrained", cause = 1, cond = "weibull"))
+    pr <- if (failed(ff)) NULL else tryCatch(predict(ff, nd, times = 1, cause = 2, se = TRUE), error = function(e) NULL)
+    add(val_rows("constrained CIF, AFT timing", paste("directcif", m), "F2(1 | x1 = 0, x2 = 1.5)", tr,
+                 if (is.null(pr)) NA_real_ else pr$cif[1, 1], if (is.null(pr)) NA_real_ else pr$se[1, 1],
+                 judged = m == "with timing"))
+  }
+
+  # non-parametric estimators: coverage of the pointwise intervals  # non-parametric estimators: coverage of the pointwise intervals (one group, Weibull(1.3, 2))
   t0 <- 2 * (-log(runif(n)))^(1 / 1.3); cc <- runif(n, 0, 6)
   dn <- data.frame(time = pmin(t0, cc), status = as.integer(t0 <= cc))
   k <- attempt(summary(km(Event(time, status) ~ 1, dn), times = c(1, 2, 3))@tables[[1]])
@@ -312,23 +329,19 @@ sim_one <- function(rep, n, seed) {
   r
 }
 
-run_simulation <- function(cfg) {
-  logmsg("Part 3: Monte Carlo study (", cfg$sim_R, " replications per scenario, n = ", paste(cfg$sim_n, collapse = ", "),
-         ", ", cfg$cores, " cores)")
-  all <- list()
-  for (n in cfg$sim_n) {
-    t0 <- proc.time()[["elapsed"]]
-    res <- plapply(seq_len(cfg$sim_R), function(r) tryCatch(sim_one(r, n, cfg$seed + 3L),
-                                                            error = function(e) data.frame(scenario = "ERROR", method = conditionMessage(e), rep = r, n = n)),
-                   cfg$cores)
-    cols <- unique(unlist(lapply(res, names)))
-    res <- do.call(rbind, lapply(res, function(x) { for (c in setdiff(cols, names(x))) x[[c]] <- NA; x[cols] }))
-    all[[length(all) + 1L]] <- res
-    logmsg("  simulation n = ", n, " done in ", round(proc.time()[["elapsed"]] - t0), " s")
-  }
-  raw <- do.call(rbind, all)
-  assign("simulation", list(raw), envir = .REC)
-  invisible(raw)
+# one stage of the Monte Carlo study: every replication at sample size n (each replication has a
+# seed of its own, so stages can be run in separate sessions)
+run_simulation_stage <- function(cfg, n) {
+  t0 <- proc.time()[["elapsed"]]
+  chunks <- min(50L, cfg$sim_R)                       # progress after every 2% of the replications
+  progress_start(chunks)
+  res <- plapply(seq_len(cfg$sim_R), function(r) tryCatch(sim_one(r, n, cfg$seed + 3L),
+                                                          error = function(e) data.frame(scenario = "ERROR", method = conditionMessage(e), rep = r, n = n)),
+                 cfg$cores, chunks = chunks)
+  cols <- unique(unlist(lapply(res, names)))
+  res <- do.call(rbind, lapply(res, function(x) { for (c in setdiff(cols, names(x))) x[[c]] <- NA; x[cols] }))
+  logmsg("  simulation n = ", n, " (", cfg$sim_R, " replications) done in ", round(proc.time()[["elapsed"]] - t0), " s")
+  invisible(res)
 }
 
 # summary table of the Monte Carlo study

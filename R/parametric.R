@@ -33,7 +33,7 @@
   if (dist == "rp") return(paste0("gamma", seq_len(length(knots) - 1L)))
   if (dist == "pwexp") {
     if (!length(knots)) return(character(0))
-    lo <- signif(knots, 4L); hi <- c(signif(knots[-1L], 4L), Inf)
+    lo <- .sx_signif(knots, 4L); hi <- c(.sx_signif(knots[-1L], 4L), Inf)
     return(paste0("log rate ratio (", lo, ", ", hi, "]"))
   }
   if (dist == "exponential") character(0) else if (scale == "AFT") "log(scale)" else if (dist == "gompertz") "shape" else "log(shape)"
@@ -48,13 +48,13 @@
 # the piecewise exponential model (default: quartiles of the event times)
 .par_knots <- function(dist, time, status01, df, knots, cuts) {
   if (dist == "rp") {
-    lt <- log(time[status01 == 1L])
+    lt <- .sx_ew("log", time[status01 == 1L])
     if (length(unique(lt)) < 2L) stop("the spline model needs at least two distinct event times", call. = FALSE)
-    if (!is.null(knots)) inner <- sort(log(knots))
+    if (!is.null(knots)) inner <- sort(.sx_ew("log", as.double(knots)))
     else {
       df <- as.integer(df)
       if (is.na(df) || df < 1L) stop("df must be a whole number of at least 1", call. = FALSE)
-      inner <- if (df > 1L) stats::quantile(lt, seq(0, 1, length.out = df + 1L)[-c(1L, df + 1L)], names = FALSE) else numeric(0)
+      inner <- if (df > 1L) .sx_quantile(lt, .sx_seq(0, 1, df + 1L)[-c(1L, df + 1L)]) else numeric(0)
     }
     b <- range(lt)
     if (any(inner <= b[1L] | inner >= b[2L]))
@@ -67,7 +67,7 @@
       if (any(!is.finite(cs) | cs <= 0)) stop("cuts must be positive and finite", call. = FALSE)
       return(cs)
     }
-    return(unique(stats::quantile(time[status01 == 1L], c(0.25, 0.5, 0.75), names = FALSE)))
+    return(unique(.sx_quantile(time[status01 == 1L], c(0.25, 0.5, 0.75))))
   }
   numeric(0)
 }
@@ -445,10 +445,9 @@ parsurv <- function(formula, data, baseline = "weibull", scale = NULL, df = 3L, 
     lim <- .cif_interval(est, se, zq)
     return(list(lower = array(lim$lower, dim(est), dimnames(est)), upper = array(lim$upper, dim(est), dimnames(est))))
   }
-  e <- suppressWarnings(zq * se / est)
-  lo <- suppressWarnings(est * exp(-e)); up <- suppressWarnings(est * exp(e))
-  bad <- !is.finite(est) | !is.finite(se) | !(est > 0)
-  lo[bad] <- NA_real_; up[bad] <- NA_real_
+  lim <- .sx_log_limits(est, se, zq)
+  lo <- up <- est
+  lo[] <- lim$lower; up[] <- lim$upper                 # keep the shape and names of est
   list(lower = lo, upper = up)
 }
 
@@ -525,7 +524,7 @@ S7::method(coef, ParCSCFit) <- function(object, ...) lapply(object@models, funct
 S7::method(vcov, ParCSCFit) <- function(object, ...) lapply(object@models, function(m) m@vcov)
 S7::method(nobs, ParCSCFit) <- function(object, ...) object@n
 S7::method(logLik, ParCSCFit) <- function(object, ...) {
-  structure(sum(vapply(object@models, function(m) m@loglik, numeric(1))),
+  structure(.sx_reduce("sum", vapply(object@models, function(m) m@loglik, numeric(1))),
             df = sum(vapply(object@models, function(m) length(m@coefficients), integer(1))), nobs = object@n, class = "logLik")
 }
 S7::method(confint, ParCSCFit) <- function(object, parm, level = 0.95, ...) lapply(object@models, function(m) confint(m, level = level))
@@ -550,15 +549,15 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
     r <- e[i, ]
     if (r$role == "baseline") {
       if (m@dist == "rp") list("gamma0 (intercept of the spline), all covariates 0", r$estimate, r$lower, r$upper)
-      else if (m@dist == "pwexp") list("rate in the first interval exp(intercept), all covariates 0", exp(r$estimate), exp(r$lower), exp(r$upper))
-      else if (m@scale == "AFT") list("time scale exp(intercept), all covariates 0", exp(r$estimate), exp(r$lower), exp(r$upper))
-      else list("baseline rate exp(intercept), all covariates 0", exp(r$estimate), exp(r$lower), exp(r$upper))
+      else if (m@dist == "pwexp") list("rate in the first interval exp(intercept), all covariates 0", .sx_ew("exp", r$estimate), .sx_ew("exp", r$lower), .sx_ew("exp", r$upper))
+      else if (m@scale == "AFT") list("time scale exp(intercept), all covariates 0", .sx_ew("exp", r$estimate), .sx_ew("exp", r$lower), .sx_ew("exp", r$upper))
+      else list("baseline rate exp(intercept), all covariates 0", .sx_ew("exp", r$estimate), .sx_ew("exp", r$lower), .sx_ew("exp", r$upper))
     } else if (m@dist == "rp") list(paste0(r$term, " (spline coefficient)"), r$estimate, r$lower, r$upper)
-    else if (m@dist == "pwexp") list(sub("log rate ratio", "rate ratio against the first interval,", r$term), exp(r$estimate), exp(r$lower), exp(r$upper))
+    else if (m@dist == "pwexp") list(sub("log rate ratio", "rate ratio against the first interval,", r$term), .sx_ew("exp", r$estimate), .sx_ew("exp", r$lower), .sx_ew("exp", r$upper))
     else if (r$term == "Q") list("Q (0: log-normal, 1: Weibull, equal to sigma: gamma)", r$estimate, r$lower, r$upper)
     else if (r$term == "shape") list("Gompertz shape a (a < 0: a fraction never fails)", r$estimate, r$lower, r$upper)
-    else if (r$term == "log(shape)") list("Weibull shape (1: constant hazard, > 1 rising, < 1 falling)", exp(r$estimate), exp(r$lower), exp(r$upper))
-    else list(paste0("scale sigma of log time", if (m@dist == "weibull") " (Weibull shape = 1/sigma)" else ""), exp(r$estimate), exp(r$lower), exp(r$upper))
+    else if (r$term == "log(shape)") list("Weibull shape (1: constant hazard, > 1 rising, < 1 falling)", .sx_ew("exp", r$estimate), .sx_ew("exp", r$lower), .sx_ew("exp", r$upper))
+    else list(paste0("scale sigma of log time", if (m@dist == "weibull") " (Weibull shape = 1/sigma)" else ""), .sx_ew("exp", r$estimate), .sx_ew("exp", r$lower), .sx_ew("exp", r$upper))
   })
   data.frame(parameter = vapply(rows, `[[`, "", 1L), estimate = .num(vapply(rows, `[[`, 0, 2L)),
              ci = .ci_text(vapply(rows, `[[`, 0, 3L), vapply(rows, `[[`, 0, 4L), 3L), stringsAsFactors = FALSE)
@@ -584,10 +583,10 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
     rt <- .ratio_text(r, sig$exp_lower[i], sig$exp_upper[i])
     ci <- paste0(.pct(level), " CI ", rt$ci)
     sent <- if (scale == "AFT") {
-      size <- if (r >= 2) paste0(rt$ratio, " times as long a") else paste0(round(100 * abs(r - 1)), "% ", if (r > 1) "longer" else "shorter")
+      size <- if (r >= 2) paste0(rt$ratio, " times as long a") else paste0(.sx_round(.sx_ew("mul", .sx_ew("absdiff", r, 1), 100)), "% ", if (r > 1) "longer" else "shorter")
       paste0(who[i], ": ", size, " time to ", what, " (time ratio ", rt$ratio, ", ", ci, ").")
     } else {
-      size <- if (r >= 2) paste0(rt$ratio, " times the") else paste0(round(100 * abs(r - 1)), "% ", if (r > 1) "higher" else "lower")
+      size <- if (r >= 2) paste0(rt$ratio, " times the") else paste0(.sx_round(.sx_ew("mul", .sx_ew("absdiff", r, 1), 100)), "% ", if (r > 1) "higher" else "lower")
       paste0(who[i], ": ", size, " rate of ", what, " (", ratio_label, " ", rt$ratio, ", ", ci, ").")
     }
     out <- c(out, paste0("  - ", sent))
@@ -611,7 +610,7 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
     ci <- paste0(.pct(level), " CI ", rt$ci)
     dir <- if (r > 1) "higher" else "lower"
     sent <- if (identical(link, "PO")) {
-      size <- if (r >= 2) paste0(rt$ratio, " times the") else paste0(round(100 * abs(r - 1)), "% ", dir)
+      size <- if (r >= 2) paste0(rt$ratio, " times the") else paste0(.sx_round(.sx_ew("mul", .sx_ew("absdiff", r, 1), 100)), "% ", dir)
       paste0(who[i], ": ", size, " odds of having had ", what, " by any time (OR ", rt$ratio, ", ", ci, ").")
     } else if (identical(link, "PH")) {
       paste0(who[i], ": ", dir, " cumulative incidence of ", what, " at every time (sHR ", rt$ratio, ", ", ci, ").")
@@ -627,12 +626,12 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
 
 .fit_line <- function(m) {
   P <- length(m@coefficients)
-  aic <- -2 * m@loglik + 2 * P; bic <- -2 * m@loglik + log(m@n) * P
+  ic <- .sx_ic(m@loglik, P, m@n); aic <- ic$aic; bic <- ic$bic
   out <- sprintf("Fit: log-likelihood %.2f | AIC %.2f | BIC %.2f | %d parameters", m@loglik, aic, bic, P)
   df <- ncol(m@X)
   if (df > 0L && is.finite(m@loglik_null)) {
-    lr <- 2 * (m@loglik - m@loglik_null)
-    pv <- .pval(stats::pchisq(lr, df, lower.tail = FALSE))
+    t <- .sx_lr(m@loglik, m@loglik_null, df); lr <- t$stat
+    pv <- .pval(t$p)
     out <- c(out, sprintf("     likelihood ratio test against no covariates: chi-square %.2f on %d df, p %s",
                           lr, df, if (startsWith(pv, "<")) sub("<", "< ", pv) else paste("=", pv)))
   }
@@ -688,7 +687,7 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
     out <- c(out, .fit_line(m), .status_lines(m@converged, m@flags))
   }
   ll <- logLik(x)
-  out <- c(out, "", sprintf("All causes: log-likelihood %.2f | AIC %.2f", as.numeric(ll), -2 * as.numeric(ll) + 2 * attr(ll, "df")),
+  out <- c(out, "", sprintf("All causes: log-likelihood %.2f | AIC %.2f", as.numeric(ll), .sx_aic(as.numeric(ll), attr(ll, "df"))),
            "Check: the cumulative incidences of all causes and the event-free probability add up to one (coherent by construction).")
   if (detail)
     out <- c(out, "",
@@ -713,40 +712,42 @@ S7::method(summary, ParCSCFit) <- function(object, level = 0.95, ...) {
 
 # Nelson-Aalen increments of cause k (delayed entry allowed): distinct event times, events, at risk
 .na_increments <- function(time, status, k, entry = NULL) {
-  ev <- status == k
-  et <- sort(unique(time[ev]))
-  if (!length(et)) return(NULL)
-  d <- tabulate(match(time[ev], et), length(et))
-  Y <- vapply(et, function(s) sum(time >= s & (if (is.null(entry)) TRUE else entry < s)), numeric(1))
-  list(time = et, d = as.numeric(d), Y = Y)
+  n <- length(time)
+  r <- .C("SX_event_counts", as.integer(n), as.double(time), as.integer(status), as.integer(k), as.integer(!is.null(entry)),
+          if (is.null(entry)) double(1) else as.double(entry), et = double(n), d = double(n), Y = double(n), m = integer(1),
+          rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "event counts")
+  if (!r$m) return(NULL)
+  j <- seq_len(r$m)
+  list(time = r$et[j], d = r$d[j], Y = r$Y[j])
 }
 
 .na_frame <- function(inc, level) {
-  H <- cumsum(inc$d / inc$Y); se <- sqrt(cumsum(inc$d / inc$Y^2))
-  zq <- .zq(level)
-  data.frame(time = inc$time, n.risk = inc$Y, n.event = inc$d, cumhaz = H, se = se,
-             lower = H * exp(-zq * se / H), upper = H * exp(zq * se / H))
+  m <- length(inc$time)
+  r <- .C("SX_na_table", as.integer(m), as.double(inc$d), as.double(inc$Y), as.double(.zq(level)), H = double(m), se = double(m),
+          lower = double(m), upper = double(m), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "Nelson-Aalen estimate")
+  data.frame(time = inc$time, n.risk = inc$Y, n.event = inc$d, cumhaz = r$H, se = r$se, lower = r$lower, upper = r$upper)
 }
 
 # the smoothed hazard is shown up to the last event time with at least max(10, 10% of the initial risk
 # set) subjects at risk (the end of the cross-validation region in the C++ core); beyond it the
 # estimate rests on a handful of subjects
 .kernel_end <- function(inc) {
-  need <- max(10, 0.1 * inc$Y[1L])
+  need <- max(10, .sx_ew("mul", 0.1, inc$Y[1L]))
   ok <- inc$Y >= need
   if (any(ok)) max(inc$time[ok]) else inc$time[1L]
 }
 
 .kernel_frame <- function(inc, bw, boundary, grid, level) {
-  x <- seq(0, .kernel_end(inc), length.out = grid)
+  x <- .sx_seq(0, .kernel_end(inc), grid)
   r <- .C("SX_kernel_hazard", as.integer(length(inc$time)), as.double(inc$time), as.double(inc$d), as.double(inc$Y),
           as.double(if (is.null(bw)) -1 else bw), as.integer(boundary), as.integer(grid), as.double(x),
           h = double(grid), se = double(grid), bw = double(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
   .sx_rc(r$rc, "hazard_np")
-  zq <- .zq(level); h <- r$h; se <- r$se
-  ok <- h > 0
-  lo <- ifelse(ok, h * exp(-zq * se / h), NA_real_); up <- ifelse(ok, h * exp(zq * se / h), NA_real_)
-  list(frame = data.frame(time = x, hazard = h, se = se, lower = lo, upper = up), bw = r$bw)
+  h <- r$h; se <- r$se
+  lim <- .sx_log_limits(h, se, .zq(level))
+  list(frame = data.frame(time = x, hazard = h, se = se, lower = lim$lower, upper = lim$upper), bw = r$bw)
 }
 
 #' Non-parametric hazard: Nelson-Aalen and kernel-smoothed hazard rate
@@ -973,7 +974,7 @@ hazard_plot <- function(x, newdata = NULL, type = c("hazard", "cumhaz", "surviva
   ic <- .is_ic(ref)
   K <- if (S7::S7_inherits(ref, ParCSCFit)) ref@K else 1L
   causes <- if (type == "survival") 0L else if (is.null(cause)) seq_len(K) else as.integer(cause)
-  tg <- if (is.null(times)) seq(0, max(ref@time), length.out = 201L) else sort(times)
+  tg <- if (is.null(times)) .sx_seq(0, max(ref@time), 201L) else sort(times)
   tg_pos <- if (type == "hazard") tg[tg > 0] else tg
   rows <- if (is.null(newdata)) { pf <- .profile(ref); list(X = pf$X, labels = "typical covariate values") }
           else list(X = .sx_newX(ref, newdata), labels = .newdata_labels(ref, newdata))
@@ -999,7 +1000,7 @@ hazard_plot <- function(x, newdata = NULL, type = c("hazard", "cumhaz", "surviva
     # interval-censored data: the Turnbull estimate (survival, or minus its log)
     tb <- .tb_fit(ref@interval$left, ref@interval$right)
     sc <- .tb_steps(tb)
-    v <- if (type == "survival") sc$surv else -log(pmax(sc$surv, 1e-300))
+    v <- if (type == "survival") sc$surv else .sx_ew("neglog_floor", sc$surv)
     ok <- is.finite(v) & (type == "survival" | sc$surv > 0)
     refd <- data.frame(cause = 0L + (type != "survival"), time = sc$time[ok], value = v[ok], step = FALSE)
   } else if (reference && !ic) {
@@ -1009,7 +1010,7 @@ hazard_plot <- function(x, newdata = NULL, type = c("hazard", "cumhaz", "surviva
       if (type == "survival") {
         inc <- .na_increments(ref@time, as.integer(st > 0L), 1L, ref@entry)
         if (is.null(inc)) return(NULL)
-        s <- cumprod(1 - inc$d / inc$Y)
+        s <- .sx_np_curve_inc(inc$d, inc$Y, "km")
         return(data.frame(cause = k, time = c(0, inc$time), value = c(1, s), step = TRUE))
       }
       inc <- .na_increments(ref@time, st, kk, ref@entry)
@@ -1029,7 +1030,7 @@ hazard_plot <- function(x, newdata = NULL, type = c("hazard", "cumhaz", "surviva
     dk <- d[d$cause == k, , drop = FALSE]; rk <- if (is.null(refd)) NULL else refd[refd$cause == k, , drop = FALSE]
     yv <- c(dk$value, if (conf.int) dk$upper, if (!is.null(rk)) rk$value)
     yv <- yv[is.finite(yv)]
-    ylim <- if (type == "survival") c(0, 1) else c(0, if (length(yv)) stats::quantile(yv, 0.995, names = FALSE) * 1.05 else 1)
+    ylim <- if (type == "survival") c(0, 1) else c(0, if (length(yv)) .sx_quantile(yv, 0.995) * 1.05 else 1)
     ttl <- if (!is.null(main)) main else if (k > 0L && K > 1L) paste0("Cause ", k) else ""
     graphics::plot(range(tg), ylim, type = "n", xlab = xlab, ylab = ylab, main = ttl, ...)
     if (!is.null(rk) && nrow(rk)) graphics::lines(rk$time, rk$value, type = if (rk$step[1L]) "s" else "l", col = "grey45", lwd = lwd, lty = 2)

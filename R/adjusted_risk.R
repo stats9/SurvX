@@ -18,7 +18,10 @@
 #'   \code{\link{directcif}}, \code{\link{parsurv}}, \code{\link{cure}} or the result of
 #'   \code{\link{time_effects}}. It must contain the treatment as a covariate (or, for \code{cox} and
 #'   \code{csc}, as a stratum) and should contain the confounders. It must have been fitted with
-#'   \code{data = }, so that it can be refitted in bootstrap samples.
+#'   \code{data = }, so that it can be refitted in bootstrap samples. A \code{cox()} or \code{parsurv()}
+#'   model with \code{+ frailty(id)} is standardised with the frailty integrated out (the marginal
+#'   risk of a subject from a new cluster, \code{predict(fit, frailty = "marginal")}); in the bootstrap
+#'   the clusters are resampled whole, and a cluster drawn twice enters the refit as two clusters.
 #' @param data the data frame the model was fitted to.
 #' @param treatment the name of the treatment variable (a column of \code{data}): a factor, character,
 #'   logical or 0/1 variable with at most 10 values.
@@ -35,8 +38,10 @@
 #' @param trim truncation of the weights at the \code{trim} and \code{1 - trim} quantiles (for example
 #'   0.01) when some weights are extreme; 0 (default) for none.
 #' @param B number of bootstrap samples; 0 for point estimates only.
-#' @param seed seed of the bootstrap; the state of the random number generator of the session is
-#'   restored afterwards.
+#' @param seed seed of the bootstrap: a whole number, or \code{NULL} to take the seed from the
+#'   random numbers of the session (so that \code{set.seed()} before the call governs the result).
+#'   All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the
+#'   session's generator is left as it was.
 #' @param level confidence level.
 #' @param reference the treatment value against which the others are compared; default the first
 #'   level.
@@ -182,6 +187,7 @@
 #' @export
 adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method = c("gformula", "ipw", "both"),
                           ps_formula = NULL, trim = 0, B = 200L, seed = 1L, level = 0.95, reference = NULL) {
+  seed <- .resolve_seed(seed)
   cl <- match.call()
   method <- match.arg(method)
   if (S7::S7_inherits(fit)) .no_ic(fit, "adjusted_risk()")
@@ -212,9 +218,9 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
   }
   ev <- info$time[info$status == info$cause]
   if (length(ev) < 5L) stop("too few events of the cause of interest", call. = FALSE)
-  times <- sort(unique(times %||% signif(stats::quantile(ev, c(0.25, 0.5, 0.75), type = 1, names = FALSE), 2L)))
+  times <- sort(unique(times %||% .sx_signif(.sx_quantile(ev, c(0.25, 0.5, 0.75), type = 1L), 2L)))
   if (any(!is.finite(times)) || any(times <= 0)) stop("times must be positive numbers", call. = FALSE)
-  grid <- seq(0, max(ev), length.out = 61L)[-1L]
+  grid <- .sx_seq(0, max(ev), 61L)[-1L]
   tt <- sort(unique(c(times, grid)))
   psf <- if (method != "gformula") .ar_ps_formula(ps_formula, fit, info, treatment) else NULL
   env <- parent.frame()
@@ -235,25 +241,31 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
   base <- if (S7::S7_inherits(fit, TimeEffects)) fit@fit else fit
   ok <- S7::S7_inherits(base, CoxFit) || S7::S7_inherits(base, FineGrayFit) || S7::S7_inherits(base, CSCFit) ||
         S7::S7_inherits(base, DirectCIFFit) || S7::S7_inherits(base, ParSurvFit) || S7::S7_inherits(base, ParCSCFit) ||
-        S7::S7_inherits(base, CureFit)
-  if (!ok) stop("adjusted_risk() takes a model fitted by cox(), fg(), csc(), directcif(), parsurv(), cure() or time_effects()", call. = FALSE)
-  single <- S7::S7_inherits(base, CoxFit) || S7::S7_inherits(base, ParSurvFit) || S7::S7_inherits(base, CureFit)
+        S7::S7_inherits(base, CureFit) || S7::S7_inherits(base, FrailtyFit)
+  if (!ok) stop("adjusted_risk() takes a model fitted by cox(), fg(), csc(), directcif(), parsurv(), cure() (also with frailty()) ",
+                "or time_effects()", call. = FALSE)
+  frail <- S7::S7_inherits(base, FrailtyFit)
+  single <- S7::S7_inherits(base, CoxFit) || S7::S7_inherits(base, ParSurvFit) || S7::S7_inherits(base, CureFit) || frail
   if (S7::S7_inherits(base, CoxFit) && !is.null(base@tt))
     stop("models with tt() terms are not supported; use time_effects() and give its result instead", call. = FALSE)
   if (S7::S7_inherits(base, FineGrayFit)) cause <- base@cause
   if (single) cause <- 1L
   vars <- all.vars(base@terms)
+  if (frail) vars <- c(vars, all.vars(str2lang(base@cluster_var)))
   sv <- tryCatch(base@strata_vars, error = function(e) NULL)
   if (!is.null(sv)) vars <- c(vars, unlist(lapply(sv, function(s) all.vars(str2lang(s)))))
   ent <- tryCatch(base@entry, error = function(e) NULL)
-  risk <- if (single) {
-    if (S7::S7_inherits(fit, TimeEffects)) function(f, nd, t) 1 - as.matrix(predict(f, nd, times = t))
-    else function(f, nd, t) 1 - as.matrix(predict(f, nd, times = t, type = "survival"))
+  risk <- if (frail) {
+    # standardisation over the clusters of the population: the frailty integrated out
+    function(f, nd, t) .sx_ew("complement", as.matrix(predict(f, nd, times = t, type = "survival", frailty = "marginal")))
+  } else if (single) {
+    if (S7::S7_inherits(fit, TimeEffects)) function(f, nd, t) .sx_ew("complement", as.matrix(predict(f, nd, times = t)))
+    else function(f, nd, t) .sx_ew("complement", as.matrix(predict(f, nd, times = t, type = "survival")))
   } else if (S7::S7_inherits(base, FineGrayFit) && !S7::S7_inherits(fit, TimeEffects)) {
     function(f, nd, t) as.matrix(predict(f, nd, times = t))
   } else function(f, nd, t) as.matrix(predict(f, nd, times = t, cause = cause))
   list(base = base, kind = if (single) "single" else "competing", cause = as.integer(cause), vars = unique(vars),
-       time = base@time, status = base@status, entry = ent, risk = risk)
+       time = base@time, status = base@status, entry = ent, risk = risk, frailty = frail)
 }
 
 .ar_ps_formula <- function(ps_formula, fit, info, treatment) {
@@ -281,7 +293,7 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
                          else if (is.logical(d[[treatment]])) as.logical(l)
                          else if (is.numeric(d[[treatment]])) as.numeric(l) else l
       r <- info$risk(fit, nd, tt)
-      colMeans(r, na.rm = TRUE)
+      .sx_colmeans(r, na.rm = TRUE)
     }, numeric(length(tt))))
   }
   if (method %in% c("ipw", "both")) {
@@ -296,86 +308,53 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
   out
 }
 
-# multinomial (binary: logistic) model of the treatment and stabilised weights
+# multinomial (binary: logistic) model of the treatment, stabilised weights, balance and weight
+# diagnostics: computed by the C++ core (survcore/adjust.hpp)
 .ar_ps <- function(d, treatment, lev, psf, trim) {
   mf <- stats::model.frame(psf, d, na.action = stats::na.pass)
   X <- stats::model.matrix(psf, mf)
   a <- factor(as.character(d[[treatment]]), levels = lev)
   P <- .ar_mlogit(X, a)
-  pa <- P[cbind(seq_len(nrow(P)), as.integer(a))]
-  marg <- as.numeric(table(a)) / length(a)
-  w <- marg[as.integer(a)] / pa
-  if (trim > 0) {
-    q <- stats::quantile(w, c(trim, 1 - trim), names = FALSE)
-    w <- pmin(pmax(w, q[1L]), q[2L])
-  }
+  n <- nrow(X); K <- length(lev); ai <- as.integer(a) - 1L
+  rw <- .C("SX_ipw_weights", as.integer(n), as.integer(K), .rm(P), ai, as.double(trim), w = double(n), rc = integer(1),
+           NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(rw$rc, "treatment weights")
+  w <- rw$w
   Xc <- X[, colnames(X) != "(Intercept)", drop = FALSE]
-  smd <- if (ncol(Xc)) {
-    ref <- a == lev[1L]
-    do.call(rbind, lapply(lev[-1L], function(l) {
-      o <- a == l
-      s <- sqrt((apply(Xc[ref, , drop = FALSE], 2L, stats::var) + apply(Xc[o, , drop = FALSE], 2L, stats::var)) / 2)
-      s[!is.finite(s) | s == 0] <- NA_real_
-      wm <- function(i) colSums(Xc[i, , drop = FALSE] * w[i]) / sum(w[i])
-      data.frame(covariate = colnames(Xc), level = l,
-                 before = (colMeans(Xc[o, , drop = FALSE]) - colMeans(Xc[ref, , drop = FALSE])) / s,
-                 after = (wm(o) - wm(ref)) / s, stringsAsFactors = FALSE, row.names = NULL)
-    }))
-  } else NULL
-  ess <- vapply(lev, function(l) { i <- a == l; sum(w[i])^2 / sum(w[i]^2) }, numeric(1))
-  diag <- list(ps_range = t(vapply(lev, function(l) range(P[, l]), numeric(2))),
-               weights = data.frame(level = lev, n = as.integer(table(a)), ess = unname(ess),
-                                    max_weight = vapply(lev, function(l) max(w[a == l]), numeric(1)), row.names = NULL),
+  q <- ncol(Xc)
+  rb <- .C("SX_balance", as.integer(n), as.integer(q), .rm(Xc), ai, as.integer(K), as.double(w), .rm(P),
+           before = double(max(1L, (K - 1L) * q)), after = double(max(1L, (K - 1L) * q)), size = double(K), ess = double(K),
+           max_weight = double(K), ps_min = double(K), ps_max = double(K), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(rb$rc, "balance")
+  na <- function(v) ifelse(is.nan(v), NA_real_, v)
+  smd <- if (q) do.call(rbind, lapply(seq_len(K - 1L), function(j) {
+    k <- (j - 1L) * q + seq_len(q)
+    data.frame(covariate = colnames(Xc), level = lev[j + 1L], before = na(rb$before[k]), after = na(rb$after[k]),
+               stringsAsFactors = FALSE, row.names = NULL)
+  })) else NULL
+  diag <- list(ps_range = matrix(c(rb$ps_min, rb$ps_max), K, 2L, dimnames = list(lev, NULL)),
+               weights = data.frame(level = lev, n = as.integer(rb$size), ess = rb$ess, max_weight = rb$max_weight, row.names = NULL),
                smd = smd, trim = trim)
   list(w = w, diag = diag)
 }
 
-# multinomial logistic regression by Newton-Raphson; returns the n x K matrix of probabilities
+# multinomial logistic regression (C++ core); returns the n x K matrix of probabilities
 .ar_mlogit <- function(X, a) {
   K <- nlevels(a); n <- nrow(X); p <- ncol(X)
-  Y <- matrix(0, n, K); Y[cbind(seq_len(n), as.integer(a))] <- 1
-  b <- matrix(0, p, K - 1L)
-  prob <- function(b) { e <- cbind(0, X %*% b); e <- exp(e - apply(e, 1L, max)); e / rowSums(e) }
-  ll <- function(P) sum(Y * log(pmax(P, 1e-300)))
-  P <- prob(b); l0 <- ll(P)
-  for (it in seq_len(100L)) {
-    g <- as.vector(crossprod(X, Y[, -1L, drop = FALSE] - P[, -1L, drop = FALSE]))
-    H <- matrix(0, p * (K - 1L), p * (K - 1L))
-    for (j in seq_len(K - 1L)) for (k in seq_len(K - 1L)) {
-      wjk <- P[, j + 1L] * ((j == k) - P[, k + 1L])
-      H[(j - 1L) * p + seq_len(p), (k - 1L) * p + seq_len(p)] <- crossprod(X * wjk, X)
-    }
-    step <- tryCatch(solve(H + diag(1e-8, nrow(H)), g), error = function(e) NULL)
-    if (is.null(step)) break
-    s <- 1
-    repeat {
-      bn <- b + matrix(step * s, p, K - 1L)
-      Pn <- prob(bn); ln <- ll(Pn)
-      if (is.finite(ln) && ln >= l0 - 1e-10) break
-      s <- s / 2
-      if (s < 1e-8) break
-    }
-    b <- bn; P <- Pn
-    if (abs(ln - l0) < 1e-10 * (abs(l0) + 1)) break
-    l0 <- ln
-  }
-  colnames(P) <- levels(a)
-  P
+  r <- .C("SX_mlogit", as.integer(n), as.integer(p), .rm(X), as.integer(a) - 1L, as.integer(K), P = double(n * K),
+          iterations = integer(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "treatment model")
+  .matrix_rm(r$P, n, K, list(NULL, levels(a)))
 }
 
 # weighted Aalen-Johansen estimate of the cumulative incidence of cause k (one event type: 1 - KM)
 .ar_wcif <- function(time, status, entry, w, k, tt) {
-  et <- sort(unique(time[status > 0L]))
-  if (!length(et)) return(rep(0, length(tt)))
-  Y <- vapply(et, function(s) sum(w[time >= s & (if (is.null(entry)) TRUE else entry < s)]), numeric(1))
-  dall <- vapply(et, function(s) sum(w[time == s & status > 0L]), numeric(1))
-  dk <- vapply(et, function(s) sum(w[time == s & status == k]), numeric(1))
-  ok <- Y > 0
-  haz_all <- ifelse(ok, dall / Y, 0); haz_k <- ifelse(ok, dk / Y, 0)
-  S <- cumprod(1 - haz_all)
-  Sm <- c(1, S[-length(S)])
-  F <- cumsum(Sm * haz_k)
-  .step_at(et, F, tt, 0)
+  n <- length(time)
+  r <- .C("SX_weighted_cif", as.integer(n), as.double(time), as.integer(status), as.integer(!is.null(entry)),
+          if (is.null(entry)) double(1) else as.double(entry), as.double(w), as.integer(k), length(tt), as.double(tt),
+          out = double(length(tt)), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "weighted cumulative incidence")
+  r$out
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -397,13 +376,21 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
 }
 
 .ar_bootstrap <- function(fit, d, treatment, lev, tt, method, psf, trim, B, seed, env, info) {
-  cluster <- tryCatch(info$base@cluster, error = function(e) NULL)
+  # clusters are resampled whole: those of cluster() (robust variance) and of frailty()
+  cluster <- if (isTRUE(info$frailty)) info$base@cluster[info$base@cluster_index]
+             else tryCatch(info$base@cluster, error = function(e) NULL)
   cl <- cluster %||% seq_len(nrow(d))
   ids <- unique(cl)
   rows_of <- split(seq_along(cl), match(cl, ids))
-  res <- .with_seed(seed, lapply(seq_len(B), function(b) {
-    rows <- unlist(rows_of[sample.int(length(ids), length(ids), replace = TRUE)], use.names = FALSE)
+  # frailty: a cluster drawn twice enters the refit as two clusters, so the cluster variable is
+  # recoded in every sample (only when it is a plain column of the data)
+  fv <- if (isTRUE(info$frailty) && info$base@cluster_var %in% names(d)) info$base@cluster_var else NULL
+  draws <- .sx_resample(length(ids), B, seed)
+  res <- lapply(seq_len(B), function(b) {
+    draw <- draws[b, ]
+    rows <- unlist(rows_of[draw], use.names = FALSE)
     db <- d[rows, , drop = FALSE]
+    if (!is.null(fv)) db[[fv]] <- rep(seq_along(draw), lengths(rows_of[draw]))
     if (any(table(factor(as.character(db[[treatment]]), levels = lev)) == 0L)) return(NULL)
     tryCatch(suppressWarnings({
       fb <- .ar_refit(fit, db, env)
@@ -411,7 +398,7 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
       e <- .ar_estimate(fb, db, ib, treatment, lev, tt, method, psf, trim)
       e[c("gformula", "ipw")]
     }), error = function(e) NULL)
-  }))
+  })
   res <- Filter(Negate(is.null), res)
   list(res = res, ok = length(res), B = B)
 }
@@ -420,34 +407,34 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
 # tables of risks, contrasts and curves
 # ----------------------------------------------------------------------------------------------
 .ar_tables <- function(est, boot, lev, times, tt, level) {
-  z <- .zq(level); a <- (1 - level) / 2
   ms <- intersect(c("gformula", "ipw"), names(est))
   have_b <- !is.null(boot) && boot$ok >= max(10L, boot$B / 2)
   pick <- function(m) if (have_b) lapply(boot$res, `[[`, m) else NULL
+  # standard deviation and percentile limits of every column of the B x m draws (C++ core)
+  bsum <- function(draws, nb, m, finite_only = FALSE) .sx_boot_summary(draws, nb, m, level, finite_only)
   risk <- list(); con <- list(); curve <- list()
   for (m in ms) {
     R <- est[[m]]                                   # levels x tt
     bs <- pick(m)
     arr <- if (have_b) simplify2array(bs) else NULL # levels x tt x B
+    nb <- if (have_b) dim(arr)[3L] else 0L
     for (i in seq_along(lev)) {
-      sd <- if (have_b) apply(arr[i, , , drop = FALSE], 2L, stats::sd) else rep(NA_real_, length(tt))
-      lo <- if (have_b) apply(arr[i, , , drop = FALSE], 2L, stats::quantile, probs = a, names = FALSE) else rep(NA_real_, length(tt))
-      hi <- if (have_b) apply(arr[i, , , drop = FALSE], 2L, stats::quantile, probs = 1 - a, names = FALSE) else rep(NA_real_, length(tt))
-      df <- data.frame(method = m, level = lev[i], time = tt, risk = R[i, ], se = sd, lower = lo, upper = hi, stringsAsFactors = FALSE)
+      # draws of level i as a B x tt matrix in row-major order: arr[i, , ] column by column
+      sm <- if (have_b) bsum(arr[i, , ], nb, length(tt)) else list(sd = rep(NA_real_, length(tt)), lower = rep(NA_real_, length(tt)),
+                                                                   upper = rep(NA_real_, length(tt)))
+      df <- data.frame(method = m, level = lev[i], time = tt, risk = R[i, ], se = sm$sd, lower = sm$lower, upper = sm$upper,
+                       stringsAsFactors = FALSE)
       curve[[length(curve) + 1L]] <- df
       risk[[length(risk) + 1L]] <- df[df$time %in% times, , drop = FALSE]
     }
     for (i in seq_along(lev)[-1L]) {
       j <- tt %in% times
-      dd <- R[i, j] - R[1L, j]; rr <- R[i, j] / R[1L, j]
+      dd <- .sx_ew("sub", R[i, j], R[1L, j]); rr <- .sx_ew("div", R[i, j], R[1L, j])
       if (have_b) {
-        D <- matrix(arr[i, j, ] - arr[1L, j, ], nrow = sum(j))
-        Q <- matrix(log(arr[i, j, ] / arr[1L, j, ]), nrow = sum(j))
-        sdd <- apply(D, 1L, stats::sd); sdl <- apply(Q, 1L, function(v) stats::sd(v[is.finite(v)]))
-        dlo <- apply(D, 1L, stats::quantile, probs = a, names = FALSE); dhi <- apply(D, 1L, stats::quantile, probs = 1 - a, names = FALSE)
-        rlo <- exp(apply(Q, 1L, function(v) stats::quantile(v[is.finite(v)], a, names = FALSE)))
-        rhi <- exp(apply(Q, 1L, function(v) stats::quantile(v[is.finite(v)], 1 - a, names = FALSE)))
-        p <- 2 * stats::pnorm(-abs(dd / sdd))
+        D <- .sx_ew("sub", arr[i, j, ], arr[1L, j, ]); Q <- .sx_ew("logratio", arr[i, j, ], arr[1L, j, ])
+        sd_ <- bsum(D, nb, sum(j)); sq <- bsum(Q, nb, sum(j), TRUE)
+        sdd <- sd_$sd; dlo <- sd_$lower; dhi <- sd_$upper; rlo <- .sx_ew("exp", sq$lower); rhi <- .sx_ew("exp", sq$upper)
+        p <- .sx_ew("pvalue", dd, sdd)
       } else { sdd <- dlo <- dhi <- rlo <- rhi <- p <- rep(NA_real_, sum(j)) }
       con[[length(con) + 1L]] <- data.frame(method = m, level = lev[i], reference = lev[1L], time = tt[j], difference = dd, se = sdd,
                                             lower = dlo, upper = dhi, ratio = rr, ratio_lower = rlo, ratio_upper = rhi, p = p,
@@ -468,6 +455,9 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
   out <- c(paste0("Adjusted absolute risks: ", what),
            paste0("  Treatment: ", x@treatment, " (", paste(x@levels, collapse = ", "), "; reference ", x@levels[1L], ")   subjects: ", x@n),
            paste0("  Method: ", paste(vapply(intersect(c("gformula", "ipw"), unique(x@risk$method)), .ar_mname, character(1)), collapse = " and ")),
+           if (S7::S7_inherits(x@fit, FrailtyFit) && "gformula" %in% x@risk$method)
+             paste0("  Outcome model with shared frailty (", x@fit@cluster_var, "): risks averaged over the frailty distribution ",
+                    "(marginal); clusters resampled whole in the bootstrap"),
            if (x@B > 0L) paste0("  Intervals: percentile bootstrap, ", x@ok, " of ", x@B, " samples (models refitted in every sample)")
            else "  Intervals: none (B = 0); use B = 200 or more", "")
   for (m in unique(x@risk$method)) {
@@ -491,20 +481,20 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
   cc <- x@contrast[x@contrast$method == m1 & x@contrast$time == tl, , drop = FALSE]
   out <- c(out, "Reading:",
            paste0("- At t = ", format(tl), ", had everyone had ", x@treatment, " = ", r$level, ", the ",
-                  if (x@kind == "single") "risk" else "cumulative incidence", " would have been ", .num(100 * r$risk, 1L), "%.", collapse = NULL))
+                  if (x@kind == "single") "risk" else "cumulative incidence", " would have been ", .num(.sx_pct(r$risk), 1L), "%.", collapse = NULL))
   for (i in seq_len(nrow(cc))) {
     sig <- if (x@B > 0L && is.finite(cc$lower[i])) {
       if (cc$lower[i] > 0 || cc$upper[i] < 0) "; the interval excludes 0" else "; the interval includes 0, so no difference is shown"
     } else ""
     out <- c(out, paste0("- ", cc$level[i], " vs ", cc$reference[i], ": ", if (cc$difference[i] >= 0) "+" else "",
-                         .num(100 * cc$difference[i], 1L), " percentage points", if (x@B > 0L) paste0(" (", lv, " CI ",
-                         .num(100 * cc$lower[i], 1L), " to ", .num(100 * cc$upper[i], 1L), ")") else "", sig, "."))
+                         .num(.sx_pct(cc$difference[i]), 1L), " percentage points", if (x@B > 0L) paste0(" (", lv, " CI ",
+                         .num(.sx_pct(cc$lower[i]), 1L), " to ", .num(.sx_pct(cc$upper[i]), 1L), ")") else "", sig, "."))
   }
   if (identical(x@method, "both")) {
     g <- x@risk[x@risk$method == "gformula", ]; w <- x@risk[x@risk$method == "ipw", ]
-    dmax <- max(abs(g$risk - w$risk[match(paste(g$level, g$time), paste(w$level, w$time))]), na.rm = TRUE)
+    dmax <- .sx_reduce("maxabs", .sx_ew("sub", g$risk, w$risk[match(paste(g$level, g$time), paste(w$level, w$time))]), TRUE)
     noadj <- identical(attr(stats::terms(x@ps_formula), "term.labels"), character(0))
-    out <- c(out, paste0("- The two methods differ by at most ", .num(100 * dmax, 1L), " percentage points: ",
+    out <- c(out, paste0("- The two methods differ by at most ", .num(.sx_pct(dmax), 1L), " percentage points: ",
                          if (dmax < 0.02) "they agree, so the conclusion does not hinge on the outcome or the treatment model."
                          else if (dmax < 0.05) "they agree reasonably; the methods rest on different models (outcome vs treatment)."
                          else "a notable difference; the methods rest on different models, so check both (ph_test(), time_effects(), balance)."),
@@ -517,8 +507,8 @@ adjusted_risk <- function(fit, data, treatment, times = NULL, cause = 1L, method
                                      check.names = FALSE)))
     if (!is.null(x@ps$smd)) {
       s <- x@ps$smd
-      out <- c(out, paste0("  largest standardised mean difference: ", .num(max(abs(s$before), na.rm = TRUE), 2L), " before, ",
-                           .num(max(abs(s$after), na.rm = TRUE), 2L), " after weighting (below 0.1 is usually taken as balanced)"))
+      out <- c(out, paste0("  largest standardised mean difference: ", .num(.sx_reduce("maxabs", s$before, TRUE), 2L), " before, ",
+                           .num(.sx_reduce("maxabs", s$after, TRUE), 2L), " after weighting (below 0.1 is usually taken as balanced)"))
       if (detail) out <- c(out, .table_lines(data.frame(covariate = s$covariate, level = s$level, before = .num(s$before, 3L), after = .num(s$after, 3L))))
     }
     pr <- x@ps$ps_range

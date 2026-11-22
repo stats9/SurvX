@@ -160,16 +160,29 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L) {
 #'   \code{c(baseline, link, estimation)} or \code{c(baseline, link, "constrained", cond)}; link
 #'   \code{"PH"}, \code{"PO"} or \code{"GOR"}; estimation \code{"joint"} (default), \code{"weighted"} or
 #'   \code{"constrained"}; see \code{\link{directcif}}. \code{NULL}: Gompertz baseline with PH and PO
-#'   links, joint and weighted, and with two causes the constrained PH model with a Weibull \eqn{G}.
+#'   links, joint and weighted, and with two or more causes the constrained PH model with a Weibull
+#'   \eqn{G}. Constrained models with three or more causes are fitted by \code{directcif()} with the
+#'   same folds (as those of \code{constrained}).
 #' @param cause cause of interest.
 #' @param folds number of cross-validation folds (less than 2: apparent performance only).
-#' @param seed seed of the fold assignment.
+#' @param seed seed of the fold assignment: a whole number, or \code{NULL} to take the seed from the
+#'   random numbers of the session (so that \code{set.seed()} before the call governs the result).
+#'   All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the
+#'   session's generator is left as it was.
 #' @param df degrees of freedom of spline baselines.
 #' @param hazard optional list of parametric cause-specific hazard models, fitted by \code{\link{csc}}
 #'   with a parametric \code{baseline}: each a distribution name or \code{c("rp", df)}, e.g.
 #'   \code{list("weibull", "lognormal", c("rp", 4))}. They are cross-validated with the same folds as
 #'   the other models, and their AIC (full likelihood of the data) is comparable with that of the joint
 #'   and constrained direct models.
+#' @param constrained optional list of constrained direct models (\code{\link{directcif}} with
+#'   \code{estimation = "constrained"}) with options that \code{direct} cannot express: each a list
+#'   with any of \code{baseline} (default \code{"gompertz"}), \code{link} (\code{"PH"}), \code{cond}
+#'   (\code{"weibull"}, one value or one per competing cause), \code{timing} and \code{shape} (the
+#'   covariates of the time distributions of the competing causes), e.g.
+#'   \code{list(list(), list(timing = ~ age))}. Any number of causes. They are fitted by
+#'   \code{directcif()} and cross-validated with the same folds; their AIC is comparable with that of
+#'   the joint and constrained direct models.
 #' @section Interpreting the result:
 #' Judge the models on the cross-validated columns (ending in \code{_cv}): lower Brier score and
 #' calibration error, higher IPA and AUC are better. Apparent measures, computed on the data used for
@@ -207,18 +220,20 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L) {
 #'
 #' cm <- compare_models(Event(time, status) ~ x, d, times = c(1, 2), folds = 3,
 #'                      direct = list(c("gompertz", "PH"), c("gompertz", "PO", "weighted")),
-#'                      hazard = list("weibull"))
+#'                      hazard = list("weibull"), constrained = list(list(timing = ~ x)))
 #' cm
 #' as.data.frame(cm)
 #' @export
-compare_models <- function(formula, data, times, direct = NULL, cause = 1L, folds = 5L, seed = 1L, df = 3L, hazard = NULL) {
+compare_models <- function(formula, data, times, direct = NULL, cause = 1L, folds = 5L, seed = 1L, df = 3L, hazard = NULL,
+                           constrained = NULL) {
+  seed <- .resolve_seed(seed)
   cl <- match.call()
-  f <- .sx_frame(formula, data)
+  f <- .sx_frame(formula, data, what = "compare_models() (for models with a shared frailty use model_scan() or cv_compare())")
   n <- length(f$time); p <- ncol(f$X); K <- max(f$status); nt <- length(times)
   if (p < 1L) stop("at least one covariate is needed", call. = FALSE)
   if (is.null(direct)) {
     direct <- list(c("gompertz", "PH"), c("gompertz", "PO"), c("gompertz", "PH", "weighted"), c("gompertz", "PO", "weighted"))
-    if (K == 2L) direct <- c(direct, list(c("gompertz", "PH", "constrained", "weibull")))
+    if (K >= 2L) direct <- c(direct, list(c("gompertz", "PH", "constrained", "weibull")))
   }
   nd <- length(direct)
   part <- function(i, default) vapply(direct, function(d) if (length(d) >= i) as.character(d[[i]]) else default, character(1))
@@ -226,17 +241,26 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
   if (any(!base %in% names(.base_codes)) || any(!lk %in% c("PH", "PO", "GOR")) || any(!est %in% c("joint", "weighted", "constrained")) ||
       any(!cd %in% names(.cond_codes)))
     stop("direct: each entry must be c(baseline, link), c(baseline, link, estimation) or c(baseline, link, \"constrained\", cond)", call. = FALSE)
-  if (any(est == "constrained") && K != 2L) stop("constrained models need exactly two causes", call. = FALSE)
+  if (any(est == "constrained") && K < 2L) stop("constrained models need at least two causes", call. = FALSE)
   if (any(est == "constrained" & base %in% c("weibull", "spline"))) stop("constrained models need a baseline with a plateau (not weibull or spline)", call. = FALSE)
+  # constrained models with K >= 3 causes, and those of `constrained`, are fitted by directcif() in R
+  cspec <- .constrained_specs(constrained)
+  if (K != 2L && any(est == "constrained")) {
+    mv <- which(est == "constrained")
+    cspec <- c(.constrained_specs(lapply(mv, function(j) list(baseline = base[j], link = lk[j], cond = cd[j]))), cspec)
+    keep <- setdiff(seq_len(nd), mv)
+    direct <- direct[keep]; base <- base[keep]; lk <- lk[keep]; est <- est[keep]; cd <- cd[keep]; nd <- length(direct)
+  }
+  if (length(cspec) && K < 2L) stop("constrained models need at least two causes", call. = FALSE)
   M <- nd + 2L
-  r <- .C("SX_compare", as.integer(n), as.integer(p), as.integer(K), f$time, f$status, .rm(f$X), as.integer(cause),
-          as.integer(nt), as.double(times), as.integer(folds), as.integer(seed), as.integer(nd),
+  r <- .with_seed(seed, .C("SX_compare", as.integer(n), as.integer(p), as.integer(K), f$time, f$status, .rm(f$X), as.integer(cause),
+          as.integer(nt), as.double(times), as.integer(folds), as.integer(nd),
           as.integer(unname(.base_codes[base])), as.integer(match(lk, c("PH", "PO", "GOR")) - 1L), rep(as.integer(df), nd),
           as.integer(match(est, c("joint", "weighted", "constrained")) - 1L), as.integer(unname(.cond_codes[cd])),
-          metrics = double(M * nt * 8L), fit = double(M * 5L), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+          metrics = double(M * nt * 8L), fit = double(M * 5L), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX"))
   .sx_rc(r$rc, "compare_models")
   suffix <- ifelse(est == "joint", "", ifelse(est == "weighted", ", weighted", paste0(", constrained (G ", cd, ")")))
-  names_m <- c(paste0("direct ", base, " ", lk, suffix), "Fine-Gray", "cause-specific Cox")
+  names_m <- c(if (nd) paste0("direct ", base, " ", lk, suffix), "Fine-Gray", "cause-specific Cox")
   a <- array(r$metrics, dim = c(2L, 4L, nt, M))                      # [apparent/cv, metric, time, model]
   tab <- NULL
   for (m in seq_len(M)) for (j in seq_len(nt))
@@ -246,27 +270,35 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
   ft <- .matrix_rm(r$fit, M, 5L)
   fit <- data.frame(model = names_m, loglik = ft[, 1L], npar = ft[, 2L], aic = ft[, 3L], flags = ft[, 4L], folds_not_converged = ft[, 5L])
   fit$aic[!is.finite(fit$aic)] <- NA_real_
-  if (!is.null(hazard)) {
-    hz <- .hazard_specs(hazard)
+  if (!is.null(hazard) || length(cspec)) {
+    hz <- if (is.null(hazard)) list() else .hazard_specs(hazard)
     vars <- intersect(all.vars(formula), names(data))
     dd <- data[stats::complete.cases(data[, vars, drop = FALSE]), , drop = FALSE]
     if (nrow(dd) != n) stop("compare_models: could not align the data for the parametric hazard models", call. = FALSE)
     fold <- rep(1L, n)
     if (folds >= 2L) {                      # the folds of the C++ comparison above
-      rf <- .C("SX_cv_folds", as.integer(n), as.integer(folds), as.integer(seed), out = integer(n), rc = integer(1), PACKAGE = "SurvX")
+      rf <- .with_seed(seed, .C("SX_cv_folds", as.integer(n), as.integer(folds), out = integer(n), rc = integer(1), PACKAGE = "SurvX"))
       .sx_rc(rf$rc, "compare_models")
       fold <- rf$out + 1L
     }
     funs <- lapply(hz, function(h) { force(h); function(fm, d) csc(fm, d, baseline = h$baseline, df = h$df) })
     names(funs) <- vapply(hz, `[[`, "", "name")
+    cf <- lapply(cspec, function(s) {
+      force(s)
+      function(fm, d) directcif(fm, d, baseline = s$baseline, link = s$link, estimation = "constrained", cause = cause,
+                                cond = s$cond, timing = s$timing, shape = s$shape)
+    })
+    names(cf) <- vapply(cspec, `[[`, "", "name")
+    funs <- c(funs, cf)
     res <- .cv_run(formula, dd, f, funs, times, cause, folds, fold, 10L)
     tab <- rbind(tab, res$table)
     for (m in seq_along(funs)) {
       ft <- res$fits[[m]]
       ll <- if (is.null(ft)) NA_real_ else as.numeric(logLik(ft))
       np <- if (is.null(ft)) NA_real_ else attr(logLik(ft), "df")
-      ok <- !is.null(ft) && all(vapply(ft@models, function(x) isTRUE(x@converged), logical(1)))
-      fit <- rbind(fit, data.frame(model = names(funs)[m], loglik = ll, npar = np, aic = -2 * ll + 2 * np,
+      ok <- !is.null(ft) && (if (S7::S7_inherits(ft, DirectCIFFit)) isTRUE(ft@converged)
+                             else all(vapply(ft@models, function(x) isTRUE(x@converged), logical(1))))
+      fit <- rbind(fit, data.frame(model = names(funs)[m], loglik = ll, npar = np, aic = .sx_aic(ll, np),
                                    flags = if (ok) 0 else 1, folds_not_converged = res$failed[m]))
     }
   }
@@ -287,11 +319,16 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
 #' @param models a named list of functions \code{function(formula, data)} that return a fitted model
 #'   with a \code{predict(fit, newdata, times, cause)} method giving the cumulative incidence of
 #'   the cause. Wrap any model, with its own options, in such
-#'   a function.
+#'   a function. Fits of \code{cox()}, \code{parsurv()} and \code{cure()} for one event type are scored
+#'   by \code{1 - predict(fit, newdata, times, type = "survival")}. With \code{+ frailty(id)} in
+#'   \code{formula}, the folds keep every cluster whole and frailty models predict for a new cluster.
 #' @param times time horizons.
 #' @param cause cause of interest.
 #' @param folds number of folds (less than 2: apparent performance only).
-#' @param seed seed of the fold assignment (the state of the random number generator is restored).
+#' @param seed seed of the fold assignment: a whole number, or \code{NULL} to take the seed from the
+#'   random numbers of the session (so that \code{set.seed()} before the call governs the result).
+#'   All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the
+#'   session's generator is left as it was.
 #' @param groups number of risk groups for the calibration error.
 #' @section Interpreting the result:
 #' As for \code{\link{compare_models}}: judge the models on the cross-validated measures (lower Brier
@@ -327,39 +364,47 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
 #'   "cause-specific Cox" = function(f, d) csc(f, d)))
 #' @export
 cv_compare <- function(formula, data, models, times, cause = 1L, folds = 5L, seed = 1L, groups = 10L) {
+  seed <- .resolve_seed(seed)
   cl <- match.call()
   if (!is.list(models) || is.null(names(models)) || any(names(models) == "")) stop("models must be a named list of functions", call. = FALSE)
   vars <- intersect(all.vars(formula), names(data))
   data <- data[stats::complete.cases(data[, vars, drop = FALSE]), , drop = FALSE]
-  f <- .sx_frame(formula, data)
+  f <- .sx_frame(formula, data, frailty_ok = TRUE)
   n <- length(f$time); nt <- length(times); M <- length(models)
   if (n != nrow(data)) stop("could not align the response with the data", call. = FALSE)
   fold <- rep(1L, n)
   if (folds >= 2L) {
-    had <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
-    old <- if (had) get(".Random.seed", envir = globalenv()) else NULL
-    set.seed(seed)
-    fold <- sample(rep_len(seq_len(folds), n))
-    if (had) assign(".Random.seed", old, envir = globalenv()) else rm(".Random.seed", envir = globalenv())
+    if (!is.null(f$frailty)) fold <- .scan_folds_cluster(f$frailty, folds, seed)   # whole clusters
+    else fold <- .sx_folds(rep(0L, n), folds, seed)
   }
   res <- .cv_run(formula, data, f, models, times, cause, folds, fold, groups)
   tab <- res$table; fit <- NULL
   for (m in seq_len(M)) {
     ft <- res$fits[[m]]
     is_direct <- !is.null(ft) && S7::S7_inherits(ft, DirectCIFFit)
-    is_par <- !is.null(ft) && (S7::S7_inherits(ft, ParCSCFit) || S7::S7_inherits(ft, ParSurvFit))
+    is_par <- !is.null(ft) && (S7::S7_inherits(ft, ParCSCFit) || S7::S7_inherits(ft, ParSurvFit) ||
+                               (S7::S7_inherits(ft, FrailtyFit) && ft@kind == "parametric"))
     ll <- if (is_direct) ft@loglik else if (is_par) as.numeric(logLik(ft)) else NA_real_
     np <- if (is_direct) length(ft@coefficients) else if (is_par) attr(logLik(ft), "df") else NA_integer_
     fit <- rbind(fit, data.frame(
       model = names(models)[m],
       loglik = ll,
       npar = np,
-      aic = if ((is_direct && ft@estimation != "weighted") || is_par) -2 * ll + 2 * np else NA_real_,
+      aic = if ((is_direct && ft@estimation != "weighted") || is_par) .sx_aic(ll, np) else NA_real_,
       converged = if (is_direct) ft@converged else if (S7::S7_inherits(ft, ParCSCFit)) all(vapply(ft@models, function(x) isTRUE(x@converged), logical(1)))
                   else if (is_par) ft@converged else NA,
       folds_failed = res$failed[m]))
   }
   ModelComparison(model_call = cl, table = tab, fit = fit, folds = as.integer(folds), cause = as.integer(cause))
+}
+
+# predicted risk of the event (one event type) or cumulative incidence of the cause: the models of
+# this package for one event type predict survival (frailty models: for a new cluster)
+.cv_predict <- function(fit, nd, times, cause) {
+  if (S7::S7_inherits(fit, CoxFit) || S7::S7_inherits(fit, ParSurvFit) || S7::S7_inherits(fit, CureFit) ||
+      S7::S7_inherits(fit, FrailtyFit))
+    return(.sx_ew("complement", as.matrix(stats::predict(fit, nd, times = times, type = "survival"))))
+  stats::predict(fit, newdata = nd, times = times, cause = cause)
 }
 
 # Apparent and K-fold cross-validated measures of a named list of fitting functions; fold: the fold of
@@ -369,20 +414,13 @@ cv_compare <- function(formula, data, models, times, cause = 1L, folds = 5L, see
   risk_of <- function(fun, train, test) {
     fit <- tryCatch(fun(formula, train), error = function(e) NULL)
     if (is.null(fit)) return(NULL)
-    r <- tryCatch(stats::predict(fit, newdata = test, times = times, cause = cause), error = function(e) NULL)
+    r <- tryCatch(.cv_predict(fit, test, times, cause), error = function(e) NULL)
     if (is.null(r) || !is.matrix(r) || nrow(r) != nrow(test) || any(!is.finite(r))) return(NULL)
     list(fit = fit, risk = r)
   }
   measures <- function(risk) {
-    out <- matrix(NA_real_, nt, 4L)
-    if (is.null(risk)) return(out)
-    for (j in seq_len(nt)) {
-      b <- tryCatch(brier_score(f$time, f$status, risk[, j], times[j], cause), error = function(e) c(NA_real_, NA_real_, NA_real_))
-      a <- tryCatch(auc_t(f$time, f$status, risk[, j], times[j], cause), error = function(e) NA_real_)
-      ce <- tryCatch(attr(calibration(f$time, f$status, risk[, j], times[j], cause, groups), "error"), error = function(e) NA_real_)
-      out[j, ] <- c(b[[1L]], b[[3L]], a, ce)
-    }
-    out
+    if (is.null(risk)) return(matrix(NA_real_, nt, 4L))
+    unname(.sx_measures(f$time, f$status, risk, times, cause, groups)[, c("brier", "ipa", "auc", "calib"), drop = FALSE])
   }
   tab <- NULL; fits <- vector("list", M); failed <- integer(M)
   for (m in seq_len(M)) {
@@ -404,6 +442,28 @@ cv_compare <- function(formula, data, models, times, cause = 1L, folds = 5L, see
     if (!is.null(full)) fits[[m]] <- full$fit
   }
   list(table = tab, fits = fits, failed = failed)
+}
+
+# constrained = list(list(), list(timing = ~ age), list(cond = "lognormal", shape = ~ x)): one
+# constrained direct model each, with a readable name
+.constrained_specs <- function(constrained) {
+  if (is.null(constrained)) return(list())
+  if (!is.list(constrained) || (length(constrained) && !all(vapply(constrained, is.list, logical(1)))))
+    stop("constrained must be a list of lists, such as list(list(), list(timing = ~ age))", call. = FALSE)
+  ok <- c("baseline", "link", "cond", "timing", "shape")
+  lapply(constrained, function(s) {
+    bad <- setdiff(names(s), ok)
+    if (length(bad)) stop("constrained: unknown element ", paste(bad, collapse = ", "), "; use ", paste(ok, collapse = ", "), call. = FALSE)
+    out <- list(baseline = s$baseline %||% "gompertz", link = s$link %||% "PH", cond = s$cond %||% "weibull",
+                timing = s$timing, shape = s$shape)
+    lab <- function(x) if (is.null(x)) NULL
+                       else if (inherits(x, "formula")) paste(deparse(x), collapse = "")
+                       else paste0(names(x), ": ", vapply(x, function(v) paste(deparse(v), collapse = ""), ""), collapse = "; ")
+    out$name <- paste0("direct ", out$baseline, " ", out$link, ", constrained (G ", paste(out$cond, collapse = "/"), ")",
+                       if (!is.null(out$timing)) paste0(", timing ", lab(out$timing)),
+                       if (!is.null(out$shape)) paste0(", shape ", lab(out$shape)))
+    out
+  })
 }
 
 # hazard = list("weibull", "lognormal", c("rp", 4), "pwexp"): one parametric cause-specific model each

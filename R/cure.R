@@ -263,15 +263,14 @@ S7::method(predict, CureFit) <- function(object, newdata = NULL, times = NULL,
 
 S7::method(residuals, CureFit) <- function(object, type = c("martingale", "deviance", "coxsnell"), ...) {
   type <- match.arg(type)
-  n <- object@n
-  H <- vapply(seq_len(n), function(i)
-    .cure_predict_X(object, object@X[i, , drop = FALSE], object@Xc[i, , drop = FALSE], object@time[i], "cumhaz", FALSE, 0.95)[1L, 1L], numeric(1))
-  if (!is.null(object@entry)) H <- H - vapply(seq_len(n), function(i)
-    if (object@entry[i] > 0) .cure_predict_X(object, object@X[i, , drop = FALSE], object@Xc[i, , drop = FALSE], object@entry[i], "cumhaz", FALSE, 0.95)[1L, 1L] else 0,
-    numeric(1))
-  m <- object@status - H
-  switch(type, coxsnell = H, martingale = m,
-         deviance = sign(m) * sqrt(-2 * (m + ifelse(object@status == 1L, log(pmax(object@status - m, 1e-300)), 0))))
+  kn <- object@knots; he <- !is.null(object@entry); n <- object@n
+  r <- .C("SX_cure_residuals", object@dist_code, object@aft, as.integer(length(kn)), if (length(kn)) as.double(kn) else double(1),
+          as.integer(ncol(object@X)), as.integer(ncol(object@Xc)), as.integer(object@mixture), as.double(object@coefficients),
+          as.integer(n), .rm(object@X), .rm(object@Xc), as.double(object@time), as.integer(he), if (he) as.double(object@entry) else double(1),
+          as.integer(object@status), match(type, c("coxsnell", "martingale", "deviance")) - 1L, out = double(n), rc = integer(1),
+          NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "residuals")
+  r$out
 }
 
 
@@ -313,7 +312,7 @@ S7::method(residuals, CureFit) <- function(object, type = c("martingale", "devia
            paste0("  ", if (x@mixture) "S(t) = pi + (1 - pi) S_u(t)" else "S(t) = pi ^ F_u(t)",
                   ", pi = cured fraction (logistic model), S_u = survival of the uncured"))
   # cured fraction
-  pr <- tryCatch(.cure_predict_X(x, matrix(colMeans(x@X), 1L), matrix(colMeans(x@Xc), 1L), 1, "cured", TRUE, level),
+  pr <- tryCatch(.cure_predict_X(x, matrix(.sx_colmeans(x@X), 1L), matrix(.sx_colmeans(x@Xc), 1L), 1, "cured", TRUE, level),
                  error = function(err) NULL)
   out <- c(out, "", "Cured fraction")
   if (!is.null(pr))
@@ -336,8 +335,8 @@ S7::method(residuals, CureFit) <- function(object, type = c("martingale", "devia
     out <- c(out, "", "Latency distribution (natural scale)",
              .table_lines(stats::setNames(.natural_baseline(lat, level), c("", "estimate", paste(.pct(level), "CI")))))
   P <- length(x@coefficients)
-  out <- c(out, "", sprintf("Fit: log-likelihood %.2f | AIC %.2f | BIC %.2f | %d parameters", x@loglik,
-                            -2 * x@loglik + 2 * P, -2 * x@loglik + log(x@n) * P, P))
+  ic <- .sx_ic(x@loglik, P, x@n)
+  out <- c(out, "", sprintf("Fit: log-likelihood %.2f | AIC %.2f | BIC %.2f | %d parameters", x@loglik, ic$aic, ic$bic, P))
   if (detail)
     out <- c(out, "",
              "OR > 1: a higher chance of being cured; the cured fraction is identified only if follow-up is long enough",
@@ -362,12 +361,12 @@ S7::method(summary, CureFit) <- function(object, level = 0.95, ...) {
 # average cured fraction as a dashed line
 S7::method(plot, CureFit) <- function(x, times = NULL, col = "#0072B2", xlab = "Time", ylab = "Survival probability",
                                       main = NULL, cex = 0.85, ...) {
-  tg <- if (is.null(times)) seq(0, max(x@time), length.out = 201L)[-1L] else times
+  tg <- if (is.null(times)) .sx_seq(0, max(x@time), 201L)[-1L] else times
   S <- .cure_predict_X(x, x@X, x@Xc, tg, "survival", FALSE, 0.95, average = TRUE)[1L, ]
-  pc <- mean(.cure_predict_X(x, x@X, x@Xc, 1, "cured", FALSE, 0.95))
+  pc <- .sx_reduce("mean", .cure_predict_X(x, x@X, x@Xc, 1, "cured", FALSE, 0.95))
   op <- graphics::par(cex = cex, mar = c(4.5, 4.5, 3, 1)); on.exit(graphics::par(op))
   inc <- .na_increments(x@time, x@status, 1L, x@entry)
-  km_t <- c(0, inc$time); km_s <- c(1, cumprod(1 - inc$d / inc$Y))
+  km_t <- c(0, inc$time); km_s <- c(1, .sx_np_curve_inc(inc$d, inc$Y, "km"))
   graphics::plot(km_t, km_s, type = "s", col = "grey40", ylim = c(0, 1), xlim = c(0, max(tg)), xlab = xlab, ylab = ylab,
                  main = if (is.null(main)) "Fitted survival (average over subjects) and Kaplan-Meier" else main, las = 1, bty = "l", ...)
   graphics::lines(c(0, tg), c(1, S), col = col, lwd = 2)

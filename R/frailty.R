@@ -132,8 +132,10 @@ NULL
 }
 
 .frailty_lrt <- function(ll, ll0, boundary) {
-  st <- if (boundary) 0 else max(0, 2 * (ll - ll0))
-  list(statistic = st, p.value = 0.5 * stats::pchisq(st, 1, lower.tail = FALSE))
+  r <- .C("SX_frailty_lrt", as.double(ll), as.double(ll0), as.integer(isTRUE(boundary)), stat = double(1), p = double(1),
+          rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "frailty test")
+  list(statistic = r$stat, p.value = r$p)
 }
 
 # semi-parametric: Breslow baseline profiled out
@@ -144,16 +146,16 @@ NULL
   if (p < 1L) stop("at least one covariate is needed", call. = FALSE)
   c0 <- .cox_fit(f$time, f$status, f$X, NULL, "breslow", 50L, 1e-10, NULL, NULL)
   # Cox model with the Breslow baseline: the marginal likelihood at theta = 0
-  dk <- table(f$time[f$status == 1L])
-  ll0 <- c0$loglik + sum(dk * log(dk)) - sum(f$status)
+  dk <- as.double(table(f$time[f$status == 1L]))
+  ll0 <- .sx_ew("sub", .sx_ew("add", c0$loglik, .sx_reduce("sum", .sx_ew("mul", dk, .sx_ew("log", dk)))), .sx_reduce("sum", f$status))
   r <- .C("SX_cox_frailty", as.integer(n), as.integer(p), as.double(f$time), as.integer(f$status), .rm(f$X),
-          as.integer(g) - 1L, as.integer(C), as.double(c(c0$coefficients, log(0.5))), as.integer(max_iter), as.double(tol),
+          as.integer(g) - 1L, as.integer(C), as.double(c(c0$coefficients, .sx_ew("log", 0.5))), as.integer(max_iter), as.double(tol),
           est = double(p + 1L), var = double((p + 1L)^2), info_d = double(3), info_i = integer(4),
           K = integer(1), tk = double(n), hk = double(n), shape = double(C), rate = double(C), rc = integer(1),
           NAOK = TRUE, PACKAGE = "SurvX")
   .sx_rc(r$rc, "frailty model")
   nm <- colnames(f$X)
-  theta <- exp(r$est[p + 1L])
+  theta <- .sx_ew("exp", r$est[p + 1L])
   V <- matrix(r$var, p + 1L, p + 1L, byrow = TRUE, dimnames = list(c(nm, "log(theta)"), c(nm, "log(theta)")))
   boundary <- theta < 1e-5
   ll <- r$info_d[2L]
@@ -161,7 +163,7 @@ NULL
     beta <- c0$coefficients; Vb <- c0$vcov; theta <- 0; tse <- NA_real_; ll <- ll0
   } else {
     beta <- stats::setNames(r$est[seq_len(p)], nm); Vb <- V[seq_len(p), seq_len(p), drop = FALSE]
-    tse <- theta * sqrt(V[p + 1L, p + 1L])
+    tse <- .sx_ew("exp_se", r$est[p + 1L], V[p + 1L, p + 1L])
   }
   K <- r$K
   FrailtyFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
@@ -183,7 +185,7 @@ NULL
   kn <- .par_knots(dist, f$time, f$status, df, knots, cuts)
   b0 <- .par_fit(f$time, f$status, NULL, f$X, dist, scale, NULL, max_iter, tol, kn)
   P0 <- length(b0$theta)
-  start <- if (!is.null(init)) as.double(init) else c(unname(b0$theta), log(0.5))
+  start <- if (!is.null(init)) as.double(init) else c(unname(b0$theta), .sx_ew("log", 0.5))
   if (length(start) != P0 + 1L) stop("init must have length ", P0 + 1L, " (the parameters of the model and log(theta))", call. = FALSE)
   r <- .C("SX_par_frailty", as.integer(n), as.integer(p), .par_dists[[dist]], as.integer(scale == "AFT"),
           as.integer(length(kn)), if (length(kn)) as.double(kn) else double(1), as.double(f$time), as.integer(f$status),
@@ -193,14 +195,14 @@ NULL
   .sx_rc(r$rc, "frailty model")
   nm <- names(b0$theta)
   V <- matrix(r$var, P0 + 1L, P0 + 1L, byrow = TRUE, dimnames = list(c(nm, "log(theta)"), c(nm, "log(theta)")))
-  theta <- exp(r$theta[P0 + 1L])
+  theta <- .sx_ew("exp", r$theta[P0 + 1L])
   boundary <- theta < 1e-5
   ll <- r$info_d[2L]; ll0 <- b0$loglik
   if (boundary) {
     est <- b0$theta; Vb <- b0$var; theta <- 0; tse <- NA_real_; ll <- ll0
   } else {
     est <- stats::setNames(r$theta[seq_len(P0)], nm); Vb <- V[seq_len(P0), seq_len(P0), drop = FALSE]
-    tse <- theta * sqrt(V[P0 + 1L, P0 + 1L])
+    tse <- .sx_ew("exp_se", r$theta[P0 + 1L], V[P0 + 1L, P0 + 1L])
   }
   base <- ParSurvFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
                      coefficients = est, vcov = Vb, loglik = ll, n = n, nevent = as.integer(sum(f$status)),
@@ -238,7 +240,7 @@ NULL
   lab <- if (aft) "TR" else "HR"
   out <- c(paste0("Shared gamma frailty model: ", .frailty_model_label(x)),
            paste0("  Subjects: ", x@n, "   events: ", x@nevent, "   clusters (", x@cluster_var, "): ", length(x@cluster),
-                  "   cluster size ", min(sz), " to ", max(sz), ", median ", stats::median(sz)),
+                  "   cluster size ", min(sz), " to ", max(sz), ", median ", .sx_quantile(sz, 0.5)),
            "",
            paste0("Effect of covariates given the frailty: ", if (aft) "time ratio (TR)" else "hazard ratio (HR)"),
            .effect_lines(e[e$role == "beta", , drop = FALSE], lab, level, x@xlevels),
@@ -252,16 +254,16 @@ NULL
     out <- c(out, "  The frailty variance is at the boundary (0): no heterogeneity between clusters is seen;",
              "  the fit is the model without frailty.")
   } else {
-    th <- x@theta; se_l <- x@theta_se / th
-    lo <- th * exp(-zq * se_l); hi <- th * exp(zq * se_l)
-    a <- 1 / th
-    iqr <- stats::qgamma(0.75, a, a) / stats::qgamma(0.25, a, a)
+    th <- x@theta
+    lim <- .sx_log_limits(th, x@theta_se, zq); lo <- lim$lower; hi <- lim$upper
+    a <- .sx_ew("div", 1, th)
+    iqr <- .sx_ew("div", .sx_qgamma(0.75, a, a), .sx_qgamma(0.25, a, a))
     out <- c(out,
              paste0("  variance theta = ", .num(th, 3L), " (", .pct(level), " CI ", .ci_text(lo, hi, 3L), ")"),
              paste0("  likelihood ratio test of theta = 0: chi-square = ", .num(x@lrt$statistic, 2L), ", p ",
                     { pv <- .pval(x@lrt$p.value); if (startsWith(pv, "<")) sub("<", "< ", pv) else paste("=", pv) },
                     " (half chi-square, Self & Liang 1987)"),
-             paste0("  Kendall's tau between two members of a cluster: ", .num(th / (th + 2), 3L)),
+             paste0("  Kendall's tau between two members of a cluster: ", .num(.sx_ew("div", th, .sx_ew("add", th, 2)), 3L)),
              paste0("  A cluster at the 75th percentile of the frailty has ", .num(iqr, 2L),
                     " times the hazard of a cluster at the 25th percentile."))
     out <- c(out, if (x@lrt$p.value < 0.05)
@@ -269,7 +271,7 @@ NULL
       else "  Reading: no evidence of heterogeneity between clusters.")
   }
   k <- length(x@coefficients) + 1L
-  out <- c(out, "", sprintf("Fit: marginal log-likelihood %.2f | AIC %.2f | %d parameters (with theta)", x@loglik, -2 * x@loglik + 2 * k, k),
+  out <- c(out, "", sprintf("Fit: marginal log-likelihood %.2f | AIC %.2f | %d parameters (with theta)", x@loglik, .sx_aic(x@loglik, k), k),
            sprintf("     without frailty: log-likelihood %.2f", x@loglik0))
   if (x@kind == "cox") out <- c(out, "     ties: Breslow; standard errors from the profile likelihood (theta estimated)")
   else out <- c(out, "     standard errors from the observed information (theta estimated)")
@@ -286,14 +288,14 @@ NULL
 }
 
 .frailty_frame <- function(x, level = 0.95) {
-  a <- (1 - level) / 2
-  ev <- as.vector(tapply(x@status, factor(x@cluster_index, seq_along(x@cluster)), sum))
-  nn <- tabulate(x@cluster_index, length(x@cluster))
-  if (x@boundary)
-    return(data.frame(cluster = x@cluster, n = nn, events = ev, frailty = 1, lower = 1, upper = 1, stringsAsFactors = FALSE))
-  data.frame(cluster = x@cluster, n = nn, events = ev, frailty = x@shape / x@rate,
-             lower = stats::qgamma(a, x@shape, x@rate), upper = stats::qgamma(1 - a, x@shape, x@rate),
-             stringsAsFactors = FALSE)
+  C <- length(x@cluster)
+  r <- .C("SX_frailty_clusters", as.integer(x@n), as.integer(x@status), as.integer(x@cluster_index) - 1L, as.integer(C),
+          as.double(rep_len(x@shape, C)), as.double(rep_len(x@rate, C)), as.integer(isTRUE(x@boundary)), as.double(level),
+          size = double(C), events = double(C), mean = double(C), lower = double(C), upper = double(C), rc = integer(1),
+          NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "cluster frailties")
+  data.frame(cluster = x@cluster, n = as.integer(r$size), events = r$events, frailty = r$mean, lower = r$lower,
+             upper = r$upper, stringsAsFactors = FALSE)
 }
 
 S7::method(print, FrailtyFit) <- function(x, level = 0.95, ...) { cat(.frailty_lines(x, level, FALSE), sep = "\n"); invisible(x) }
@@ -307,6 +309,11 @@ S7::method(logLik, FrailtyFit) <- function(object, ...) {
   structure(object@loglik, df = length(object@coefficients) + 1L, nobs = object@n, class = "logLik")
 }
 
+S7::method(residuals, FrailtyFit) <- function(object, ...) {
+  stop("residuals() are not available for models with frailty(); use as.data.frame(fit, what = \"frailty\") for the ",
+       "estimated frailty of every cluster, or the residuals of the model without frailty()", call. = FALSE)
+}
+
 S7::method(as.data.frame, FrailtyFit) <- function(x, row.names = NULL, optional = FALSE, what = c("coefficients", "frailty"),
                                                   level = 0.95, ...) {
   what <- match.arg(what)
@@ -316,12 +323,12 @@ S7::method(as.data.frame, FrailtyFit) <- function(x, row.names = NULL, optional 
 # conditional cumulative hazard (frailty 1) of the rows of X at the times
 .frailty_cumhaz <- function(x, X, times) {
   if (x@kind == "parametric") return(.par_predict_X(x@base, X, times, "cumhaz", FALSE, 0.95))
-  bh <- x@basehaz
-  H0 <- vapply(times, function(t) sum(bh$hazard[bh$time <= t]), numeric(1))
-  e <- exp(drop(X %*% x@coefficients))
-  out <- outer(e, H0)
-  dimnames(out) <- list(NULL, paste0("t=", times))
-  out
+  bh <- x@basehaz; n <- nrow(X); nt <- length(times)
+  r <- .C("SX_breslow_cumhaz", nrow(bh), as.double(bh$time), as.double(bh$hazard), as.integer(n), ncol(X), .rm(X),
+          as.double(x@coefficients), as.integer(nt), as.double(times), out = double(n * nt), rc = integer(1),
+          NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "cumulative hazard")
+  .matrix_rm(r$out, n, nt, list(NULL, paste0("t=", times)))
 }
 
 S7::method(predict, FrailtyFit) <- function(object, newdata = NULL, times, type = c("survival", "cumhaz"),
@@ -330,19 +337,21 @@ S7::method(predict, FrailtyFit) <- function(object, newdata = NULL, times, type 
   if (missing(times) || !is.numeric(times)) stop("times (numeric) is required", call. = FALSE)
   X <- .sx_newX(object, newdata)
   H <- .frailty_cumhaz(object, X, times)
-  th <- object@theta
-  if (frailty == "conditional" || object@boundary) {
-    S <- exp(-H)
-  } else if (frailty == "marginal") {
-    S <- (1 + th * H)^(-1 / th)
-  } else {
+  mode <- if (frailty == "conditional" || object@boundary) 1L else if (frailty == "marginal") 0L else 2L
+  k <- NULL
+  if (mode == 2L) {
     if (is.null(newdata) || !object@cluster_var %in% names(newdata))
       stop("frailty = \"cluster\" needs the cluster in a column '", object@cluster_var, "' of newdata", call. = FALSE)
     k <- match(as.character(newdata[[object@cluster_var]]), object@cluster)
     if (anyNA(k)) stop("unknown cluster(s) in newdata: ", paste(unique(newdata[[object@cluster_var]][is.na(k)]), collapse = ", "), call. = FALSE)
-    S <- (object@rate[k] / (object@rate[k] + H))^object@shape[k]
   }
-  out <- if (type == "survival") S else -log(S)
+  n <- nrow(H); nt <- ncol(H)
+  r <- .C("SX_frailty_survival", as.integer(n), as.integer(nt), .rm(H), as.double(object@theta), mode,
+          if (is.null(k)) double(1) else as.double(object@shape[k]), if (is.null(k)) double(1) else as.double(object@rate[k]),
+          out = double(n * nt), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "frailty prediction")
+  S <- .matrix_rm(r$out, n, nt)
+  out <- if (type == "survival") S else .sx_ew("neglog", S)
   dimnames(out) <- list(NULL, paste0("t=", times))
   out
 }
@@ -363,9 +372,15 @@ S7::method(plot, FrailtyFit) <- function(x, which = c("frailty", "survival"), ne
   }
   nd <- if (is.null(newdata)) NULL else newdata
   X <- if (is.null(nd)) .profile(x)$X else .sx_newX(x, nd)
-  tg <- seq(0, max(x@time), length.out = 201L)[-1L]
+  tg <- .sx_seq(0, max(x@time), 201L)[-1L]
   H <- .frailty_cumhaz(x, X[1L, , drop = FALSE], tg)
-  Sc <- exp(-H[1L, ]); Sm <- if (x@boundary) Sc else (1 + x@theta * H[1L, ])^(-1 / x@theta)
+  fs <- function(mode) {                             # conditional (1) or marginal (0) survival, C++ core
+    r <- .C("SX_frailty_survival", 1L, ncol(H), as.double(H[1L, ]), as.double(x@theta), as.integer(mode), double(1), double(1),
+            out = double(ncol(H)), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+    .sx_rc(r$rc, "frailty curves")
+    r$out
+  }
+  Sc <- fs(1L); Sm <- if (x@boundary) Sc else fs(0L)
   cc <- col %||% .okabe_ito[1:2]
   graphics::plot(c(0, tg), c(1, Sc), type = "l", lwd = 2, col = cc[1L], ylim = c(0, 1), xlab = "Time",
                  ylab = "Survival probability", main = if (is.null(nd)) "Typical covariate values" else "Covariate values given in newdata", ...)

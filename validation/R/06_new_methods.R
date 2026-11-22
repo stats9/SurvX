@@ -1,6 +1,7 @@
 # Part 1 (continued). Accuracy of the methods added after 1.0.0: time-varying effects
 # (time_effects), adjusted risks (adjusted_risk), interval censoring (Interval, turnbull, parsurv,
-# directcif) and shared gamma frailty (cox and parsurv with frailty()). Same records as
+# directcif), shared gamma frailty (cox and parsurv with frailty()) and covariates of the time
+# distributions of the constrained direct model (directcif(timing = )). Same records as
 # 01_accuracy.R; called at the end of run_accuracy().
 
 # ---- data generators ---------------------------------------------------------------------------------
@@ -29,6 +30,55 @@ gen_frailty <- function(C, m, theta = 0.5) {
   data.frame(time = pmin(t, cens), status = as.integer(t <= cens), x1 = x1, x2 = x2, id = id)
 }
 
+# constrained model with time ratios of the competing causes: cause 1 Gompertz PH (rho -0.8, tau 0.6,
+# effects 0.5 x1 - 0.3 x2); the others share the rest (logit of cause 3: -0.2 + 0.4 x1) with Weibull
+# times and time ratios exp(0.5 x2) (cause 2, shape 1.6, rate 1) and exp(-0.4 x2) (cause 3, 1.3, 0.6)
+gen_aft <- function(n) {
+  x1 <- rbinom(n, 1, 0.5); x2 <- rnorm(n)
+  lp <- 0.5 * x1 - 0.3 * x2
+  p1 <- 1 - exp(-exp(lp) * 0.6 / 0.8)
+  t <- numeric(n); s <- integer(n)
+  one <- runif(n) < p1
+  H <- -log(1 - runif(sum(one)) * p1[one]) / exp(lp[one])
+  t[one] <- log1p(H * (-0.8) / 0.6) / (-0.8); s[one] <- 1L
+  three <- !one & runif(n) < stats::plogis(-0.2 + 0.4 * x1); two <- !one & !three
+  t[two] <- (-log(runif(sum(two))))^(1 / 1.6) * exp(0.5 * x2[two]); s[two] <- 2L
+  t[three] <- (-log(runif(sum(three))))^(1 / 1.3) / 0.6 * exp(-0.4 * x2[three]); s[three] <- 3L
+  cens <- runif(n, 0.5, 6)
+  data.frame(time = pmin(t, cens), status = ifelse(t <= cens, s, 0L), x1 = x1, x2 = x2)
+}
+# true F_2(t | x1, x2) of gen_aft
+aft_true_F2 <- function(t, x1, x2) {
+  q <- exp(-exp(0.5 * x1 - 0.3 * x2) * 0.75)
+  q * (1 - stats::plogis(-0.2 + 0.4 * x1)) * (1 - exp(-(t * exp(-0.5 * x2))^1.6))
+}
+
+# independent log-likelihood of the constrained model with three causes, Gompertz PH for cause 1,
+# Weibull G_k with time ratios on the covariates tvars (written from the model definition)
+aft_loglik <- function(b, d, vars, tvars) {
+  X <- as.matrix(d[vars])
+  lp <- drop(X %*% b[paste0("1:", vars)])
+  rho <- b[["1:rho"]]; tau <- exp(b[["1:log_tau"]])
+  u <- tau * expm1(rho * d$time) / rho
+  F1 <- 1 - exp(-exp(lp) * u)
+  lf1 <- lp + log(tau) + rho * d$time - exp(lp) * u
+  q <- exp(-exp(lp) * tau / (-rho))
+  l3 <- b[["3:share_(Intercept)"]] + drop(X %*% b[paste0("3:share_", vars)])
+  pi <- cbind(1 - stats::plogis(l3), stats::plogis(l3))
+  G <- lg <- matrix(0, nrow(d), 2)
+  for (j in 1:2) {
+    k <- j + 1L
+    u_k <- drop(as.matrix(d[tvars]) %*% b[paste0(k, ":time_", tvars)])
+    lam <- exp(b[[paste0(k, ":log_lambda")]] - u_k); kap <- exp(b[[paste0(k, ":log_kappa")]])
+    y <- (lam * d$time)^kap
+    G[, j] <- -expm1(-y); lg[, j] <- log(kap) + log(y) - y - log(d$time)
+  }
+  s <- d$status
+  sum(lf1[s == 1L]) + sum(log(q[s == 2L] * pi[s == 2L, 1]) + lg[s == 2L, 1]) +
+    sum(log(q[s == 3L] * pi[s == 3L, 2]) + lg[s == 3L, 2]) +
+    sum(log(1 - F1[s == 0L] - q[s == 0L] * rowSums(pi[s == 0L, , drop = FALSE] * G[s == 0L, , drop = FALSE])))
+}
+
 col_of <- function(df, names) { k <- intersect(names, colnames(df))[1]; if (is.na(k)) stop("no column ", paste(names, collapse = "/")); df[[k]] }
 
 # ---- time_effects ------------------------------------------------------------------------------------
@@ -46,7 +96,30 @@ acc_time_effects <- function() {
   invisible()
 }
 
-# ---- adjusted_risk -----------------------------------------------------------------------------------
+# ---- constrained model with covariates of the time distributions G_k (timing) ----------------------
+acc_constrained_aft <- function(d, label) {
+  fo <- Event(time, status) ~ x1 + x2
+  f0 <- attempt(directcif(fo, d, estimation = "constrained", cause = 1, cond = "weibull"))
+  f <- attempt(directcif(fo, d, estimation = "constrained", cause = 1, cond = "weibull", timing = ~ x2))
+  check("constrained CIF, AFT timing", "directcif(timing = ~ x2)", "independent R likelihood", label, "log-likelihood",
+        if (failed(f)) f else attempt(as.numeric(logLik(f))),
+        if (failed(f)) f else attempt(aft_loglik(coef(f), d, c("x1", "x2"), "x2")))
+  # the maximum: a general optimiser of the independent likelihood, started away from it
+  opt <- if (failed(f)) f else attempt({
+    b0 <- coef(f)
+    nll <- function(v) { b <- stats::setNames(v, names(b0)); r <- -aft_loglik(b, d, c("x1", "x2"), "x2"); if (is.finite(r)) r else 1e10 }
+    o <- stats::optim(b0 + 0.05, nll, method = "BFGS", control = list(maxit = 2000, reltol = 1e-14))
+    o$par
+  })
+  check("constrained CIF, AFT timing", "directcif(timing = ~ x2)", "optim (BFGS) of the independent likelihood", label,
+        "coefficients", if (failed(f)) f else attempt(unname(coef(f))), if (failed(opt)) opt else attempt(unname(opt)), tol = "optimiser")
+  check("constrained CIF, AFT timing", "directcif(timing = ~ x2)", "model without timing (nested)", label,
+        "log-likelihood not below the nested model",
+        if (failed(f)) f else if (failed(f0)) f0 else attempt(as.numeric(as.numeric(logLik(f)) >= as.numeric(logLik(f0)) - 1e-8)), 1)
+  invisible()
+}
+
+# ---- adjusted_risk ---# ---- adjusted_risk -----------------------------------------------------------------------------------
 acc_adjusted_risk <- function(d, label) {
   if (!has("survival")) return(invisible())
   d$trt <- factor(d$x1, 0:1, c("control", "treated"))
@@ -90,14 +163,19 @@ acc_interval <- function(d, label, vars = c("x1", "x2")) {
           if (failed(tb)) tb else attempt(tb@fits[[1]]$loglik), if (failed(r)) r else attempt(r$llk), tol = "optimiser")
   }
   if (has("interval")) {
-    ic <- attempt(interval::icfit(survival::Surv(left2, right2, type = "interval2") ~ 1, data = d))
+    # interval's default stopping rule (epsilon 1e-6) stops the EM before the NPMLE; with its
+    # defaults the curves differed by up to 2e-3 while the log-likelihood of SurvX matched icenReg
+    # to 1e-11. The reference is therefore run to the NPMLE with a tight tolerance.
+    ctl <- interval::icfitControl(epsilon = 1e-12, maxit = 1000000)
+    ic <- attempt(interval::icfit(survival::Surv(left2, right2, type = "interval2") ~ 1, data = d, control = ctl))
     tt <- if (failed(ic)) NULL else ic$intmap[2, is.finite(ic$intmap[2, ])]
     check("interval censoring", "turnbull", "interval::icfit", label, "survival at the right ends of the innermost intervals",
           if (failed(tb) || failed(ic)) tb else attempt(.subset2(SurvX:::.tb_surv(tb@fits[[1]], tt), "estimate")),
           if (failed(ic)) ic else attempt((1 - cumsum(ic$pf))[is.finite(ic$intmap[2, ])]), tol = "optimiser")
     d$grp <- factor(d$x1)
     tg <- attempt(turnbull(Interval(left, right) ~ grp, data = d, B = 0))
-    it <- attempt(interval::ictest(survival::Surv(left2, right2, type = "interval2") ~ grp, data = d, scores = "logrank2", method = "pclt"))
+    it <- attempt(interval::ictest(survival::Surv(left2, right2, type = "interval2") ~ grp, data = d, scores = "logrank2", method = "pclt",
+                                   icontrol = ctl))
     check("interval censoring", "turnbull (test)", "interval::ictest (logrank2, pclt)", label, "chi-square statistic",
           if (failed(tg)) tg else attempt(tg@test$statistic), if (failed(it)) it else attempt(unname(it$statistic)^2), tol = "optimiser")
   }
@@ -177,8 +255,10 @@ acc_frailty <- function(d, label, ties = FALSE) {
 
 # ---- driver ------------------------------------------------------------------------------------------
 acc_new_methods <- function(cfg) {
-  logmsg("  methods added after 1.0.0: time_effects, adjusted_risk, interval censoring, frailty")
+  logmsg("  methods added after 1.0.0: time_effects, adjusted_risk, interval censoring, frailty, AFT timing of the constrained model")
+  progress_start(cfg$acc_reps + 2L)
   acc_time_effects()
+  progress_tick()
   for (rep in seq_len(cfg$acc_reps)) {
     lab <- paste0("#", rep)
     acc_adjusted_risk(gen_surv(500, p = 2), paste("standard", lab))
@@ -186,6 +266,8 @@ acc_new_methods <- function(cfg) {
     acc_interval_exact(gen_surv(400, p = 2), paste("standard", lab))
     acc_interval_exact(gen_cr(400, p = 2), paste("cr_standard", lab))
     acc_frailty(gen_frailty(100, 4), paste("frailty 100 x 4", lab))
+    acc_constrained_aft(gen_aft(800), paste("three causes", lab))
+    progress_tick()
   }
   if (has("survival")) {
     acc_frailty(transform(survival::kidney, x1 = age, x2 = sex), "kidney", ties = TRUE)

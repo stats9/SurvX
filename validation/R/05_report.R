@@ -37,7 +37,7 @@ dot_pages <- function(x, labels, xlab, title, col, xlim, vlines = numeric(0), vl
   }
 }
 
-make_report <- function(cfg, out_dir) {
+make_report <- function(cfg, out_dir, missing = character(0)) {
   logmsg("Part 5: report")
   tab_dir <- file.path(out_dir, "tables"); fig_dir <- file.path(out_dir, "figures")
   dir.create(tab_dir, showWarnings = FALSE); dir.create(fig_dir, showWarnings = FALSE)
@@ -169,11 +169,24 @@ make_report <- function(cfg, out_dir) {
                 "Invariance checks: largest difference between equivalent fits.", "tab:invariance")
   }
 
+  # ---- stages: which are finished, with the SurvX version and the time of each ----
+  stg <- rd("stages.csv")
+  done_note <- if (length(missing)) c(paste0("NOT COMPLETE: ", length(missing), " stage(s) not finished yet:"), paste("  -", missing))
+               else "Complete: every stage finished."
+  if (!is.null(stg)) {
+    vers <- unique(stg$SurvX[stg$status == "finished"])
+    if (length(vers) > 1L) done_note <- c(done_note, paste0("WARNING: the stages were run with different SurvX versions (", paste(vers, collapse = ", "), ")."))
+  }
+  md <- c(md, "## Stages", "", done_note, "", if (!is.null(stg)) md_table(stg) else character(0), "")
+  tx("5. STAGES", stg, lines = done_note)
+  if (length(missing)) verdict <- c(verdict, sprintf("%d stage(s) not finished yet (see section 5).", length(missing)))
+
   md <- c(header, "## Verdict", "", if (length(verdict)) paste("-", verdict) else "- All checks passed.", "", md)
-  lg <- rec_get("log")
-  tx("5. RUN LOG", lines = if (is.null(lg)) character(0) else paste(lg$time, lg$message))
+  lg <- rd("run.log.csv")
+  tx("6. RUN LOG (every session)", lines = if (is.null(lg)) character(0) else paste(lg$time, lg$message))
   txt <- c(header[nzchar(header)], "", "VERDICT", if (length(verdict)) paste("-", verdict) else "- All checks passed.", txt,
-           "", strrep("=", 100), "SESSION INFO", strrep("=", 100), utils::capture.output(sessionInfo()))
+           "", strrep("=", 100), "SESSION INFO (every session)", strrep("=", 100),
+           if (file.exists(file.path(out_dir, "sessionInfo.txt"))) readLines(file.path(out_dir, "sessionInfo.txt")) else utils::capture.output(sessionInfo()))
   writeLines(txt, file.path(out_dir, "SurvX_validation_results.txt"))
   grDevices::dev.off(); pdf_open <- FALSE
   writeLines(md, file.path(out_dir, "validation_report.md"))

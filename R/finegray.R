@@ -43,8 +43,10 @@
 #' @param tol convergence tolerance on the relative change of the log pseudo-likelihood.
 #' @param B \code{variance = "bootstrap"}: number of bootstrap samples (default 200; 500 or more for
 #'   final results).
-#' @param seed \code{variance = "bootstrap"}: seed of the resampling, so that the same call gives
-#'   the same standard errors. The random number generator of the session is restored afterwards.
+#' @param seed \code{variance = "bootstrap"}: seed of the resampling: a whole number, or \code{NULL}
+#'   to take the seed from the random numbers of the session (so that \code{set.seed()} before the
+#'   call governs the result). All random draws come from R's generator (see \code{RNGkind()}); with
+#'   a number the state of the session's generator is left as it was.
 #' @details
 #' \subsection{The model}{
 #' The subdistribution hazard of cause 1 is \eqn{\lambda_1(t) = -d \log\{1 - F_1(t)\} / dt}, with
@@ -212,6 +214,7 @@
 #' @export
 fg <- function(formula, data, cause = 1L, variance = c("robust", "model", "bootstrap"), max_iter = 50L, tol = 1e-10,
                B = 200L, seed = 1L) {
+  seed <- .resolve_seed(seed)
   cl <- match.call(); variance <- match.arg(variance)
   f <- .sx_frame(formula, data, entry_ok = TRUE, what = "fg()")
   n <- length(f$time); p <- ncol(f$X)
@@ -243,20 +246,23 @@ fg <- function(formula, data, cause = 1L, variance = c("robust", "model", "boots
 .fg_bootstrap <- function(f, cause, B, seed, max_iter, tol) {
   if (B < 2L) stop("B must be at least 2", call. = FALSE)
   n <- length(f$time); p <- ncol(f$X); nm <- colnames(f$X)
-  est <- .with_seed(seed, {
+  draws <- .sx_resample(n, B, seed)
+  est <- {
     out <- matrix(NA_real_, B, p)
     for (b in seq_len(B)) {
-      i <- sample.int(n, n, replace = TRUE)
+      i <- draws[b, ]
       out[b, ] <- tryCatch(.fg_coef(f$time[i], f$status[i], f$X[i, , drop = FALSE], if (is.null(f$entry)) NULL else f$entry[i],
                                     cause, max_iter, tol), error = function(e) rep(NA_real_, p))
     }
     out
-  })
-  ok <- stats::complete.cases(est)
-  if (sum(ok) < max(10L, B / 2)) stop("the bootstrap failed: only ", sum(ok), " of ", B, " samples could be fitted", call. = FALSE)
-  if (sum(ok) < B) warning(B - sum(ok), " of ", B, " bootstrap samples could not be fitted and were left out", call. = FALSE)
-  v <- stats::cov(est[ok, , drop = FALSE])
-  structure(matrix(v, p, p, dimnames = list(nm, nm)), B = sum(ok))
+  }
+  r <- .C("SX_cov_complete", as.integer(B), as.integer(p), .rm(est), out = double(p * p), nok = integer(1), rc = integer(1),
+          NAOK = TRUE, PACKAGE = "SurvX")                  # covariance of the samples that could be fitted
+  .sx_rc(r$rc, "bootstrap variance")
+  nok <- r$nok
+  if (nok < max(10L, B / 2)) stop("the bootstrap failed: only ", nok, " of ", B, " samples could be fitted", call. = FALSE)
+  if (nok < B) warning(B - nok, " of ", B, " bootstrap samples could not be fitted and were left out", call. = FALSE)
+  structure(matrix(r$out, p, p, dimnames = list(nm, nm)), B = nok)
 }
 
 # coefficients of one Fine-Gray fit (NA when it does not converge)
@@ -280,35 +286,16 @@ fg <- function(formula, data, cause = 1L, variance = c("robust", "model", "boots
 # with R(l) = #{entry_j <= l < time_j}. The weights are constant between the jump points of G and H,
 # so the extended rows are cut there. Without entry the weights are those of Fine & Gray (1999).
 .fg_expand <- function(time, status, entry, cause) {
-  n <- length(time)
-  if (is.null(entry)) entry <- rep(0, n)
-  se <- sort(entry); st <- sort(time)
-  ct <- sort(unique(time[status == 0L]))
-  Y <- findInterval(ct, se, left.open = TRUE) - findInterval(ct, st, left.open = TRUE)     # #{entry < c <= time}
-  dc <- tabulate(match(time[status == 0L], ct), length(ct))
-  cumG <- c(1, cumprod(1 - dc / Y))
-  lt <- sort(unique(entry[entry > 0]))
-  R <- findInterval(lt, se) - findInterval(lt, st)                                          # #{entry <= l < time}
-  el <- tabulate(match(entry[entry > 0], lt), length(lt))
-  Hrev <- c(rev(cumprod(rev(1 - el / R))), 1)                                               # prod over l_k, l_k+1, ...
-  G_right <- function(a) cumG[findInterval(a, ct) + 1L]                                     # G(a)
-  G_left <- function(a) cumG[findInterval(a, ct, left.open = TRUE) + 1L]                    # G(a-)
-  H_after <- function(a) Hrev[findInterval(a, lt) + 1L]                                     # prod over l > a
-  H_left <- function(a) Hrev[findInterval(a, lt, left.open = TRUE) + 1L]                    # H(a-): prod over l >= a
-  jumps <- sort(unique(c(ct, lt)))
-  tmax <- max(c(0, time[status == cause]))
-  base <- data.frame(id = seq_len(n), start = entry, stop = time, status = as.integer(status == cause), w = 1)
-  comp <- which(status != 0L & status != cause & time < tmax)
-  ext <- lapply(comp, function(i) {
-    Ti <- time[i]
-    cuts <- c(Ti, jumps[jumps > Ti & jumps < tmax])
-    stops <- c(cuts[-1L], tmax)
-    den <- G_left(Ti) * H_left(Ti)
-    w <- if (den > 0) G_right(cuts) * H_after(cuts) / den else rep(0, length(cuts))
-    data.frame(id = i, start = cuts, stop = stops, status = 0L, w = w)
-  })
-  d <- do.call(rbind, c(list(base), ext))
-  d[d$w > 0 & d$stop > d$start, , drop = FALSE]
+  n <- length(time); he <- !is.null(entry)
+  call <- function(cap) .C("SX_fg_expand", as.integer(n), as.double(time), as.integer(status), as.integer(he),
+                           if (he) as.double(entry) else double(1), as.integer(cause), as.integer(cap), id = integer(max(cap, 1L)),
+                           start = double(max(cap, 1L)), stop = double(max(cap, 1L)), st = integer(max(cap, 1L)), w = double(max(cap, 1L)),
+                           nrow = integer(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  r <- call(0L); .sx_rc(r$rc, "Fine-Gray weights")
+  m <- r$nrow
+  if (m) { r <- call(m); .sx_rc(r$rc, "Fine-Gray weights") }
+  k <- seq_len(m)
+  data.frame(id = r$id[k] + 1L, start = r$start[k], stop = r$stop[k], status = r$st[k], w = r$w[k])
 }
 
 .fg_entry <- function(cl, f, cause, variance, max_iter, tol) {
@@ -339,10 +326,11 @@ S7::method(predict, FineGrayFit) <- function(object, newdata = NULL, times, ...)
     k <- seq_len(r$m)
     H <- .step_at(r$time[k], r$cumhaz[k], times, 0)
   }
-  lp <- drop(.sx_newX(object, newdata) %*% object@coefficients)
-  out <- 1 - exp(-outer(exp(lp), H))
-  dimnames(out) <- list(NULL, paste0("t=", times))
-  out
+  Xn <- .sx_newX(object, newdata); nr <- nrow(Xn); nt <- length(times)
+  r <- .C("SX_subdist_cif", as.integer(nr), as.integer(ncol(Xn)), .rm(Xn), as.double(object@coefficients), as.integer(nt),
+          as.double(H), out = double(nr * nt), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "prediction")
+  .matrix_rm(r$out, nr, nt, list(NULL, paste0("t=", times)))
 }
 
 #' Cause-specific hazards regression for competing risks
@@ -557,26 +545,19 @@ csc <- function(formula, data, ties = c("efron", "breslow"), product_limit = TRU
 # F_k(t) = sum_{u <= t} S(u-) dLambda_k(u | x), S from all causes (product-limit or exponential),
 # with the baseline hazards of the subject's stratum (Benichou & Gail 1990; Kalbfleisch & Prentice 2002, Sec. 8.2)
 .csc_cif_general <- function(object, Xn, sn, times, cause) {
-  K <- object@K
+  K <- object@K; nr <- nrow(Xn)
   bh <- lapply(seq_len(K), function(k) .csc_baseline(object, k))
-  B <- lapply(object@models, function(m) m$coefficients)
-  out <- matrix(0, nrow(Xn), length(times), dimnames = list(NULL, paste0("t=", times)))
-  for (i in seq_len(nrow(Xn))) {
-    s <- if (is.null(sn)) 0L else sn[i]
-    inc <- lapply(seq_len(K), function(k) {
-      b <- bh[[k]][bh[[k]]$stratum == s, , drop = FALSE]
-      data.frame(time = b$time, dH = diff(c(0, b$cumhaz)) * exp(sum(Xn[i, ] * B[[k]])))
-    })
-    grid <- sort(unique(unlist(lapply(inc, `[[`, "time"))))
-    if (!length(grid)) next
-    dH <- vapply(inc, function(d) { v <- numeric(length(grid)); v[match(d$time, grid)] <- d$dH; v }, numeric(length(grid)))
-    dH <- matrix(dH, length(grid), K)
-    tot <- rowSums(dH)
-    Sstep <- if (object@product_limit) pmax(0, 1 - tot) else exp(-tot)
-    Sminus <- c(1, cumprod(Sstep))[seq_along(grid)]
-    F <- cumsum(Sminus * dH[, cause])
-    out[i, ] <- .step_at(grid, F, times, 0)
-  }
+  out <- matrix(0, nr, length(times), dimnames = list(NULL, paste0("t=", times)))
+  tj <- sort(unique(unlist(lapply(bh, `[[`, "time"))))
+  if (!nr || !length(tj)) return(out)
+  sv <- if (is.null(sn)) integer(nr) else as.integer(sn)
+  # hazard increments of every row on the common grid (zero where a stratum has no jump)
+  dHs <- lapply(seq_len(K), function(k) .sx_hazard_inc(bh[[k]], sv, tj, .sx_linpred(Xn, object@models[[k]]$coefficients)))
+  r <- .C("SX_cum_predict", 2L, as.integer(nr), length(tj), as.double(tj), as.integer(K), unlist(lapply(dHs, .rm)),
+          as.integer(cause - 1L), as.integer(isTRUE(object@product_limit)), length(times), as.double(times),
+          out = double(nr * length(times)), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "cumulative incidence")
+  out[] <- .matrix_rm(r$out, nr, length(times))
   out
 }
 

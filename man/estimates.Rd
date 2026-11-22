@@ -26,7 +26,9 @@ difference of \code{logLik()}).
 a data frame with the columns \code{cause, term, role, scale, estimate, se, lower, upper,
   z, p, exp_estimate, exp_lower, exp_upper}. \code{role} is \code{"beta"} for regression
   coefficients; for direct models also \code{"baseline"}, \code{"alpha"} and \code{"conditional"}
-  (on the scale used for estimation; \code{summary()} shows them on the natural scale).
+  (on the scale used for estimation; \code{summary()} shows them on the natural scale), and for the
+  constrained model \code{"share"}, \code{"share_beta"} (log odds ratio of the share),
+  \code{"timing"} (log time ratio) and \code{"shape"} (log factor on the shape of \eqn{G_k}).
 }
 \details{
 Standard errors are the square roots of the diagonal of the inverse observed information (for

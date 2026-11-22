@@ -20,6 +20,11 @@ bool finite_all(const double* x, std::size_t n) {
   for (std::size_t i = 0; i < n; ++i) if (!std::isfinite(x[i])) return false;
   return true;
 }
+// finite and not negative (times, weights)
+bool nonneg_all(const double* x, std::size_t n) {
+  for (std::size_t i = 0; i < n; ++i) if (!std::isfinite(x[i]) || x[i] < 0.0) return false;
+  return true;
+}
 int check_common(int n, int p, const double* time, const double* X) {
   if (n <= 0 || p < 0 || !time || (p > 0 && !X)) return -1;
   if (!finite_all(time, n) || !finite_all(X, static_cast<std::size_t>(n) * p)) return -2;
@@ -65,7 +70,7 @@ int sc_kaplan_meier(int n, const double* time, const int* status, const double* 
                     double* out_time, double* out_nrisk, double* out_nevent,
                     double* out_surv, double* out_se, int* m) try {
   if (n <= 0 || !time || !status || !out_time || !out_surv || !m) return -1;
-  if (!finite_all(time, n) || (weights && !finite_all(weights, n))) return -2;
+  if (!nonneg_all(time, n) || (weights && !nonneg_all(weights, n))) return -2;
   std::vector<double> t(time, time + n), w;
   if (weights) w.assign(weights, weights + n);
   std::vector<int> s(status, status + n);
@@ -83,7 +88,7 @@ int sc_kaplan_meier(int n, const double* time, const int* status, const double* 
 int sc_nelson_aalen(int n, const double* time, const int* status, const double* weights,
                     double* out_time, double* out_cumhaz, double* out_se, int* m) try {
   if (n <= 0 || !time || !status || !out_time || !out_cumhaz || !m) return -1;
-  if (!finite_all(time, n) || (weights && !finite_all(weights, n))) return -2;
+  if (!nonneg_all(time, n) || (weights && !nonneg_all(weights, n))) return -2;
   std::vector<double> w;
   if (weights) w.assign(weights, weights + n);
   KMResult r = kaplan_meier(std::vector<double>(time, time + n), std::vector<int>(status, status + n), w);
@@ -94,7 +99,7 @@ int sc_nelson_aalen(int n, const double* time, const int* status, const double* 
 
 int sc_rmst(int n, const double* time, const int* status, double tau, double* mean, double* se) try {
   if (n <= 0 || !time || !status || !mean || !se) return -1;
-  if (!finite_all(time, n) || !(tau > 0.0) || !std::isfinite(tau)) return -2;
+  if (!nonneg_all(time, n) || !(tau > 0.0) || !std::isfinite(tau)) return -2;
   KMResult r = kaplan_meier(std::vector<double>(time, time + n), std::vector<int>(status, status + n), {});
   rmst(r, tau, *mean, *se);
   return 0;
@@ -103,7 +108,7 @@ int sc_rmst(int n, const double* time, const int* status, double tau, double* me
 int sc_aalen_johansen(int n, const double* time, const int* cause, int K,
                       double* out_time, double* out_surv, double* out_cif, double* out_se, int* m) try {
   if (n <= 0 || K <= 0 || !time || !cause || !out_time || !out_cif || !m) return -1;
-  if (!finite_all(time, n)) return -2;
+  if (!nonneg_all(time, n)) return -2;
   std::vector<double> t(time, time + n);
   std::vector<int> c(cause, cause + n);
   AJResult r = aalen_johansen(t, c, K);
@@ -367,7 +372,8 @@ int sc_gray_test(int n, const double* time, const int* cause, const int* group, 
   return 0;
 } catch (...) { return -9; }
 
-double sc_chisq_upper(double x, double df) { return chisq_upper(x, df); }
+double sc_chisq_upper(double x, double df) try { return chisq_upper(x, df); }
+catch (...) { return std::numeric_limits<double>::quiet_NaN(); }
 
 }  // extern "C"
 
@@ -416,13 +422,14 @@ int check_pred(int n, const double* time, const int* cause, const double* pred) 
 
 extern "C" {
 
-int sc_directcif_nparam(int p, int K, const int* alpha_free, const int* baseline, const int* n_knots) {
+int sc_directcif_nparam(int p, int K, const int* alpha_free, const int* baseline, const int* n_knots) try {
+  if (K < 1) return -1;
   DirectSpec s;
   std::vector<double> dummy;
   if (n_knots) { int tot = 0; for (int k = 0; k < K; ++k) tot += n_knots[k] > 0 ? n_knots[k] : 0; dummy.resize(tot); for (int j = 0; j < tot; ++j) dummy[j] = j; }
   if (make_spec(p, K, alpha_free, nullptr, baseline, n_knots, dummy.empty() ? nullptr : dummy.data(), s)) return -1;
   return static_cast<int>(s.nparam());
-}
+} catch (...) { return -9; }
 
 int sc_directcif_default_knots(int n, const double* time, const int* cause, int k, int df, double* out_knots, int* n_knots) try {
   if (n <= 0 || !time || !cause || !out_knots || !n_knots || k < 1 || df < 1) return -1;
@@ -666,56 +673,154 @@ int check_constrainedK(int n, int p, const double* time, const int* cause, const
   for (int k = 1; k <= K; ++k) if (cnt[static_cast<std::size_t>(k)] == 0) return -3;
   return 0;
 }
+// Covariates of the time distributions G_k (sc_constrainedK_fit_cov). wuse, vuse: (K - 1) x nw and
+// (K - 1) x nv flags (row k - 2 for cause k) of the columns of W and V used for cause k.
+int make_cond_cov(int n_rows, int K, int nw, const double* W, const int* wuse, int nv, const double* V, const int* vuse,
+                  CondCovariates& cov) {
+  if (nw < 0 || nv < 0 || K < 2) return -1;
+  const std::size_t Kc = static_cast<std::size_t>(K - 1);
+  cov = CondCovariates();
+  cov.wcol.assign(Kc, {});
+  cov.vcol.assign(Kc, {});
+  if (nw > 0) {
+    if (!W || !wuse) return -1;
+    if (!finite_all(W, static_cast<std::size_t>(n_rows) * nw)) return -2;
+    cov.W = W; cov.nw = static_cast<std::size_t>(nw);
+    for (std::size_t k = 0; k < Kc; ++k)
+      for (int j = 0; j < nw; ++j) {
+        const int u = wuse[k * static_cast<std::size_t>(nw) + j];
+        if (u != 0 && u != 1) return -1;
+        if (u) cov.wcol[k].push_back(static_cast<std::size_t>(j));
+      }
+  }
+  if (nv > 0) {
+    if (!V || !vuse) return -1;
+    if (!finite_all(V, static_cast<std::size_t>(n_rows) * nv)) return -2;
+    cov.V = V; cov.nv = static_cast<std::size_t>(nv);
+    for (std::size_t k = 0; k < Kc; ++k)
+      for (int j = 0; j < nv; ++j) {
+        const int u = vuse[k * static_cast<std::size_t>(nv) + j];
+        if (u != 0 && u != 1) return -1;
+        if (u) cov.vcol[k].push_back(static_cast<std::size_t>(j));
+      }
+  }
+  return 0;
+}
 }  // namespace
 
 extern "C" {
 
-int sc_constrainedK_fit(int n, int p, const double* time, const int* cause, const double* X, int K,
-                        int alpha_free, double alpha_value, int baseline, const int* family,
-                        const double* init, int max_iter, double tol,
-                        double* theta, double* var, sc_fit_info* info) try {
+int sc_constrainedK_fit_cov(int n, int p, const double* time, const int* cause, const double* X, int K,
+                            int alpha_free, double alpha_value, int baseline, const int* family,
+                            int nw, const double* W, const int* wuse, int nv, const double* V, const int* vuse,
+                            const double* init, int max_iter, double tol,
+                            double* theta, double* var, sc_fit_info* info) try {
   DirectSpec s;
   if (int rc = one_spec(p, alpha_free, alpha_value, baseline, 0, nullptr, s)) return rc;
   if (int rc = check_constrainedK(n, p, time, cause, X, K, family, s)) return rc;
   if (!theta) return -1;
+  CondCovariates cov;
+  if (int rc = make_cond_cov(n, K, nw, W, wuse, nv, V, vuse, cov)) return rc;
   const std::vector<int> fam(family, family + (K - 1));
-  ConstrainedKModel m(n, time, cause, X, s, K, fam);
-  const std::size_t P = m.nparam();
-  std::vector<double> st;
-  if (init) { if (!finite_all(init, P)) return -2; st.assign(init, init + P); }
-  const FitResult f = constrainedK_fit(m, n, time, cause, fam, init ? &st : nullptr, max_iter, tol);
   int ne = 0;
   for (int i = 0; i < n; ++i) ne += cause[i] != 0;
+  if (cov.empty() || init) {                              // as given (start values are on the scale of W and V)
+    ConstrainedKModel m(n, time, cause, X, s, K, fam, cov);
+    const std::size_t P = m.nparam();
+    std::vector<double> st;
+    if (init) { if (!finite_all(init, P)) return -2; st.assign(init, init + P); }
+    const FitResult f = constrainedK_fit(m, n, time, cause, fam, init ? &st : nullptr, max_iter, tol);
+    export_fit(f, P, ne, theta, var, info);
+    return 0;
+  }
+  // fitted with centred covariates (better conditioned), then expressed for W and V themselves
+  std::vector<double> mw(cov.nw, 0.0), mv(cov.nv, 0.0), Wc, Vc;
+  auto centre = [n](const double* A, std::size_t q, std::vector<double>& mean, std::vector<double>& out) {
+    out.assign(A, A + static_cast<std::size_t>(n) * q);
+    for (std::size_t j = 0; j < q; ++j) {
+      double sm = 0.0;
+      for (int i = 0; i < n; ++i) sm += A[static_cast<std::size_t>(i) * q + j];
+      mean[j] = sm / n;
+      for (int i = 0; i < n; ++i) out[static_cast<std::size_t>(i) * q + j] -= mean[j];
+    }
+  };
+  if (cov.W) { centre(cov.W, cov.nw, mw, Wc); cov.W = Wc.data(); }
+  if (cov.V) { centre(cov.V, cov.nv, mv, Vc); cov.V = Vc.data(); }
+  ConstrainedKModel m(n, time, cause, X, s, K, fam, cov);
+  const std::size_t P = m.nparam();
+  FitResult f = constrainedK_fit(m, n, time, cause, fam, nullptr, max_iter, tol);
+  if (f.beta.size() == P) {
+    std::vector<double> J;
+    cond_uncentre(m, mw, mv, f.beta, J);
+    if (f.var.n == P) {
+      Mat V2(P);
+      for (std::size_t a = 0; a < P; ++a)
+        for (std::size_t b = 0; b < P; ++b) {
+          double v = 0.0;
+          for (std::size_t c = 0; c < P; ++c) {
+            if (J[a * P + c] == 0.0) continue;
+            for (std::size_t d = 0; d < P; ++d) if (J[b * P + d] != 0.0) v += J[a * P + c] * f.var(c, d) * J[b * P + d];
+          }
+          V2(a, b) = v;
+        }
+      f.var = V2;
+    }
+  }
   export_fit(f, P, ne, theta, var, info);
   return 0;
 } catch (...) { return -9; }
 
-int sc_constrainedK_eval(int n, int p, const double* time, const int* cause, const double* X, int K,
-                         int alpha_free, double alpha_value, int baseline, const int* family,
-                         const double* theta, double* loglik, double* grad, double* info_matrix) try {
+int sc_constrainedK_fit(int n, int p, const double* time, const int* cause, const double* X, int K,
+                        int alpha_free, double alpha_value, int baseline, const int* family,
+                        const double* init, int max_iter, double tol,
+                        double* theta, double* var, sc_fit_info* info) {
+  return sc_constrainedK_fit_cov(n, p, time, cause, X, K, alpha_free, alpha_value, baseline, family, 0, nullptr, nullptr,
+                                 0, nullptr, nullptr, init, max_iter, tol, theta, var, info);
+}
+
+int sc_constrainedK_eval_cov(int n, int p, const double* time, const int* cause, const double* X, int K,
+                             int alpha_free, double alpha_value, int baseline, const int* family,
+                             int nw, const double* W, const int* wuse, int nv, const double* V, const int* vuse,
+                             const double* theta, double* loglik, double* grad, double* info_matrix) try {
   DirectSpec s;
   if (int rc = one_spec(p, alpha_free, alpha_value, baseline, 0, nullptr, s)) return rc;
   if (int rc = check_constrainedK(n, p, time, cause, X, K, family, s); rc != 0 && rc != -3) return rc;
   if (!theta) return -1;
-  ConstrainedKModel m(n, time, cause, X, s, K, std::vector<int>(family, family + (K - 1)));
+  CondCovariates cov;
+  if (int rc = make_cond_cov(n, K, nw, W, wuse, nv, V, vuse, cov)) return rc;
+  ConstrainedKModel m(n, time, cause, X, s, K, std::vector<int>(family, family + (K - 1)), cov);
   Eval ev;
   m.eval(std::vector<double>(theta, theta + m.nparam()), ev, true);
   export_eval(ev, m.nparam(), loglik, grad, info_matrix);
   return 0;
 } catch (...) { return -9; }
 
-int sc_constrainedK_predict(int p, int K, int alpha_free, double alpha_value, int baseline, const int* family,
-                            const double* theta, const double* var, int k, int average, int n_new, const double* Xnew,
-                            int nt, const double* times, double* out_cif, double* out_se) try {
+int sc_constrainedK_eval(int n, int p, const double* time, const int* cause, const double* X, int K,
+                         int alpha_free, double alpha_value, int baseline, const int* family,
+                         const double* theta, double* loglik, double* grad, double* info_matrix) {
+  return sc_constrainedK_eval_cov(n, p, time, cause, X, K, alpha_free, alpha_value, baseline, family, 0, nullptr, nullptr,
+                                  0, nullptr, nullptr, theta, loglik, grad, info_matrix);
+}
+
+int sc_constrainedK_predict_cov(int p, int K, int alpha_free, double alpha_value, int baseline, const int* family,
+                                int nw, const int* wuse, int nv, const int* vuse,
+                                const double* theta, const double* var, int k, int average, int n_new, const double* Xnew,
+                                const double* Wnew, const double* Vnew,
+                                int nt, const double* times, double* out_cif, double* out_se) try {
   DirectSpec s;
   if (int rc = one_spec(p, alpha_free, alpha_value, baseline, 0, nullptr, s)) return rc;
   if (!theta || !family || !times || !out_cif || n_new <= 0 || nt <= 0 || K < 2 || k < 1 || k > K || (p > 0 && !Xnew)) return -1;
   for (int j = 0; j < K - 1; ++j) if (family[j] < 0 || family[j] >= COND_COUNT) return -1;
   if (out_se && !var) return -1;
+  CondCovariates cov;
+  if (int rc = make_cond_cov(n_new, K, nw, Wnew, wuse, nv, Vnew, vuse, cov)) return rc;
   std::vector<double> dummy_t(1, 0.0); std::vector<int> dummy_c(1, 0);
-  ConstrainedKModel m(0, dummy_t.data(), dummy_c.data(), Xnew, s, K, std::vector<int>(family, family + (K - 1)));
+  ConstrainedKModel m(0, dummy_t.data(), dummy_c.data(), Xnew, s, K, std::vector<int>(family, family + (K - 1)), cov);
   const std::size_t P = m.nparam();
   const std::vector<double> th(theta, theta + P);
+  const std::size_t nws = cov.W ? cov.nw : 0, nvs = cov.V ? cov.nv : 0;
+  auto wr = [&](int i) { return cov.W ? cov.W + static_cast<std::size_t>(i) * nws : nullptr; };
+  auto vr = [&](int i) { return cov.V ? cov.V + static_cast<std::size_t>(i) * nvs : nullptr; };
   std::vector<double> g;
   if (average) {                                         // mean over the rows; delta method for the mean
     std::vector<double> gs(P);
@@ -723,7 +828,7 @@ int sc_constrainedK_predict(int p, int K, int alpha_free, double alpha_value, in
       double Fs = 0.0;
       std::fill(gs.begin(), gs.end(), 0.0);
       for (int i = 0; i < n_new; ++i) {
-        Fs += m.cifk_grad(th, k, Xnew + static_cast<std::size_t>(i) * p, times[t], g);
+        Fs += m.cifk_grad(th, k, Xnew + static_cast<std::size_t>(i) * p, times[t], g, wr(i), vr(i));
         for (std::size_t a = 0; a < P; ++a) gs[a] += g[a];
       }
       out_cif[t] = Fs / n_new;
@@ -738,7 +843,7 @@ int sc_constrainedK_predict(int p, int K, int alpha_free, double alpha_value, in
   }
   for (int i = 0; i < n_new; ++i)
     for (int t = 0; t < nt; ++t) {
-      const double F = m.cifk_grad(th, k, Xnew + static_cast<std::size_t>(i) * p, times[t], g);
+      const double F = m.cifk_grad(th, k, Xnew + static_cast<std::size_t>(i) * p, times[t], g, wr(i), vr(i));
       out_cif[static_cast<std::size_t>(i) * nt + t] = F;
       if (out_se) {
         double v = 0.0;
@@ -748,6 +853,13 @@ int sc_constrainedK_predict(int p, int K, int alpha_free, double alpha_value, in
     }
   return 0;
 } catch (...) { return -9; }
+
+int sc_constrainedK_predict(int p, int K, int alpha_free, double alpha_value, int baseline, const int* family,
+                            const double* theta, const double* var, int k, int average, int n_new, const double* Xnew,
+                            int nt, const double* times, double* out_cif, double* out_se) {
+  return sc_constrainedK_predict_cov(p, K, alpha_free, alpha_value, baseline, family, 0, nullptr, 0, nullptr, theta, var, k,
+                                     average, n_new, Xnew, nullptr, nullptr, nt, times, out_cif, out_se);
+}
 
 int sc_subdist_fit(int n, int p, const double* time, const int* cause, const double* X, int interest,
                    int alpha_free, double alpha_value, int baseline, int n_knots, const double* knots, int grid,
@@ -1013,7 +1125,7 @@ int sc_cif_bootstrap(int model, int n, int p, const double* time, const int* cau
   int ok = 0;
   for (int b = 0; b < B; ++b) {
     for (int i = 0; i < n; ++i) {
-      const std::size_t j = static_cast<std::size_t>(splitmix64(s) % static_cast<std::uint64_t>(n));
+      const std::size_t j = draw_index(s, static_cast<std::size_t>(n));
       tb[i] = time[j]; cb[i] = cause[j];
       for (int q = 0; q < pe; ++q) Xb[static_cast<std::size_t>(i) * pe + q] = Xu[j * pe + q];
     }

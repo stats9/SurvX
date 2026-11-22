@@ -325,19 +325,11 @@ cox <- function(formula, data, ties = c("efron", "breslow"), weights = NULL, rob
   time <- f$time; status <- f$status; n <- length(time)
   entry <- f$entry %||% rep(0, n)
   et <- sort(unique(time[status == 1L]))
-  lo <- findInterval(entry, et)                      # event times <= entry
-  hi <- findInterval(time, et, left.open = TRUE)     # event times < time
-  k <- pmax(hi - lo, 0L)                             # cut points strictly inside (entry, time)
-  rows <- k + 1L
-  N <- sum(as.numeric(rows))
+  N <- .te_split_size(entry, time, et)                # rows after cutting at the event times strictly inside (entry, time]
   if (N > 5e7) stop("tt(): splitting at every event time would create ", format(N, big.mark = ","),
                     " rows; use fewer distinct times (round them) or split follow-up into periods yourself", call. = FALSE)
-  idx <- rep.int(seq_len(n), rows)
-  r <- sequence(rows)
-  ci <- lo[idx] + r                                  # index in et of the end of a piece that is a cut
-  last <- r == rows[idx]
-  stop_t <- ifelse(last, time[idx], et[pmin(ci, length(et))])
-  start_t <- ifelse(r == 1L, entry[idx], et[pmax(ci - 1L, 1L)])
+  sp <- .te_split(entry, time, status, et)            # C++ core
+  idx <- sp$idx; stop_t <- sp$stop; start_t <- sp$start
   X <- f$X[idx, , drop = FALSE]
   funs <- if (is.function(tt)) rep(list(tt), length(f$tt_cols)) else tt
   if (!is.list(funs) || length(funs) != length(f$tt_cols) || !all(vapply(funs, is.function, logical(1))))
@@ -346,9 +338,9 @@ cox <- function(formula, data, ties = c("efron", "breslow"), weights = NULL, rob
     g <- funs[[j]](stop_t)
     if (length(g) != length(stop_t) || any(!is.finite(g)))
       stop("tt function ", j, " must return a finite value for every time (log(t) needs t > 0)", call. = FALSE)
-    X[, f$tt_cols[j]] <- X[, f$tt_cols[j]] * g
+    X[, f$tt_cols[j]] <- .sx_ew("mul", X[, f$tt_cols[j]], g)
   }
-  list(time = stop_t, status = ifelse(last, status[idx], 0L), X = X, entry = start_t,
+  list(time = stop_t, status = sp$status, X = X, entry = start_t,
        weights = if (is.null(weights)) NULL else weights[idx],
        strata = if (is.null(f$strata)) NULL else f$strata[idx],
        cluster = if (!is.null(f$cluster)) f$cluster[idx] else idx)
@@ -389,12 +381,14 @@ cox <- function(formula, data, ties = c("efron", "breslow"), weights = NULL, rob
 # within cluster c (each row its own cluster without cluster())
 .cox_robust <- function(fit, time, status, X, weights, ties, entry, strata, cluster) {
   U <- .cox_score(fit$coefficients, time, status, X, weights, ties, entry, strata)
-  if (!is.null(cluster)) U <- rowsum(U, cluster, reorder = FALSE)
   V <- fit$vcov
   if (!all(is.finite(V))) return(V)
-  out <- V %*% crossprod(U) %*% V
-  dimnames(out) <- dimnames(V)
-  out
+  n <- nrow(U); p <- ncol(U)
+  cl <- if (is.null(cluster)) integer(1) else match(cluster, unique(cluster)) - 1L
+  r <- .C("SX_sandwich", as.integer(n), as.integer(p), .rm(U), as.integer(!is.null(cluster)), as.integer(cl),
+          as.integer(if (is.null(cluster)) 0L else max(cl) + 1L), .rm(V), out = double(p * p), rc = integer(1), PACKAGE = "SurvX")
+  .sx_rc(r$rc, "robust variance")
+  .matrix_rm(r$out, p, p, dimnames(V))
 }
 
 # Breslow/Efron baseline cumulative hazard, per stratum (column stratum: 0-based code)
@@ -549,15 +543,15 @@ NULL
 S7::method(predict, CoxFit) <- function(object, newdata = NULL, times = NULL, type = c("lp", "survival"), ...) {
   .no_tt(object, "predict()")
   type <- match.arg(type)
-  lp <- drop(.sx_newX(object, newdata) %*% object@coefficients)
-  if (type == "lp") return(lp)
+  Xn <- .sx_newX(object, newdata)
+  if (type == "lp") return(.sx_linpred(Xn, object@coefficients))
   if (is.null(times)) stop("times are needed for type = \"survival\"", call. = FALSE)
   bh <- .cox_baseline(object)
   sn <- .sx_newstrata(object, newdata)
-  out <- if (is.null(sn)) exp(-outer(exp(lp), .step_at(bh$time, bh$cumhaz, times, 0)))
-         else t(vapply(seq_along(lp), function(i) exp(-exp(lp[i]) * .cumhaz_at(bh, times, rep(sn[i], length(times)))),
-                       numeric(length(times))))
-  if (length(times) == 1L && !is.null(sn)) out <- matrix(out, ncol = 1L)
+  H <- if (is.null(sn)) .step_at(bh$time, bh$cumhaz, times, 0)
+       else t(vapply(seq_len(nrow(Xn)), function(i) .cumhaz_at(bh, times, rep(sn[i], length(times))), numeric(length(times))))
+  if (!is.null(sn) && length(times) == 1L) H <- matrix(H, ncol = 1L)
+  out <- .sx_ph_predict(Xn, object@coefficients, H, "survival")
   dimnames(out) <- list(NULL, paste0("t=", times))
   out
 }
@@ -596,20 +590,21 @@ S7::method(predict, CoxFit) <- function(object, newdata = NULL, times = NULL, ty
 #' @export
 tt_effect <- function(fit, times = NULL, level = 0.95) {
   if (!S7::S7_inherits(fit, CoxFit) || is.null(fit@tt)) stop("fit must be a cox() model with tt() terms", call. = FALSE)
-  if (is.null(times)) times <- unname(stats::quantile(fit@time[fit@status == 1L], c(0.25, 0.5, 0.75), type = 1))
+  if (is.null(times)) times <- .sx_quantile(fit@time[fit@status == 1L], c(0.25, 0.5, 0.75), type = 1L)
   b <- fit@coefficients; V <- fit@vcov; nm <- names(b)
   funs <- if (is.function(fit@tt$fun)) rep(list(fit@tt$fun), length(fit@tt$cols)) else fit@tt$fun
-  z <- stats::qnorm(1 - (1 - level) / 2)
+  z <- .zq(level)
   out <- lapply(seq_along(fit@tt$cols), function(j) {
     jt <- fit@tt$cols[j]
     base <- sub("^tt\\((.*)\\)$", "\\1", nm[jt])
     jb <- match(base, nm)
-    g <- funs[[j]](times)
-    est <- (if (is.na(jb)) 0 else b[jb]) + b[jt] * g
-    v <- V[jt, jt] * g^2 + if (is.na(jb)) 0 else V[jb, jb] + 2 * g * V[jb, jt]
-    se <- sqrt(pmax(v, 0))
-    data.frame(term = base, time = times, g = g, log_hr = unname(est), se = unname(se), hr = exp(unname(est)),
-               lower = exp(unname(est - z * se)), upper = exp(unname(est + z * se)), stringsAsFactors = FALSE)
+    g <- funs[[j]](times); nt <- length(times)
+    r <- .C("SX_te_effect", as.integer(nt), 1L, as.double(g), length(b), as.double(b), .rm(V),
+            as.integer(c(if (is.na(jb)) -1L else jb - 1L, jt - 1L)), as.double(z), est = double(nt), se = double(nt), hr = double(nt),
+            lower = double(nt), upper = double(nt), p = double(nt), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+    .sx_rc(r$rc, "tt() effect")
+    data.frame(term = base, time = times, g = g, log_hr = r$est, se = r$se, hr = r$hr, lower = r$lower, upper = r$upper,
+               stringsAsFactors = FALSE)
   })
   do.call(rbind, out)
 }

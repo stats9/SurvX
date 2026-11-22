@@ -57,8 +57,7 @@ time_effects(fit, forms = c("constant", "log", "piecewise", "spline"),
   which the whole procedure (screening, choice of the forms, final fit) is repeated. \code{0}
   (default): none. 200 or more gives percentile intervals that include the choice of the forms
   and the frequency with which each form is chosen.}
-\item{seed}{seed of the bootstrap; the state of the random number generator of the session is
-  restored afterwards.}
+\item{seed}{seed of the bootstrap: a whole number, or \code{NULL} to take the seed from the random numbers of the session (so that \code{set.seed()} before the call governs the result). All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the session's generator is left as it was.}
 \item{max_rows}{largest number of rows of the data split at every event time. Beyond it, follow-up
   is split at quantiles of the event times instead, and the result says so.}
 }

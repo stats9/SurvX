@@ -175,12 +175,37 @@ inline std::uint64_t splitmix64(std::uint64_t& s) {       // Steele, Lea & Flood
   return z ^ (z >> 31);
 }
 
-// Fold of every subject: a seeded Fisher-Yates shuffle, identical in every language binding.
+// ---- source of random indices -------------------------------------------------------------------
+// Every random draw of the core is a uniform index in 0..n-1. By default it comes from splitmix64
+// started at the seed of the call. A front end can install its own source instead (R installs
+// R_unif_index, so that set.seed() and RNGkind() govern every draw and a bootstrap resample is
+// exactly sample.int(n, n, replace = TRUE)). The core is single-threaded where it draws.
+using IndexSource = double (*)(double n);                 // returns an integer value in [0, n)
+inline IndexSource& index_source() { static IndexSource f = nullptr; return f; }
+
+inline std::size_t draw_index(std::uint64_t& s, std::size_t n) {
+  if (IndexSource f = index_source()) {
+    const double v = f(static_cast<double>(n));
+    const std::size_t j = v > 0 ? static_cast<std::size_t>(v) : 0;
+    return j < n ? j : n - 1;
+  }
+  return static_cast<std::size_t>(splitmix64(s) % static_cast<std::uint64_t>(n));
+}
+
+// a random permutation of 0..n-1 by the algorithm of R's sample(n): with R's source installed,
+// x[perm] equals sample(x) in R for the same state of the generator
+inline std::vector<std::size_t> random_permutation(std::uint64_t& s, std::size_t n) {
+  std::vector<std::size_t> x(n), y(n);
+  for (std::size_t i = 0; i < n; ++i) x[i] = i;
+  std::size_t rem = n;
+  for (std::size_t i = 0; i < n; ++i) { const std::size_t j = draw_index(s, rem); y[i] = x[j]; x[j] = x[--rem]; }
+  return y;
+}
+
+// Fold (0-based) of every subject: subject perm[q] gets fold q mod folds
 inline std::vector<int> cv_folds(std::size_t n, int folds, std::uint64_t seed) {
-  std::vector<std::size_t> perm(n);
-  for (std::size_t i = 0; i < n; ++i) perm[i] = i;
   std::uint64_t s = seed;
-  for (std::size_t i = n; i > 1; --i) { const std::size_t j = static_cast<std::size_t>(splitmix64(s) % i); std::swap(perm[i - 1], perm[j]); }
+  const std::vector<std::size_t> perm = random_permutation(s, n);
   std::vector<int> f(n);
   for (std::size_t q = 0; q < n; ++q) f[perm[q]] = static_cast<int>(q % static_cast<std::size_t>(folds));
   return f;

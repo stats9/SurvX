@@ -17,7 +17,7 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
   X <- object@X; p <- ncol(X)
   if (!p) return(list(X = matrix(0, 1L, 0L), label = "no covariates"))
   asg <- attr(X, "assign"); tt <- object@terms
-  row <- colMeans(X)
+  row <- .sx_colmeans(X)
   if (is.null(asg)) return(list(X = matrix(row, 1L, dimnames = list(NULL, colnames(X))), label = "mean of every covariate"))
   labs <- attr(tt, "term.labels"); dc <- attr(tt, "dataClasses"); ctr <- object@contrasts
   parts <- character(0); other <- FALSE
@@ -26,7 +26,7 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
     cls <- if (!is.null(dc) && lab %in% names(dc)) dc[[lab]] else NA_character_
     treat <- is.null(ctr[[lab]]) || identical(ctr[[lab]], "contr.treatment")
     if (!is.na(cls) && cls %in% c("factor", "character", "logical", "ordered") && treat) {
-      fr <- colMeans(X[, cols, drop = FALSE]); ref_fr <- 1 - sum(fr)
+      fr <- .sx_colmeans(X[, cols, drop = FALSE]); ref_fr <- .sx_ew("complement", .sx_reduce("sum", fr))
       levs <- object@xlevels[[lab]]
       ref <- if (length(levs)) levs[1L] else if (cls == "logical") "FALSE" else "reference"
       row[cols] <- 0
@@ -91,11 +91,11 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
 # ----------------------------------------------------------------------------------------------
 # curves of one model
 # ----------------------------------------------------------------------------------------------
-.grid_smooth <- function(tmax) seq(0, tmax, length.out = 201L)
+.grid_smooth <- function(tmax) .sx_seq(0, tmax, 201L)
 
 .grid_step <- function(time, status, tmax) {
   g <- sort(unique(c(0, time[status > 0L], tmax)))
-  if (length(g) > 600L) g <- unique(c(0, stats::quantile(g, seq(0, 1, length.out = 600L), type = 1L, names = FALSE), tmax))
+  if (length(g) > 600L) g <- unique(c(0, .sx_quantile(g, .sx_seq(0, 1, 600L), type = 1L), tmax))
   g
 }
 
@@ -124,11 +124,8 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
     if (is.null(rows)) {                               # average over the subjects
       Xn <- f@X; nn <- nrow(Xn); nt <- length(times); p <- ncol(Xn)
       v <- if (usevar) as.double(f@vcov) else double(1)
-      r <- if (f@estimation == "constrained" && f@K > 2L)
-        .C("SX_constrainedK_predict", as.integer(p), f@K, f@alpha_free, as.double(f@alpha_value), f@base_code,
-           as.integer(unname(.cond_codes[f@cond])), as.double(f@coefficients), as.integer(usevar), v,
-           .constrained_index(f, kk), 1L, as.integer(nn), .rm(Xn), as.integer(nt), as.double(times),
-           cif = double(nt), se = double(nt), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+      r <- if (f@estimation == "constrained" && (f@K > 2L || !is.null(.cc_of(f))))
+        .ck_predict(f, .constrained_index(f, kk), Xn, times, usevar, v, 1L)
       else if (f@estimation == "constrained")
         .C("SX_constrained_predict_mean", as.integer(p), f@alpha_free, as.double(f@alpha_value), f@base_code,
            as.integer(.cond_codes[[f@cond]]), as.double(f@coefficients), as.integer(usevar), v,
@@ -169,10 +166,10 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
   out <- list()
   for (k in causes) {
     if (k > K) next
-    r <- .C("SX_cif_bootstrap", model, as.integer(n), as.integer(p), fit@time, fit@status, .rm(fit@X), as.integer(K), as.integer(k),
-            ties, pl, as.integer(adjust), as.integer(nn), .rm(Xn), avg, as.integer(nt), as.double(times), Bu, as.integer(seed), as.double(level),
+    r <- .with_seed(seed, .C("SX_cif_bootstrap", model, as.integer(n), as.integer(p), fit@time, fit@status, .rm(fit@X), as.integer(K), as.integer(k),
+            ties, pl, as.integer(adjust), as.integer(nn), .rm(Xn), avg, as.integer(nt), as.double(times), Bu, as.double(level),
             est = double(cells), se = double(cells), lower = double(cells), upper = double(cells), n_ok = integer(1), rc = integer(1),
-            NAOK = TRUE, PACKAGE = "SurvX")
+            NAOK = TRUE, PACKAGE = "SurvX"))
     if (r$rc == -4L) { warning(name, ": the model could not be fitted for cause ", k, call. = FALSE); next }
     .sx_rc(r$rc, "cif_data")
     if (Bu > 0L && r$n_ok < Bu) warning(name, ", cause ", k, ": ", Bu - r$n_ok, " of ", Bu, " bootstrap samples could not be fitted", call. = FALSE)
@@ -203,7 +200,7 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
   if (S7::S7_inherits(fit, CSCFit)) {
     fb@entry <- sub(fit@entry); fb@strata <- sub(fit@strata); fb@cluster <- sub(fit@cluster)
     fb@models <- lapply(seq_len(fit@K), function(k) {
-      if (!adjust) return(list(coefficients = 0 * fit@models[[k]]$coefficients))
+      if (!adjust) return(list(coefficients = .zero_like(fit@models[[k]]$coefficients)))
       st <- as.integer(fb@status == k)
       if (!any(st == 1L)) stop("no events of cause ", k, call. = FALSE)
       .cox_fit(fb@time, st, fb@X, NULL, fit@ties, 50L, 1e-9, fb@entry, fb@strata)
@@ -212,7 +209,7 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
     fb@entry <- fit@entry[idx]
     e <- .fg_expand(fb@time, fb@status, fb@entry, fit@cause)
     fb@expanded <- e
-    fb@coefficients <- if (!adjust) 0 * fit@coefficients
+    fb@coefficients <- if (!adjust) .zero_like(fit@coefficients)
                        else .cox_fit(e$stop, e$status, fb@X[e$id, , drop = FALSE], e$w, "breslow", 50L, 1e-9, e$start, NULL)$coefficients
   }
   fb
@@ -223,17 +220,16 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
   if (S7::S7_inherits(fb, CSCFit)) return(.csc_cif_general(fb, X, s, times, k))
   e <- fb@expanded
   bh <- .cox_baseline_raw(fb@coefficients, e$stop, e$status, fb@X[e$id, , drop = FALSE], e$w, "breslow", e$start, NULL)
-  1 - exp(-outer(exp(drop(X %*% fb@coefficients)), .step_at(bh$time, bh$cumhaz, times, 0)))
+  .sx_ph_predict(X, fb@coefficients, .step_at(bh$time, bh$cumhaz, times, 0), "cif")
 }
 
 .curves_boot_general <- function(fit, name, causes, rows, times, conf.int, level, B, seed, interval, adjust) {
-  rs <- .rng_save(); on.exit(.rng_restore(rs), add = TRUE)   # the session's random numbers are left unchanged
   is_csc <- S7::S7_inherits(fit, CSCFit)
   strat <- is_csc && !is.null(fit@strata)
   avg <- is.null(rows)
   if (!avg) {
     X <- rows$X; labels <- rows$labels; s <- rows$strata
-    if (!adjust) X <- 0 * X
+    if (!adjust) X <- .zero_like(X)
     if (strat && is.null(s)) {                                   # one curve per stratum
       L <- length(fit@strata_levels)
       X <- X[rep(seq_len(nrow(X)), each = L), , drop = FALSE]
@@ -244,7 +240,7 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
   ids <- if (is_csc && !is.null(fit@cluster)) fit@cluster else seq_len(fit@n)
   groups <- split(seq_len(fit@n), factor(ids, levels = unique(ids)))
   curves <- function(fb, k) {
-    if (avg) return(matrix(colMeans(.predict_rows(fb, fb@X * adjust, if (strat) fb@strata else NULL, times, k)), 1L))
+    if (avg) return(matrix(.sx_colmeans(.predict_rows(fb, if (adjust) fb@X else .zero_like(fb@X), if (strat) fb@strata else NULL, times, k)), 1L))
     .predict_rows(fb, X, s, times, k)
   }
   out <- list()
@@ -255,19 +251,17 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
     nt <- length(times); Bu <- if (conf.int) as.integer(B) else 0L
     se <- lo <- up <- matrix(NA_real_, nrow(est), nt); n_ok <- 0L
     if (Bu > 1L) {
-      set.seed(seed)
+      draws <- .sx_resample(length(groups), Bu, seed)    # core generator; the global R seed is left alone
       bs <- array(NA_real_, c(nrow(est), nt, Bu))
       for (b in seq_len(Bu)) {
-        idx <- unlist(groups[sample.int(length(groups), replace = TRUE)], use.names = FALSE)
+        idx <- unlist(groups[draws[b, ]], use.names = FALSE)
         r <- tryCatch(curves(.refit_rows(fit, idx, adjust), k), error = function(e) NULL)
         if (!is.null(r)) { bs[, , b] <- r; n_ok <- n_ok + 1L }
       }
       if (n_ok < Bu) warning(name, ", cause ", k, ": ", Bu - n_ok, " of ", Bu, " bootstrap samples could not be fitted", call. = FALSE)
-      a <- (1 - level) / 2
-      se <- apply(bs, c(1L, 2L), stats::sd, na.rm = TRUE)
-      lo <- apply(bs, c(1L, 2L), stats::quantile, probs = a, na.rm = TRUE, names = FALSE)
-      up <- apply(bs, c(1L, 2L), stats::quantile, probs = 1 - a, na.rm = TRUE, names = FALSE)
-      if (nrow(est) == 1L) { se <- matrix(se, 1L); lo <- matrix(lo, 1L); up <- matrix(up, 1L) }
+      nr <- nrow(est)
+      bsum <- .sx_boot_summary(bs, Bu, nr * nt, level, finite_only = TRUE)   # failed fits are NA and left out
+      se <- matrix(bsum$sd, nr, nt); lo <- matrix(bsum$lower, nr, nt); up <- matrix(bsum$upper, nr, nt)
     }
     for (i in seq_len(nrow(est))) {
       ci <- if (Bu > 1L) .interval(est[i, ], se[i, ], lo[i, ], up[i, ], level, interval) else list(lower = rep(NA_real_, nt), upper = rep(NA_real_, nt))
@@ -345,7 +339,10 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
 #' @param conf.int compute pointwise confidence intervals.
 #' @param level confidence level.
 #' @param B number of bootstrap samples for Fine-Gray and cause-specific Cox models.
-#' @param seed seed of the bootstrap (the same seed gives the same intervals).
+#' @param seed seed of the bootstrap: a whole number, or \code{NULL} to take the seed from the
+#'   random numbers of the session (so that \code{set.seed()} before the call governs the result).
+#'   All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the
+#'   session's generator is left as it was.
 #' @param interval \code{"cloglog"} or \code{"percentile"} for bootstrap intervals.
 #' @param layout \code{"panels"} (one panel per cause), \code{"overlay"} (all causes in one panel) or
 #'   \code{"stacked"} (the cumulative incidences of the causes stacked on each other, with the
@@ -425,6 +422,7 @@ utils::globalVariables(c("time", "cif", "lower", "upper", "curve", "cause_label"
 #' @export
 cif_data <- function(x, newdata = NULL, cause = NULL, type = c("profile", "marginal", "unadjusted"), times = NULL,
                      conf.int = TRUE, level = 0.95, B = 200L, seed = 1L, interval = c("cloglog", "percentile")) {
+  seed <- .resolve_seed(seed)
   type <- match.arg(type); interval <- match.arg(interval)
   models <- if (is.list(x) && !S7::S7_inherits(x)) x else list(x)
   if (is.null(names(models))) names(models) <- if (length(models) == 1L) .model_label(models[[1L]]) else paste("model", seq_along(models))
@@ -488,7 +486,9 @@ cif_data <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
   if (S7::S7_inherits(m, FineGrayFit)) return("Fine-Gray")
   if (S7::S7_inherits(m, CSCFit)) return("cause-specific Cox")
   if (S7::S7_inherits(m, ParCSCFit)) return(.par_name(m))
-  if (S7::S7_inherits(m, DirectCIFFit)) return(paste0("direct ", m@baseline[1L], " ", m@link[1L], if (m@estimation != "joint") paste0(", ", m@estimation)))
+  if (S7::S7_inherits(m, DirectCIFFit))
+    return(paste0("direct ", m@baseline[1L], " ", m@link[1L], if (m@estimation != "joint") paste0(", ", m@estimation),
+                  if (!is.null(.cc_of(m))) ", timing"))
   "model"
 }
 
@@ -504,6 +504,7 @@ cif_plot <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
                      caption = TRUE, reference = FALSE, mark.times = NULL, percent = FALSE, grid = FALSE,
                      labels = NULL, cause.names = NULL, col = NULL, lty = NULL, lwd = 2, xlab = "Time", ylab = NULL,
                      main = NULL, xlim = NULL, ylim = NULL, cex = 0.85, engine = c("base", "ggplot2"), ...) {
+  seed <- .resolve_seed(seed)
   type <- match.arg(type); layout <- match.arg(layout); engine <- match.arg(engine); interval <- match.arg(interval)
   if (layout == "stacked") conf.int <- FALSE
   d <- cif_data(x, newdata = newdata, cause = cause, type = type, times = times, conf.int = conf.int, level = level,
@@ -553,7 +554,7 @@ cif_plot <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
 
 .prob_axis <- function(percent) {
   at <- graphics::axTicks(2L)
-  graphics::axis(2L, at = at, labels = if (percent) paste0(round(100 * at), "%") else format(at), las = 1L)
+  graphics::axis(2L, at = at, labels = if (percent) paste0(.sx_round(.sx_pct(at)), "%") else format(at), las = 1L)
 }
 
 .cif_base <- function(d, keys, causes, cn, layout, conf.int, risk.table, legend, mark.times, percent, grid, col, lty, lwd,
@@ -608,7 +609,7 @@ cif_plot <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
           v <- vapply(mark.times, function(t) { i <- max(which(c_$time <= t), 0L); if (i) c_$cif[i] else 0 }, numeric(1))
           graphics::points(mark.times, v, pch = 19, cex = 0.6, col = cc)
           # with several curves the labels are stacked (one text line per curve) so that they do not overlap
-          graphics::text(mark.times, v, labels = if (percent) sprintf("%.1f%%", 100 * v) else sprintf("%.3f", v), pos = 3, cex = 0.7,
+          graphics::text(mark.times, v, labels = if (percent) sprintf("%.1f%%", .sx_pct(v)) else sprintf("%.3f", v), pos = 3, cex = 0.7,
                          col = cc, offset = 0.35 + 0.85 * (q - 1L))
         }
       }
@@ -674,9 +675,10 @@ cif_plot <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
   tg <- sort(unique(s$time))
   M <- sapply(causes, function(k) { c_ <- s[s$cause == k, , drop = FALSE]; .step_at(c_$time, c_$cif, tg, 0) })
   if (is.null(dim(M))) M <- matrix(M, ncol = length(causes))
-  cum <- t(apply(M, 1L, cumsum)); if (length(causes) == 1L) cum <- t(cum)
+  M <- matrix(M, ncol = length(causes))
+  cum <- .sx_cumsum_rows(M)                              # running sum over the causes (C++ core)
   over <- which(cum[, ncol(cum)] > 1 + 1e-9)
-  cum <- pmin(cum, 1)
+  cum <- .sx_cumsum_rows(M, cap = 1)
   graphics::plot(NA, xlim = xr, ylim = c(0, 1), xlab = xlab, ylab = if (is.null(ylab)) "Probability" else ylab, bty = "l",
                  yaxt = "n", main = title, font.main = 1, ...)
   .prob_axis(percent)
@@ -707,15 +709,14 @@ cif_plot <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
       s <- d[d$curve == k, , drop = FALSE]; cs <- levels(s$cause_label)[levels(s$cause_label) %in% s$cause_label]
       tg <- sort(unique(s$time))
       M <- sapply(cs, function(cl) { c_ <- s[s$cause_label == cl, , drop = FALSE]; .step_at(c_$time, c_$cif, tg, 0) })
-      M <- matrix(M, nrow = length(tg)); cum <- pmin(t(apply(M, 1L, cumsum)), 1)
-      if (length(cs) == 1L) cum <- matrix(cum, ncol = 1L)
+      M <- matrix(M, nrow = length(tg)); cum <- .sx_cumsum_rows(M, cap = 1)
       if (isTRUE(s$step[1L]) && length(tg) > 1L) {          # step curves: draw the stairs, not straight lines
         n <- length(tg); r <- c(rep(seq_len(n - 1L), each = 2L), n)
         tg <- c(tg[1L], rep(tg[-1L], each = 2L)); cum <- cum[r, , drop = FALSE]; M <- M[r, , drop = FALSE]
       }
       low <- cbind(0, cum[, -ncol(cum), drop = FALSE])
       data.frame(curve = k, cause_label = rep(cs, each = length(tg)), time = rep(tg, length(cs)),
-                 ymin = as.vector(low), ymax = as.vector(cum), over = rep(rowSums(M) > 1 + 1e-9, length(cs)))
+                 ymin = as.vector(low), ymax = as.vector(cum), over = rep(.sx_cumsum_rows(M)[, ncol(M)] > 1 + 1e-9, length(cs)))
     }))
     st$curve <- factor(st$curve, levels = levels(d$curve)); st$cause_label <- factor(st$cause_label, levels = levels(d$cause_label))
     p <- ggplot2::ggplot(st, ggplot2::aes(x = time, ymin = ymin, ymax = ymax, fill = cause_label)) +
@@ -753,7 +754,7 @@ cif_plot <- function(x, newdata = NULL, cause = NULL, type = c("profile", "margi
                    plot.title = ggplot2::element_text(face = "bold", size = 13 * cex),
                    plot.subtitle = ggplot2::element_text(size = 10 * cex, colour = "grey30", lineheight = 1.1),
                    plot.margin = ggplot2::margin(8, 12, 6, 8))
-  if (percent) p <- p + ggplot2::scale_y_continuous(labels = function(v) paste0(round(100 * v), "%"))
+  if (percent) p <- p + ggplot2::scale_y_continuous(labels = function(v) paste0(.sx_round(.sx_pct(v)), "%"))
   if (!is.null(xlim) || !is.null(ylim)) p <- p + ggplot2::coord_cartesian(xlim = xlim, ylim = ylim)
   if (length(keys) == 1L && layout != "stacked") p <- p + ggplot2::theme(legend.position = "none")
   p

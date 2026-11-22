@@ -64,7 +64,8 @@ DirectCIFFit <- S7::new_class("DirectCIFFit", parent = SurvXFit, package = "Surv
     interest = S7::class_integer,
     cond = S7::class_character,
     vcov_model = S7::class_any,
-    interval = S7::class_any          # interval-censored data: list(left, right, type), or NULL
+    interval = S7::class_any,         # interval-censored data: list(left, right, type), or NULL
+    cond_cov = S7::class_any          # constrained model: list(wuse, vuse), the covariates of the G_k, or NULL
   ))
 
 CSCFit <- S7::new_class("CSCFit", package = "SurvX",
@@ -156,7 +157,8 @@ ModelScan <- S7::new_class("ModelScan", package = "SurvX",
     nonparametric = S7::class_any,
     data = S7::class_any,
     time = S7::class_numeric,
-    status = S7::class_integer
+    status = S7::class_integer,
+    cluster_var = S7::class_any        # frailty(): the cluster variable (folds of whole clusters), or NULL
   ))
 
 # parametric survival regression: coefficients = (Intercept), covariates, shape parameter

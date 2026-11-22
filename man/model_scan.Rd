@@ -28,7 +28,11 @@ report(x, file = "model_scan_report.html", ...)
 }
 \arguments{
 \item{formula}{\code{Event(time, status) ~ covariates}, with at least one covariate. Status
-  0/1 for one event type; 0, 1, ..., K for competing risks. Delayed entry is not supported.}
+  0/1 for one event type; 0, 1, ..., K for competing risks. Delayed entry is not supported.
+  With one event type the formula may contain \code{+ frailty(id)}: the candidates are then Cox
+  and parametric models with a shared gamma frailty (\code{\link{frailty}}) and, for comparison,
+  Cox and Weibull models (and a cure model) with the clusters ignored; the folds keep every
+  cluster whole and the predictions are for a subject from a new cluster (frailty integrated out).}
 \item{data}{a data frame. Rows with missing values in the variables of \code{formula} are
   removed.}
 \item{cause}{competing risks: the cause whose cumulative incidence is predicted and compared.}
@@ -41,8 +45,7 @@ report(x, file = "model_scan_report.html", ...)
 \item{horizon}{upper limit of the integrated Brier score. Default: the smaller of the 90th
   percentiles of the event times of the cause and of all observed times.}
 \item{folds}{number of cross-validation folds (at least 2).}
-\item{seed}{seed of the fold assignment; the state of the random number generator of the session
-  is restored afterwards.}
+\item{seed}{seed of the fold assignment: a whole number, or \code{NULL} to take the seed from the random numbers of the session (so that \code{set.seed()} before the call governs the result). All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the session's generator is left as it was.}
 \item{depth}{how many models: \code{"quick"} (the basic models), \code{"standard"} (default), or
   \code{"full"} (also the more flexible ones). Flexible models (generalized gamma, splines, GOR
   link) are tried only with at least 50 events of the cause.}
@@ -68,7 +71,9 @@ report(x, file = "model_scan_report.html", ...)
   \item{Competing risks}{cause-specific Cox and parametric (Weibull, log-normal, spline) models
     (\code{\link{csc}}); \code{\link{fg}}; direct models (\code{\link{directcif}}): joint Gompertz
     with PH and PO links, weighted Gompertz with PH, PO and GOR links and a Weibull mixture
-    baseline, the constrained model, and with \code{"full"} spline and logistic baselines.}
+    baseline, the constrained model (any number of causes) with and without time ratios of the
+    competing causes for all covariates (\code{timing}), and with \code{"full"} spline and logistic
+    baselines.}
 }
 }
 \subsection{The criteria}{

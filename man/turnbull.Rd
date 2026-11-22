@@ -23,7 +23,7 @@ turnbull(formula, data, times = NULL, B = 200L, level = 0.95, test = TRUE,
   median (resampling subjects within groups); \code{0} for none.}
 \item{level}{confidence level.}
 \item{test}{with groups, compute the test of equal survival.}
-\item{seed}{seed of the random numbers of the bootstrap (the global random state is left as it was).}
+\item{seed}{seed of the bootstrap (group k uses seed + k - 1): a whole number, or \code{NULL} to take the seed from the random numbers of the session (so that \code{set.seed()} before the call governs the result). All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the session's generator is left as it was.}
 \item{max_iter,tol}{maximum number of iterations and convergence tolerance of the algorithm.}
 }
 \details{

@@ -18,7 +18,9 @@ of R work as for \code{lm()} or \code{survival::coxph()}.
   \item{\code{coef}, \code{vcov}, \code{confint}, \code{logLik}, \code{AIC}, \code{BIC}, \code{nobs}}{as
     usual; coefficients are on the scale used for estimation (log ratios, log or logit baseline
     parameters). For \code{csc()} fits \code{coef}, \code{vcov} and \code{confint} return one element per cause.}
-  \item{\code{estimates(fit)}}{all of this in one data frame, including the exponentiated effects.}
+  \item{\code{estimates(fit)}, \code{as.data.frame(fit)}}{all of this in one data frame, including the
+    exponentiated effects (the same table for every regression model; for frailty models
+    \code{as.data.frame(fit, what = "frailty")} gives the frailty of every cluster).}
   \item{\code{predict(fit, newdata, times, cause)}}{absolute risks; see \code{\link{predict.SurvX}}.}
   \item{\code{plot(fit, ...)}}{for \code{directcif()}, \code{fg()}, \code{csc()} and \code{aj()} the same as
     \code{\link{cif_plot}(fit, ...)}: cumulative incidence curves of every cause with confidence bands and

@@ -18,7 +18,7 @@
 
 .ci_text <- function(lo, hi, d = 2L) paste0(.num(lo, d), " to ", .num(hi, d))
 
-.pct <- function(level) paste0(format(100 * level, trim = TRUE), "%")
+.pct <- function(level) paste0(format(.sx_pct(level), trim = TRUE), "%")
 
 # a data frame of strings as aligned lines: first column left-justified, the others right-justified
 .table_lines <- function(df, indent = 2L) {
@@ -31,24 +31,18 @@
   paste0(strrep(" ", indent), do.call(paste, c(cols, sep = "  ")))
 }
 
-.zq <- function(level) stats::qnorm(1 - (1 - level) / 2)
+.zq <- function(level) .sx_qnorm(.sx_upper_prob(level))
 
 # one row per coefficient, with Wald interval and test; expo: which rows get the exponentiated columns
 .est_frame <- function(cause, term, role, scale, est, se, level, expo) {
-  zq <- .zq(level)
-  lo <- est - zq * se; hi <- est + zq * se
-  expo <- rep_len(expo, length(est))
+  w <- .sx_wald(est, se, level, rep_len(expo, length(est)))
   data.frame(cause = cause, term = term, role = role, scale = scale,
-             estimate = unname(est), se = unname(se), lower = unname(lo), upper = unname(hi),
-             z = unname(est / se), p = unname(2 * stats::pnorm(-abs(est / se))),
-             exp_estimate = ifelse(expo, exp(unname(est)), NA_real_),
-             exp_lower = ifelse(expo, exp(unname(lo)), NA_real_),
-             exp_upper = ifelse(expo, exp(unname(hi)), NA_real_),
-             stringsAsFactors = FALSE, row.names = NULL)
+             estimate = unname(est), se = unname(se), lower = w$lo, upper = w$hi, z = w$z, p = w$p,
+             exp_estimate = w$eest, exp_lower = w$elo, exp_upper = w$ehi, stringsAsFactors = FALSE, row.names = NULL)
 }
 
 # ratios: 2 decimals, 3 when the ratio is close to one (effects of continuous covariates per unit)
-.ratio_digits <- function(r) ifelse(is.finite(r) & abs(log(pmax(r, 1e-300))) < 0.1, 3L, 2L)
+.ratio_digits <- function(r) ifelse(is.finite(r) & .sx_ew("absdiff", .sx_ew("neglog_floor", as.double(r)), 0) < 0.1, 3L, 2L)
 
 .ratio_text <- function(r, lo, hi) {
   dg <- .ratio_digits(r)
@@ -76,7 +70,7 @@
   .table_lines(df)
 }
 
-.se_of <- function(object) suppressWarnings(sqrt(diag(object@vcov)))
+.se_of <- function(object) .sx_se(object@vcov)
 
 .status_lines <- function(converged, flags) {
   out <- character(0)
@@ -117,7 +111,9 @@
 #' a data frame with the columns \code{cause, term, role, scale, estimate, se, lower, upper,
 #'   z, p, exp_estimate, exp_lower, exp_upper}. \code{role} is \code{"beta"} for regression
 #'   coefficients; for direct models also \code{"baseline"}, \code{"alpha"} and \code{"conditional"}
-#'   (on the scale used for estimation; \code{summary()} shows them on the natural scale).
+#'   (on the scale used for estimation; \code{summary()} shows them on the natural scale), and for the
+#'   constrained model \code{"share"}, \code{"share_beta"} (log odds ratio of the share),
+#'   \code{"timing"} (log time ratio) and \code{"shape"} (log factor on the shape of \eqn{G_k}).
 #' @references
 #' Wald A (1943) Tests of statistical hypotheses concerning several parameters when the number of
 #'   observations is large. Transactions of the American Mathematical Society 54:426-482.
@@ -147,7 +143,7 @@ S7::method(estimates, CSCFit) <- function(object, level = 0.95, ...) {
   do.call(rbind, lapply(seq_len(object@K), function(k) {
     m <- object@models[[k]]
     .est_frame(k, names(m$coefficients), "beta", "log cause-specific hazard ratio", m$coefficients,
-               suppressWarnings(sqrt(diag(m$vcov))), level, TRUE)
+               .sx_se(m$vcov), level, TRUE)
   }))
 }
 
@@ -163,13 +159,22 @@ S7::method(estimates, DirectCIFFit) <- function(object, level = 0.95, ...) {
   ix <- object@index
   scale <- ifelse(ix$role == "beta", vapply(ix$cause, function(k) .link_scale(.link_of_cause(object, k)), character(1)),
                   ifelse(ix$role == "alpha", "alpha of the generalized odds rate link",
-                         ifelse(ix$role == "share_beta", "odds ratio of the share of this cause", "estimation scale")))
-  .est_frame(ix$cause, ix$term, ix$role, scale, object@coefficients, .se_of(object), level, ix$role %in% c("beta", "share_beta"))
+                         ifelse(ix$role == "share_beta", "odds ratio of the share of this cause",
+                                ifelse(ix$role == "timing", "log time ratio of the events of this cause",
+                                       ifelse(ix$role == "shape", "log factor on the shape of the time distribution of this cause",
+                                              "estimation scale")))))
+  .est_frame(ix$cause, ix$term, ix$role, scale, object@coefficients, .se_of(object), level,
+             ix$role %in% c("beta", "share_beta", "timing", "shape"))
 }
 
 # ----------------------------------------------------------------------------------------------
 # extractors shared by the regression models
 # ----------------------------------------------------------------------------------------------
+# as.data.frame() of a regression fit is the table of estimates(), the same for every model
+S7::method(as.data.frame, SurvXFit) <- function(x, row.names = NULL, optional = FALSE, level = 0.95, ...) estimates(x, level = level)
+S7::method(as.data.frame, CSCFit) <- function(x, row.names = NULL, optional = FALSE, level = 0.95, ...) estimates(x, level = level)
+S7::method(as.data.frame, ParCSCFit) <- function(x, row.names = NULL, optional = FALSE, level = 0.95, ...) estimates(x, level = level)
+
 S7::method(coef, SurvXFit) <- function(object, ...) object@coefficients
 
 S7::method(vcov, SurvXFit) <- function(object, ...) object@vcov
@@ -186,9 +191,10 @@ S7::method(formula, CSCFit) <- function(x, ...) stats::formula(x@terms)
 
 S7::method(confint, SurvXFit) <- function(object, parm, level = 0.95, ...) {
   est <- object@coefficients; se <- .se_of(object)
-  a <- (1 - level) / 2
-  out <- cbind(est - .zq(level) * se, est + .zq(level) * se)
-  dimnames(out) <- list(names(est), paste(format(100 * c(a, 1 - a), trim = TRUE, digits = 3L), "%"))
+  up <- .sx_upper_prob(level); a <- .sx_ew("complement", up)
+  w <- .sx_wald(est, se, level, FALSE)
+  out <- cbind(w$lo, w$hi)
+  dimnames(out) <- list(names(est), paste(format(.sx_ew("mul", c(a, up), 100), trim = TRUE, digits = 3L), "%"))
   if (missing(parm)) out else out[parm, , drop = FALSE]
 }
 
@@ -199,11 +205,11 @@ S7::method(vcov, CSCFit) <- function(object, ...) lapply(object@models, function
 S7::method(nobs, CSCFit) <- function(object, ...) object@n
 
 S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
-  a <- (1 - level) / 2
+  up <- .sx_upper_prob(level); a <- .sx_ew("complement", up)
   lapply(object@models, function(m) {
-    se <- suppressWarnings(sqrt(diag(m$vcov)))
-    out <- cbind(m$coefficients - .zq(level) * se, m$coefficients + .zq(level) * se)
-    dimnames(out) <- list(names(m$coefficients), paste(format(100 * c(a, 1 - a), trim = TRUE, digits = 3L), "%"))
+    w <- .sx_wald(m$coefficients, .sx_se(m$vcov), level, FALSE)
+    out <- cbind(w$lo, w$hi)
+    dimnames(out) <- list(names(m$coefficients), paste(format(.sx_ew("mul", c(a, up), 100), trim = TRUE, digits = 3L), "%"))
     out
   })
 }
@@ -228,8 +234,8 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
 
 .render_cox <- function(x, level, detail) {
   e <- estimates(x, level = level)
-  lr <- 2 * (x@loglik - x@loglik_null); df <- length(x@coefficients)
-  pv <- .pval(stats::pchisq(lr, df, lower.tail = FALSE))
+  df <- length(x@coefficients); lrt <- .sx_lr(x@loglik, x@loglik_null, df); lr <- lrt$stat
+  pv <- .pval(.sx_pchisq_upper(lr, df))
   out <- c(paste0("Cox proportional hazards regression (", x@ties, " method for ties)"),
            paste0("  ", if (is.null(x@entry)) "Subjects" else "Rows", ": ", x@n, "   events: ", x@nevent, "   censored: ", x@n - x@nevent),
            .design_lines(x),
@@ -240,7 +246,7 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
            .tt_lines(x, level),
            .reading_lines(e[!grepl("^tt\\(", e$term), , drop = FALSE], x@xlevels, "PH", "the event", level),
            "",
-           sprintf("Fit: log partial likelihood %.2f | AIC %.2f | %d coefficients", x@loglik, -2 * x@loglik + 2 * df, df),
+           sprintf("Fit: log partial likelihood %.2f | AIC %.2f | %d coefficients", x@loglik, .sx_aic(x@loglik, df), df),
            sprintf("     likelihood ratio test against no covariates: chi-square %.2f on %d df, p %s", lr, df,
                    if (startsWith(pv, "<")) sub("<", "< ", pv) else paste("=", pv)))
   if (detail)
@@ -257,7 +263,7 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
   te <- tt_effect(x, level = level)
   tab <- data.frame(covariate = te$term, time = format(signif(te$time, 4)), HR = sprintf("%.3f", te$hr),
                     ci = sprintf("%.3f to %.3f", te$lower, te$upper), stringsAsFactors = FALSE)
-  names(tab)[4] <- paste0(round(100 * level), "% CI")
+  names(tab)[4] <- paste0(.sx_round(.sx_pct(level)), "% CI")
   c("Time-varying effects: tt(x) is the change of log HR of x per unit of g(t); HR of x at time t = exp(b_x + b_tt g(t)):",
     .table_lines(tab), "(tt_effect(fit, times) for other times)", "")
 }
@@ -298,10 +304,10 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
     out <- c(out, "", paste0("Cause ", k, " (", m$nevent, " events): cause-specific hazard ratio (csHR)"),
              .effect_lines(ek, "csHR", level, x@xlevels),
              .reading_lines(ek, x@xlevels, "PH", paste0("cause ", k, " among subjects still event-free"), level, "csHR"))
-    pk <- length(m$coefficients); lr <- 2 * (m$loglik - m$loglik_null)
-    pv <- .pval(stats::pchisq(lr, pk, lower.tail = FALSE))
+    pk <- length(m$coefficients); lrt <- .sx_lr(m$loglik, m$loglik_null, pk); lr <- lrt$stat
+    pv <- .pval(lrt$p)
     out <- c(out, sprintf("Fit: log partial likelihood %.2f | AIC %.2f | LR test %.2f on %d df, p %s", m$loglik,
-                          -2 * m$loglik + 2 * pk, lr, pk, if (startsWith(pv, "<")) sub("<", "< ", pv) else paste("=", pv)),
+                          .sx_aic(m$loglik, pk), lr, pk, if (startsWith(pv, "<")) sub("<", "< ", pv) else paste("=", pv)),
              .status_lines(m$converged, m$flags))
   }
   if (detail)
@@ -351,7 +357,7 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
 
 # baseline (and conditional) parameters on their natural scale
 .natural_table <- function(e, level) {
-  nat <- function(term, v) ifelse(grepl("^log_", term), exp(v), ifelse(grepl("^logit_", term), stats::plogis(v), v))
+  nat <- function(term, v) ifelse(grepl("^log_", term), .sx_ew("exp", v), ifelse(grepl("^logit_", term), .sx_ew("plogis", v), v))
   name <- sub("^logit_", "", sub("^log_", "", e$term))
   data.frame(parameter = name, estimate = nat(e$term, e$estimate), lower = nat(e$term, e$lower), upper = nat(e$term, e$upper),
              stringsAsFactors = FALSE)
@@ -379,13 +385,17 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
   tables <- list()
   for (k in unique(x@index$cause)) {
     ek <- e[e$cause == k, , drop = FALSE]
-    if (all(ek$role %in% c("conditional", "share", "share_beta"))) {
+    if (all(ek$role %in% c("conditional", "share", "share_beta", "timing", "shape"))) {
       oth <- setdiff(seq_len(x@K), x@interest)
-      cj <- x@cond[min(match(k, oth), length(x@cond))]
-      cj <- c(logistic = "modified logistic", weibull = "Weibull", loglogistic = "log-logistic", lognormal = "log-normal")[[cj]]
+      cj0 <- x@cond[min(match(k, oth), length(x@cond))]
+      cj <- c(logistic = "modified logistic", weibull = "Weibull", loglogistic = "log-logistic", lognormal = "log-normal")[[cj0]]
+      et <- ek[ek$role == "timing", , drop = FALSE]
+      eh <- ek[ek$role == "shape", , drop = FALSE]
+      gcov <- if (nrow(et) || nrow(eh)) "covariates on its time scale and shape below" else "no covariates"
+      if (nrow(et) && !nrow(eh)) gcov <- "covariates on its time scale (accelerated failure time) below"
       if (x@K > 2L) {
         out <- c(out, "", paste0("Cause ", k, ": cumulative incidence = (1 - long-run risk of cause ", x@interest, ") x share(z) x G(t)"),
-                 paste0("  G: ", cj, " distribution of the time to a cause ", k, " event; no covariates"))
+                 paste0("  G: ", cj, " distribution of the time to a cause ", k, " event; ", gcov))
         es <- ek[ek$role == "share_beta", , drop = FALSE]
         if (k == oth[1L]) out <- c(out, "  Share: reference cause of the multinomial shares")
         else if (nrow(es)) {
@@ -396,13 +406,24 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
         }
       } else
         out <- c(out, "", paste0("Cause ", k, ": cumulative incidence = (1 - long-run risk of cause ", x@interest, ") x G(t)"),
-                 paste0("  G: ", cj, " distribution of the time to a cause ", k, " event; no covariates"))
+                 paste0("  G: ", cj, " distribution of the time to a cause ", k, " event; ", gcov))
+      if (nrow(et)) {
+        et$term <- sub("^time_", "", et$term)
+        out <- c(out, paste0("  Effect of covariates on the timing of cause ", k, " events: time ratio (TR > 1: later events)"),
+                 .effect_lines(et, "TR", level, x@xlevels))
+      }
+      if (nrow(eh)) {
+        eh$term <- sub("^shape_", "", eh$term)
+        sh <- switch(cj0, weibull = , loglogistic = "kappa", lognormal = "sigma", logistic = "the steepness (rate x centre)")
+        out <- c(out, paste0("  Effect of covariates on the shape of G: factor on ", sh),
+                 .effect_lines(eh, "factor", level, x@xlevels))
+      }
       ek <- ek[ek$role == "conditional", , drop = FALSE]
       pl <- .typical_risk(x, k, Inf, level)
       if (!is.null(pl)) out <- c(out, sprintf("  Long-run risk at typical covariate values: %s (%s CI %s)", .num(pl$risk, 3L), .pct(level), .ci_text(pl$lower, pl$upper, 3L)))
       if (detail) {
         nt <- .natural_table(ek, level)
-        out <- c(out, "  Parameters of G", .table_lines(data.frame(` ` = nt$parameter, estimate = .num(nt$estimate, 4L),
+        out <- c(out, if (nrow(et) || nrow(eh)) "  Parameters of G (covariates of G at zero)" else "  Parameters of G", .table_lines(data.frame(` ` = nt$parameter, estimate = .num(nt$estimate, 4L),
                                                                    ci = .ci_text(nt$lower, nt$upper, 4L), check.names = FALSE), 4L))
         tables[[paste0("conditional.", k)]] <- nt
       }
@@ -429,7 +450,7 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
     if (detail) {
       ev <- x@time[x@status == k]
       if (length(ev) >= 4L) {
-        tq <- signif(as.numeric(stats::quantile(ev, c(0.25, 0.5, 0.75))), 3L)
+        tq <- .sx_signif(.sx_quantile(ev, c(0.25, 0.5, 0.75)), 3L)
         tr <- .typical_risk(x, k, tq, level)
         if (!is.null(tr)) {
           out <- c(out, "  Predicted cumulative incidence at typical covariate values",
@@ -447,9 +468,10 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
   if (ncol(x@X)) out <- c(out, paste0("Typical covariate values: ", .profile(x)$label, " (mean of numeric, most frequent level of categorical covariates)"))
   if (x@estimation == "weighted")
     out <- c(out, sprintf("Weighted log pseudo-likelihood: %.3f on %d parameters (compare weighted fits only)", x@loglik, length(x@coefficients)))
-  else out <- c(out, sprintf("Fit: log-likelihood %.2f | AIC %.2f | BIC %.2f | %d parameters", x@loglik,
-                             -2 * x@loglik + 2 * length(x@coefficients), -2 * x@loglik + log(x@n) * length(x@coefficients),
-                             length(x@coefficients)))
+  else {
+    ic <- .sx_ic(x@loglik, length(x@coefficients), x@n)
+    out <- c(out, sprintf("Fit: log-likelihood %.2f | AIC %.2f | BIC %.2f | %d parameters", x@loglik, ic$aic, ic$bic, length(x@coefficients)))
+  }
   d <- x@diagnostics
   if (isTRUE(d$n_exceed_range > 0))
     out <- c(out, sprintf("NOTE: for %d of %d subjects the fitted risks of all causes add up to more than 1 within follow-up",
@@ -458,7 +480,7 @@ S7::method(confint, CSCFit) <- function(object, parm, level = 0.95, ...) {
              "  estimation = \"weighted\" or \"constrained\".")
   out <- c(out, .status_lines(x@converged, x@flags))
   if (detail) {
-    links <- unique(vapply(unique(x@index$cause[!x@index$role %in% c("conditional", "share", "share_beta")]), function(k) .link_of_cause(x, k), character(1)))
+    links <- unique(vapply(unique(x@index$cause[!x@index$role %in% c("conditional", "share", "share_beta", "timing", "shape")]), function(k) .link_of_cause(x, k), character(1)))
     out <- c(out, "", "How to read the effects")
     if ("PH" %in% links) out <- c(out, "  sHR > 1: higher cumulative incidence of this cause at every time; its size is not a ratio of risks.")
     if ("PO" %in% links) out <- c(out, "  OR: ratio of the odds F/(1 - F) of having had the event by time t; the same at every time.")
@@ -510,7 +532,7 @@ S7::method(coef, FitSummary) <- function(object, ...) object@coefficients
 # Kaplan-Meier and Aalen-Johansen
 # ----------------------------------------------------------------------------------------------
 .default_times <- function(tmax) {
-  tt <- pretty(c(0, tmax), n = 5L)
+  tt <- .sx_pretty(0, tmax, 5L)
   tt[tt > 0 & tt <= tmax]
 }
 
@@ -624,7 +646,7 @@ S7::method(print, ModelComparison) <- function(x, ...) {
   for (t in unique(tab$time)) {
     s <- tab[tab$time == t, , drop = FALSE]
     s <- s[order(s[[col("brier")]], na.last = TRUE), , drop = FALSE]
-    df <- data.frame(model = s$model, brier = .num(s[[col("brier")]], 4L), ipa = .num(100 * s[[col("ipa")]], 1L), auc = .num(s[[col("auc")]], 3L),
+    df <- data.frame(model = s$model, brier = .num(s[[col("brier")]], 4L), ipa = .num(.sx_pct(s[[col("ipa")]]), 1L), auc = .num(s[[col("auc")]], 3L),
                      cal = .num(s[[col("calib_error")]], 3L), stringsAsFactors = FALSE)
     names(df) <- c("model (best first)", "Brier", "IPA %", "AUC", "calibration error")
     out <- c(out, "", paste0("Time horizon ", format(t, trim = TRUE)), .table_lines(df))
@@ -671,7 +693,7 @@ S7::method(plot, ModelComparison) <- function(x, measure = c("ipa", "brier", "au
   mods <- unique(tab$model)
   rk <- sapply(tt, function(t) { s <- tab[tab$time == t, , drop = FALSE]; v <- s[[nm]][match(mods, s$model)]
                                  rank(if (smaller) v else -v, na.last = "keep") })
-  ord <- order(rowMeans(matrix(rk, nrow = length(mods)), na.rm = TRUE), decreasing = TRUE)
+  ord <- order(.sx_rowmeans(matrix(rk, nrow = length(mods)), na.rm = TRUE), decreasing = TRUE)
   mods <- mods[ord]; ny <- length(mods); nt <- length(tt)
   # the labels are written once, at the left; their width is measured with the font metrics of the
   # device, so neither the names nor the axis title are cut
@@ -739,7 +761,7 @@ S7::method(plot, KMFit) <- function(x, conf.int = length(x@curves) == 1L, risk.t
     if (length(mark.times)) {
       v <- .step_at(s$time, s$surv, mark.times, 1)
       graphics::points(mark.times, v, pch = 19, cex = 0.6, col = col[g])
-      graphics::text(mark.times, v, labels = if (percent) sprintf("%.1f%%", 100 * v) else sprintf("%.3f", v), pos = 3, cex = 0.7, col = col[g], offset = 0.35)
+      graphics::text(mark.times, v, labels = if (percent) sprintf("%.1f%%", .sx_pct(v)) else sprintf("%.3f", v), pos = 3, cex = 0.7, col = col[g], offset = 0.35)
     }
     if (isTRUE(median) && is.finite(x@counts$median[g]))
       graphics::segments(c(xr[1L], x@counts$median[g]), c(0.5, 0.5), c(x@counts$median[g], x@counts$median[g]), c(0.5, 0), lty = 3, col = col[g])
@@ -755,7 +777,7 @@ S7::method(plot, CoxFit) <- function(x, newdata = NULL, times = NULL, xlab = "Ti
   .no_tt(x, "plot()")
   if (is.null(times)) times <- sort(unique(c(0, x@time[x@status == 1L], max(x@time))))
   P <- stats::predict(x, newdata = newdata, times = times, type = "survival")
-  if (is.null(newdata)) P <- matrix(colMeans(P), 1L)
+  if (is.null(newdata)) P <- matrix(.sx_colmeans(P), 1L)
   n <- nrow(P)
   if (is.null(col)) col <- seq_len(n)
   col <- rep_len(col, n); lty <- rep_len(lty, n)
@@ -781,7 +803,7 @@ S7::method(model.matrix, CSCFit) <- function(object, ...) object@X
 # the partial likelihood of cause-specific Cox models factorises over causes (Prentice et al. 1978),
 # so the log partial likelihood of the whole model is the sum over causes
 S7::method(logLik, CSCFit) <- function(object, ...) {
-  structure(sum(vapply(object@models, function(m) m$loglik, numeric(1))),
+  structure(.sx_reduce("sum", vapply(object@models, function(m) m$loglik, numeric(1))),
             df = sum(vapply(object@models, function(m) length(m$coefficients), integer(1))), nobs = object@n, class = "logLik")
 }
 
@@ -803,7 +825,9 @@ S7::method(logLik, CSCFit) <- function(object, ...) {
 #'   \item{\code{coef}, \code{vcov}, \code{confint}, \code{logLik}, \code{AIC}, \code{BIC}, \code{nobs}}{as
 #'     usual; coefficients are on the scale used for estimation (log ratios, log or logit baseline
 #'     parameters). For \code{csc()} fits \code{coef}, \code{vcov} and \code{confint} return one element per cause.}
-#'   \item{\code{estimates(fit)}}{all of this in one data frame, including the exponentiated effects.}
+#'   \item{\code{estimates(fit)}, \code{as.data.frame(fit)}}{all of this in one data frame, including the
+#'     exponentiated effects (the same table for every regression model; for frailty models
+#'     \code{as.data.frame(fit, what = "frailty")} gives the frailty of every cluster).}
 #'   \item{\code{predict(fit, newdata, times, cause)}}{absolute risks; see \code{\link{predict.SurvX}}.}
 #'   \item{\code{plot(fit, ...)}}{for \code{directcif()}, \code{fg()}, \code{csc()} and \code{aj()} the same as
 #'     \code{\link{cif_plot}(fit, ...)}: cumulative incidence curves of every cause with confidence bands and

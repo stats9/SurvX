@@ -10,12 +10,31 @@
 # ("full", "partial", "pseudo"), fit = function(formula, data), risk = function(fit, newdata, times)
 .scan_cand <- function(name, family, lik, fit, risk, kind) list(name = name, family = family, lik = lik, fit = fit, risk = risk, kind = kind)
 
-.risk_surv <- function(fit, nd, times) 1 - as.matrix(predict(fit, nd, times = times, type = "survival"))
+.risk_surv <- function(fit, nd, times) .sx_ew("complement", as.matrix(predict(fit, nd, times = times, type = "survival")))
 
-.scan_candidates <- function(type, cause, depth, ev, plateau, K) {
+.scan_candidates <- function(type, cause, depth, ev, plateau, K, frailty = FALSE) {
   cand <- list()
   add <- function(x) cand[[length(cand) + 1L]] <<- x
   rich <- ev >= 50L                                   # enough events for the flexible models
+  if (type == "single" && frailty) {
+    # shared frailty: Cox and parametric models with frailty(id), and Cox, Weibull (and cure models)
+    # with the clusters ignored for comparison; predictions are marginal (a new cluster)
+    add(.scan_cand("Cox + frailty", "semi-parametric", "partial", function(f, d) cox(f, d), .risk_surv, "cox_frailty"))
+    add(.scan_cand("Cox, clusters ignored", "semi-parametric", "partial", function(f, d) cox(.drop_frailty(f), d), .risk_surv, "cox"))
+    par <- list(c("exponential", "PH"), c("weibull", "PH"), c("gompertz", "PH"), c("lognormal", "AFT"), c("loglogistic", "AFT"))
+    if (depth != "quick" && rich) par <- c(par, list(c("rp", "PH")))
+    for (p in par) local({
+      b <- p[1L]; s <- p[2L]
+      add(.scan_cand(paste0("parametric ", .par_label[[b]], " (", s, ") + frailty"), "parametric (full likelihood)", "full",
+                     function(f, d) parsurv(f, d, baseline = b, scale = s), .risk_surv, "parsurv_frailty"))
+    })
+    add(.scan_cand("parametric Weibull (PH), clusters ignored", "parametric (full likelihood)", "full",
+                   function(f, d) parsurv(.drop_frailty(f), d, baseline = "weibull", scale = "PH"), .risk_surv, "parsurv"))
+    if (plateau)
+      add(.scan_cand("cure mixture Weibull, clusters ignored", "parametric (full likelihood)", "full",
+                     function(f, d) cure(.drop_frailty(f), d, baseline = "weibull", type = "mixture"), .risk_surv, "cure"))
+    return(cand)
+  }
   if (type == "single") {
     add(.scan_cand("Cox", "semi-parametric", "partial", function(f, d) cox(f, d), .risk_surv, "cox"))
     par <- list(c("exponential", "PH"), c("weibull", "PH"), c("gompertz", "PH"), c("lognormal", "AFT"), c("loglogistic", "AFT"))
@@ -65,6 +84,12 @@
                                             cond = if (e == "constrained") "weibull" else "logistic"),
                    rc, paste0("direct_", e)))
   })
+  # the constrained model with time ratios of the competing causes for all covariates
+  if (depth != "quick" && rich)
+    add(.scan_cand("direct gompertz PH, constrained, timing", "parametric (full likelihood)", "full",
+                   function(f, d) directcif(f, d, baseline = "gompertz", link = "PH", estimation = "constrained", cause = cause,
+                                            cond = "weibull", timing = stats::reformulate(attr(stats::terms(f), "term.labels"))),
+                   rc, "direct_constrained"))
   cand
 }
 
@@ -87,30 +112,22 @@
 
 # trapezoidal integral of y(t) on the grid (with y(0) = 0), divided by the last grid point
 .scan_integrate <- function(grid, y) {
-  if (any(!is.finite(y))) return(NA_real_)
-  x <- c(0, grid); v <- c(0, y)
-  sum(diff(x) * (v[-1L] + v[-length(v)]) / 2) / max(grid)
+  r <- .C("SX_integrate_grid", length(grid), as.double(grid), as.double(y), out = double(1), rc = integer(1), NAOK = TRUE,
+          PACKAGE = "SurvX")
+  .sx_rc(r$rc, "integrated Brier score")
+  if (is.nan(r$out)) NA_real_ else r$out
 }
 
 .scan_brier_curve <- function(time, status, risk, grid, cause) {
-  out <- matrix(NA_real_, length(grid), 2L)
-  for (j in seq_along(grid)) {
-    b <- tryCatch(brier_score(time, status, risk[, j], grid[j], cause), error = function(e) NULL)
-    if (!is.null(b)) out[j, ] <- b[1:2]
-  }
-  out
+  unname(.sx_measures(time, status, risk, grid, cause)[, 1:2, drop = FALSE])
 }
 
 # the non-parametric estimate of the event probability of the cause at the times (no covariates)
 .scan_np <- function(time, status, cause, at) {
-  d <- data.frame(time = time, status = status)
-  if (max(status) <= 1L) {
-    cv <- km(Event(time, status) ~ 1, d)@curves[[1L]]
-    1 - .step_at(cv$time, cv$surv, at, 1)
-  } else {
-    cv <- aj(Event(time, status) ~ 1, d)@curves[[1L]]
-    .step_at(cv$time, cv[[paste0("cif.", cause)]], at, 0)
-  }
+  r <- .C("SX_np_curve", length(time), as.double(time), as.integer(status), as.integer(cause), length(at), as.double(at),
+          out = double(length(at)), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "non-parametric estimate")
+  r$out
 }
 
 # a plateau in the Kaplan-Meier curve: a screening rule, not a test. The curve is flat over the
@@ -121,17 +138,33 @@
   d <- data.frame(time = time, status = as.integer(status > 0L))
   cv <- km(Event(time, status) ~ 1, d)@curves[[1L]]
   s_end <- utils::tail(cv$surv, 1L)
-  (max(time) - max(ev)) >= 0.2 * max(time) && s_end >= 0.1 && sum(time > max(ev)) >= 10L
+  .sx_ew("sub", max(time), max(ev)) >= .sx_ew("mul", 0.2, max(time)) && s_end >= 0.1 && sum(time > max(ev)) >= 10L
 }
 
-.scan_folds <- function(status, folds, seed) {
-  n <- length(status)
-  .with_seed(seed, {
-    fold <- integer(n)
-    for (s in unique(status)) { i <- which(status == s); fold[i] <- sample(rep_len(seq_len(folds), length(i))) }
-    fold
-  })
+# the formula without its frailty() term (the model with the clusters ignored)
+.drop_frailty <- function(formula) {
+  tt <- stats::terms(formula, specials = "frailty")
+  i <- attr(tt, "specials")$frailty
+  if (is.null(i)) return(formula)
+  lab <- attr(tt, "term.labels")
+  drop <- which(attr(tt, "factors")[i, ] > 0)
+  keep <- lab[-drop]
+  fo <- stats::reformulate(if (length(keep)) keep else "1", response = formula[[2L]])
+  environment(fo) <- environment(formula)
+  fo
 }
+
+# folds of whole clusters (frailty models: the subjects of a cluster are never split between the
+# fitted and the predicted part)
+.scan_folds_cluster <- function(cluster, folds, seed) {
+  g <- as.integer(as.factor(cluster))
+  C <- max(g)
+  if (C < folds) stop("frailty(): fewer clusters (", C, ") than folds (", folds, ")", call. = FALSE)
+  fc <- .sx_folds(rep(0L, C), folds, seed)
+  fc[g]
+}
+
+.scan_folds <- function(status, folds, seed) .sx_folds(status, folds, seed)
 
 .scan_checks <- function(fit, cand, n) {
   msg <- character(0)
@@ -143,9 +176,11 @@
       if (nrow(g) && any(g$p < 0.05)) msg <- c(msg, sprintf("PH doubtful (global p = %s)", .pval(min(g$p))))
     }
   }
+  if (cand$kind %in% c("cox_frailty", "parsurv_frailty") && isTRUE(tryCatch(fit@boundary, error = function(e) FALSE)))
+    msg <- c(msg, "frailty variance estimated at 0 (no clustering effect)")
   if (cand$kind == "direct_joint") {
     d <- fit@diagnostics
-    if (isTRUE(d$n_exceed_range > 0)) msg <- c(msg, sprintf("sum of CIFs > 1 for %s%% within follow-up", .num(100 * d$n_exceed_range / n, 0L)))
+    if (isTRUE(d$n_exceed_range > 0)) msg <- c(msg, sprintf("sum of CIFs > 1 for %s%% within follow-up", .num(.sx_ew("mul", 100, .sx_ew("div", d$n_exceed_range, n)), 0L)))
   }
   if (!length(msg)) "ok" else paste(msg, collapse = "; ")
 }
@@ -172,6 +207,10 @@
 #' do not account for the choice.
 #' @param formula \code{Event(time, status) ~ covariates}, with at least one covariate. Status
 #'   0/1 for one event type; 0, 1, ..., K for competing risks. Delayed entry is not supported.
+#'   With one event type the formula may contain \code{+ frailty(id)}: the candidates are then Cox
+#'   and parametric models with a shared gamma frailty (\code{\link{frailty}}) and, for comparison,
+#'   Cox and Weibull models (and a cure model) with the clusters ignored; the folds keep every
+#'   cluster whole and the predictions are for a subject from a new cluster (frailty integrated out).
 #' @param data a data frame. Rows with missing values in the variables of \code{formula} are
 #'   removed.
 #' @param cause competing risks: the cause whose cumulative incidence is predicted and compared.
@@ -184,8 +223,10 @@
 #' @param horizon upper limit of the integrated Brier score. Default: the smaller of the 90th
 #'   percentiles of the event times of the cause and of all observed times.
 #' @param folds number of cross-validation folds (at least 2).
-#' @param seed seed of the fold assignment; the state of the random number generator of the session
-#'   is restored afterwards.
+#' @param seed seed of the fold assignment: a whole number, or \code{NULL} to take the seed from the
+#'   random numbers of the session (so that \code{set.seed()} before the call governs the result).
+#'   All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the
+#'   session's generator is left as it was.
 #' @param depth how many models: \code{"quick"} (the basic models), \code{"standard"} (default), or
 #'   \code{"full"} (also the more flexible ones). Flexible models (generalized gamma, splines, GOR
 #'   link) are tried only with at least 50 events of the cause.
@@ -210,7 +251,9 @@
 #'   \item{Competing risks}{cause-specific Cox and parametric (Weibull, log-normal, spline) models
 #'     (\code{\link{csc}}); \code{\link{fg}}; direct models (\code{\link{directcif}}): joint Gompertz
 #'     with PH and PO links, weighted Gompertz with PH, PO and GOR links and a Weibull mixture
-#'     baseline, the constrained model, and with \code{"full"} spline and logistic baselines.}
+#'     baseline, the constrained model (any number of causes) with and without time ratios of the
+#'     competing causes for all covariates (\code{timing}), and with \code{"full"} spline and logistic
+#'     baselines.}
 #' }
 #' }
 #' \subsection{The criteria}{
@@ -383,13 +426,15 @@
 #' @export
 model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect"), times = NULL, horizon = NULL,
                        folds = 5L, seed = 1L, depth = c("standard", "quick", "full"), models = NULL, verbose = FALSE) {
+  seed <- .resolve_seed(seed)
   cl <- match.call()
   goal <- match.arg(goal); depth <- match.arg(depth)
   cause <- as.integer(cause); folds <- as.integer(folds)
   if (missing(data) || is.null(data)) stop("data must be given", call. = FALSE)
   vars <- intersect(all.vars(formula), names(data))
   data <- data[stats::complete.cases(data[, vars, drop = FALSE]), , drop = FALSE]
-  f <- .sx_frame(formula, data, what = "model_scan()")
+  f <- .sx_frame(formula, data, what = "model_scan()", frailty_ok = TRUE)
+  frail <- !is.null(f$frailty)
   n <- length(f$time); p <- ncol(f$X); K <- max(f$status)
   if (nrow(data) != n) stop("could not align the response with the data", call. = FALSE)
   if (p < 1L) stop("model_scan() needs at least one covariate", call. = FALSE)
@@ -398,17 +443,20 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
   if (cause < 1L || cause > K || !any(f$status == cause)) stop("no events of cause ", cause, call. = FALSE)
   if (folds < 2L) stop("folds must be at least 2", call. = FALSE)
   type <- if (K == 1L) "single" else "competing"
+  if (frail && type != "single")
+    stop("frailty() in model_scan() is for one event type (Cox and parametric models with a shared frailty); ",
+         "for competing risks remove frailty()", call. = FALSE)
   ev <- sum(f$status == cause)
   tc <- f$time[f$status == cause]
-  if (is.null(times)) times <- signif(as.numeric(stats::quantile(tc, c(0.25, 0.5, 0.75))), 3L)
+  if (is.null(times)) times <- .sx_signif(.sx_quantile(tc, c(0.25, 0.5, 0.75)), 3L)
   times <- sort(unique(as.double(times)))
-  if (is.null(horizon)) horizon <- min(as.numeric(stats::quantile(tc, 0.9)), as.numeric(stats::quantile(f$time, 0.9)))
-  grid <- seq(horizon / 10, horizon, length.out = 10L)
+  if (is.null(horizon)) horizon <- min(.sx_quantile(tc, 0.9), .sx_quantile(f$time, 0.9))
+  grid <- .sx_seq(.sx_ew("div", horizon, 10), horizon, 10L)
   at <- sort(unique(c(grid, times)))
   ig <- match(grid, at); it <- match(times, at)
   plateau <- type == "single" && .scan_plateau(f$time, f$status)
 
-  cand <- .scan_candidates(type, cause, depth, ev, plateau, K)
+  cand <- .scan_candidates(type, cause, depth, ev, plateau, K, frailty = frail)
   if (!is.null(models)) {
     if (!is.list(models) || is.null(names(models)) || any(names(models) == ""))
       stop("models must be a named list of functions function(formula, data)", call. = FALSE)
@@ -422,7 +470,7 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
     })
   }
   M <- length(cand)
-  fold <- .scan_folds(f$status, folds, seed)
+  fold <- if (frail) .scan_folds_cluster(f$frailty, folds, seed) else .scan_folds(f$status, folds, seed)
   fits <- vector("list", M); names(fits) <- vapply(cand, `[[`, "", "name")
   rows <- list(); per_time <- list(); bcurve <- list(); foldibs <- matrix(NA_real_, M, folds)
   np_grid <- .scan_np(f$time, f$status, cause, at)
@@ -455,19 +503,15 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
     if (failed == 0L) {
       bc <- .scan_brier_curve(f$time, f$status, pooled[, ig, drop = FALSE], grid, cause)
       ibs <- .scan_integrate(grid, bc[, 1L]); ibs0 <- .scan_integrate(grid, bc[, 2L])
-      ipa <- 1 - ibs / ibs0
+      ipa <- .sx_ew("complement", .sx_ew("div", ibs, ibs0))
       bcurve[[m]] <- data.frame(model = cd$name, time = grid, brier_cv = bc[, 1L], brier_null = bc[, 2L])
-      pt <- NULL
-      for (j in seq_along(times)) {
-        a <- tryCatch(auc_t(f$time, f$status, pooled[, it[j]], times[j], cause), error = function(e) NA_real_)
-        ce <- tryCatch(attr(calibration(f$time, f$status, pooled[, it[j]], times[j], cause, 10L), "error"), error = function(e) NA_real_)
-        b <- tryCatch(brier_score(f$time, f$status, pooled[, it[j]], times[j], cause), error = function(e) c(NA_real_, NA_real_, NA_real_))
-        pt <- rbind(pt, data.frame(model = cd$name, time = times[j], brier_cv = b[[1L]], ipa_cv = b[[3L]], auc_cv = a, calib_cv = ce))
-      }
+      ms <- .sx_measures(f$time, f$status, pooled[, it, drop = FALSE], times, cause, 10L)
+      pt <- data.frame(model = cd$name, time = times, brier_cv = ms[, "brier"], ipa_cv = ms[, "ipa"], auc_cv = ms[, "auc"],
+                       calib_cv = ms[, "calib"], row.names = NULL)
       per_time[[m]] <- pt
-      aucm <- mean(pt$auc_cv, na.rm = TRUE); calm <- mean(pt$calib_cv, na.rm = TRUE)
+      aucm <- .sx_reduce("mean", pt$auc_cv, TRUE); calm <- .sx_reduce("mean", pt$calib_cv, TRUE)
     }
-    npd <- max(abs(colMeans(rfull[, ig, drop = FALSE]) - np_grid[ig]))
+    npd <- .sx_reduce("maxabs", .sx_ew("sub", .sx_colmeans(rfull[, ig, drop = FALSE]), np_grid[ig]))
     rows[[m]] <- data.frame(model = cd$name, family = cd$family, likelihood = cd$lik, fitted = TRUE, converged = .scan_converged(full),
                             loglik = ll[1L], npar = ll[2L], ibs_cv = ibs, ipa_cv = ipa, auc_cv = aucm, calib_cv = calm,
                             np_distance = npd, folds_failed = failed, checks = .scan_checks(full, cd, n), stringsAsFactors = FALSE)
@@ -475,26 +519,19 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
   tab <- do.call(rbind, rows)
   # AIC within the group of models with a full likelihood of the same data
   full_lik <- tab$likelihood == "full" & tab$fitted & is.finite(tab$loglik)
-  tab$aic <- ifelse(full_lik, -2 * tab$loglik + 2 * tab$npar, NA_real_)
-  tab$delta_aic <- if (any(full_lik)) tab$aic - min(tab$aic, na.rm = TRUE) else NA_real_
+  tab$aic <- ifelse(full_lik, .sx_aic(tab$loglik, tab$npar), NA_real_)
+  tab$delta_aic <- if (any(full_lik)) .sx_ew("sub", tab$aic, .sx_reduce("min", tab$aic, TRUE)) else NA_real_
   # ranking on the cross-validated integrated Brier score, with the paired standard error of the
   # difference from the best model over the folds (one-standard-error rule, Hastie et al. 2009)
-  ok <- is.finite(tab$ibs_cv) & tab$fitted
-  tab$rank <- NA_integer_; tab$diff_best <- NA_real_; tab$se_diff <- NA_real_; tab$equivalent <- NA
-  if (any(ok)) {
-    best <- which(ok)[which.min(tab$ibs_cv[ok])]
-    for (m in which(ok)) {
-      dk <- foldibs[m, ] - foldibs[best, ]
-      dk <- dk[is.finite(dk)]
-      tab$diff_best[m] <- tab$ibs_cv[m] - tab$ibs_cv[best]
-      tab$se_diff[m] <- if (m == best) 0 else if (length(dk) >= 2L) stats::sd(dk) / sqrt(length(dk)) else NA_real_
-      tab$equivalent[m] <- m == best || (is.finite(tab$se_diff[m]) && tab$diff_best[m] <= tab$se_diff[m])
-    }
-    eqv <- ok & tab$equivalent %in% TRUE
-    tab$rank[eqv] <- 1L
-    rest <- which(ok & !eqv)
-    tab$rank[rest[order(tab$ibs_cv[rest])]] <- sum(eqv) + seq_along(rest)
-  }
+  loss <- ifelse(tab$fitted, tab$ibs_cv, NA_real_)
+  rr <- .C("SX_rank_one_se", as.integer(M), as.integer(folds), as.double(loss), .rm(foldibs), rank = integer(M), diff = double(M),
+           se = double(M), equivalent = integer(M), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(rr$rc, "ranking")
+  fin <- is.finite(loss)
+  tab$rank <- ifelse(fin, rr$rank, NA_integer_)
+  tab$diff_best <- ifelse(fin, rr$diff, NA_real_)
+  tab$se_diff <- ifelse(fin & !is.nan(rr$se), rr$se, NA_real_)
+  tab$equivalent <- ifelse(fin, rr$equivalent == 1L, NA)
   o <- order(is.na(tab$rank), tab$rank, tab$ibs_cv)
   tab <- tab[o, , drop = FALSE]; rownames(tab) <- NULL
   effects <- NULL
@@ -515,7 +552,8 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
             counts = as.integer(counts), plateau = plateau, table = tab,
             per_time = if (length(per_time)) do.call(rbind, per_time) else NULL,
             brier = if (length(bcurve)) do.call(rbind, bcurve) else NULL, effects = effects, fits = fits,
-            nonparametric = data.frame(time = at, risk = np_grid), data = data, time = as.double(f$time), status = as.integer(f$status))
+            nonparametric = data.frame(time = at, risk = np_grid), data = data, time = as.double(f$time), status = as.integer(f$status),
+            cluster_var = if (frail) .frailty_var_name(f$frailty_var) else NULL)
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -532,6 +570,9 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
            sprintf("  Integrated Brier score over (0, %s]; AUC and calibration error at t = %s", format(signif(max(x@grid), 3L)),
                    paste(format(x@times), collapse = ", ")))
   if (x@type == "single" && x@plateau) out <- c(out, "  The Kaplan-Meier curve levels off: cure models were included.")
+  cv <- tryCatch(x@cluster_var, error = function(e) NULL)
+  if (!is.null(cv))
+    out <- c(out, paste0("  Shared frailty (", cv, "): folds of whole clusters; predictions for a new cluster (frailty integrated out)"))
   sh <- tab[tab$fitted, , drop = FALSE]
   if (!detail && nrow(sh) > top) sh <- sh[seq_len(top), , drop = FALSE]
   if (nrow(sh)) {
@@ -618,9 +659,9 @@ S7::method(plot, ModelScan) <- function(x, which = c("ranking", "fit", "brier", 
     } else if (w == "fit") {
       graphics::par(mar = base_mar)
       mods <- .scan_top(x, top)
-      tg <- seq(0, max(x@grid), length.out = 60L)[-1L]
+      tg <- .sx_seq(0, max(x@grid), 60L)[-1L]
       npv <- .scan_np(x@time, x@status, x@cause, tg)
-      avg <- lapply(mods, function(m) { rk <- .scan_risk_any(x, x@fits[[m]], m, tg); if (is.null(rk)) NULL else colMeans(rk) })
+      avg <- lapply(mods, function(m) { rk <- .scan_risk_any(x, x@fits[[m]], m, tg); if (is.null(rk)) NULL else .sx_colmeans(rk) })
       ymax <- max(c(npv, unlist(avg), 1e-6), na.rm = TRUE) * 1.1
       graphics::plot(tg, npv, type = "n", xlim = c(0, max(x@grid)), ylim = c(0, ymax),
                      xlab = "Time", ylab = ylab_risk, main = "Fit: average prediction")
@@ -633,7 +674,7 @@ S7::method(plot, ModelScan) <- function(x, which = c("ranking", "fit", "brier", 
       b <- x@brier; mods <- .scan_top(x, top)
       if (is.null(b)) next
       b <- b[b$model %in% mods, , drop = FALSE]
-      b0 <- stats::aggregate(brier_null ~ time, data = b, FUN = mean)
+      gm <- .sx_group_means(b$brier_null, b$time); b0 <- data.frame(time = gm$group, brier_null = gm$mean)
       graphics::plot(b0$time, b0$brier_null, type = "l", lty = 3, lwd = 2, col = "grey40", ylim = c(0, max(c(b$brier_cv, b0$brier_null), na.rm = TRUE)),
                      xlab = "Time", ylab = "Brier score (cross-validated)", main = "Prediction error")
       for (i in seq_along(mods)) { bi <- b[b$model == mods[i], ]; graphics::lines(bi$time, bi$brier_cv, col = pal[i], lwd = 2, lty = i + 1L) }
@@ -715,10 +756,14 @@ S7::method(report, ModelScan) <- function(x, file = "model_scan_report.html", wi
                      `distance to non-parametric` = .num(tab$np_distance, 3L), dAIC = .num(tab$delta_aic, 1L),
                      checks = tab$checks, check.names = FALSE)
   refs <- .scan_refs(c("graf1999", "gerds2006", "kattan2018", "blanche2013", "gerds2014", "hastie2009", "akaike1974", "burnham2002",
-                         if (x@type == "competing") c("putter2007", "latouche2013")))
+                         if (x@type == "competing") c("putter2007", "latouche2013"),
+                         if (!is.null(tryCatch(x@cluster_var, error = function(e) NULL))) c("clayton1978", "klein1992")))
   methods <- paste0(
-    "<p>Every candidate model was fitted to the full data and in ", x@folds, "-fold cross-validation (folds stratified by ",
-    "event status; seed ", x@seed, "). Prediction was assessed on the pooled out-of-fold predictions of the probability of ",
+    "<p>Every candidate model was fitted to the full data and in ", x@folds, "-fold cross-validation (",
+    if (is.null(tryCatch(x@cluster_var, error = function(e) NULL))) "folds stratified by event status"
+    else paste0("folds of whole clusters of ", x@cluster_var, "; models with a shared gamma frailty predicted the risk of a ",
+                "subject from a new cluster, with the frailty integrated out"),
+    "; seed ", x@seed, "). Prediction was assessed on the pooled out-of-fold predictions of the probability of ",
     if (x@type == "single") "the event" else paste0("cause ", x@cause), ": the integrated Brier score over (0, ",
     format(signif(max(x@grid), 3L)), "] with inverse probability of censoring weights (Graf et al. 1999; Gerds and Schumacher 2006), ",
     "the index of prediction accuracy (IPA, 1 minus the ratio to the model without covariates; Kattan and Gerds 2018), the ",

@@ -35,6 +35,21 @@ double par_quantity(const ParSpec& sp, const std::vector<double>& th, const doub
     default: return par_rmst(sp, th, x, t);
   }
 }
+
+// residual of one subject from its fitted cumulative hazard H (minus that at entry) and status d:
+// 0 Cox-Snell H, 1 martingale d - H, 2 deviance sign(M) sqrt(-2 {M + d log(d - M)}); 3 the deviance
+// residual from the martingale residual given in place of H, 4 the Cox-Snell residual d - M from it
+double hazard_residual(int type, double H, int d) {
+  if (type == 0) return H;
+  if (type == 4) return static_cast<double>(d) - H;
+  const double M = type == 3 ? H : static_cast<double>(d) - H;
+  if (type == 1) return M;
+  const double v = -2.0 * (M + (d == 1 ? std::log(std::fmax(static_cast<double>(d) - M, 1e-300)) : 0.0));
+  return (M > 0 ? 1.0 : M < 0 ? -1.0 : 0.0) * std::sqrt(v);
+}
+bool residual_input_ok(int n, const double* time, const int* status, int type, const double* out) {
+  return n > 0 && time && status && out && type >= 0 && type <= 2;
+}
 }  // namespace
 
 extern "C" {
@@ -399,6 +414,50 @@ int sc_cure_predict(int dist, int aft, int nk, const double* knots, int pl, int 
       }
     }
   }
+  return 0;
+} catch (...) { return -9; }
+
+
+// residuals of a parametric model at the subjects' own times (entry: NULL or delayed entry times)
+int sc_par_residuals(int dist, int aft, int nk, const double* knots, int p, const double* theta, int n, const double* X,
+                     const double* time, const double* entry, const int* status, int type, double* out) try {
+  ParSpec sp;
+  if (!spec_of(dist, aft, p, nk, knots, sp) || !theta || (p > 0 && !X) || !residual_input_ok(n, time, status, type, out)) return -1;
+  const std::vector<double> th(theta, theta + sp.npar());
+  for (int i = 0; i < n; ++i) {
+    const double* x = X + static_cast<std::size_t>(i) * p;
+    double H = par_quantity(sp, th, x, time[i], 2);
+    if (entry && entry[i] > 0) H -= par_quantity(sp, th, x, entry[i], 2);
+    out[i] = hazard_residual(type, H, status[i]);
+  }
+  return 0;
+} catch (...) { return -9; }
+
+// residuals of a cure model (cumulative hazard -log S of the population survival)
+int sc_cure_residuals(int dist, int aft, int nk, const double* knots, int pl, int pc, int mixture, const double* theta, int n,
+                      const double* Xl, const double* Xc, const double* time, const double* entry, const int* status, int type,
+                      double* out) try {
+  CureModel m;
+  if (!spec_of(dist, aft, pl, nk, knots, m.sp) || !theta || (pl > 0 && !Xl) || (pc > 0 && !Xc) || pc < 0 || !residual_input_ok(n, time, status, type, out))
+    return -1;
+  m.pc = pc; m.mixture = mixture != 0;
+  const std::vector<double> th(theta, theta + m.npar());
+  auto cumhaz = [&](int i, double t) {
+    double h, su, pi;
+    return -std::log(cure_surv(m, th, Xl + static_cast<std::size_t>(i) * pl, Xc + static_cast<std::size_t>(i) * pc, t, &h, &su, &pi));
+  };
+  for (int i = 0; i < n; ++i) {
+    double H = cumhaz(i, time[i]);
+    if (entry && entry[i] > 0) H -= cumhaz(i, entry[i]);
+    out[i] = hazard_residual(type, H, status[i]);
+  }
+  return 0;
+} catch (...) { return -9; }
+
+
+int sc_hazard_residuals(int n, const double* H, const int* status, int type, double* out) try {
+  if (n < 0 || type < 0 || type > 4 || (n > 0 && (!H || !status || !out))) return -1;
+  for (int i = 0; i < n; ++i) out[i] = hazard_residual(type, H[i], status[i]);
   return 0;
 } catch (...) { return -9; }
 

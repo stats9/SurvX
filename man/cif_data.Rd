@@ -33,7 +33,7 @@ cif_plot(x, newdata = NULL, cause = NULL,
 \item{conf.int}{compute pointwise confidence intervals.}
 \item{level}{confidence level.}
 \item{B}{number of bootstrap samples for Fine-Gray and cause-specific Cox models.}
-\item{seed}{seed of the bootstrap (the same seed gives the same intervals).}
+\item{seed}{seed of the bootstrap: a whole number, or \code{NULL} to take the seed from the random numbers of the session (so that \code{set.seed()} before the call governs the result). All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the session's generator is left as it was.}
 \item{interval}{\code{"cloglog"} or \code{"percentile"} for bootstrap intervals.}
 \item{layout}{\code{"panels"} (one panel per cause), \code{"overlay"} (all causes in one panel) or
   \code{"stacked"} (the cumulative incidences of the causes stacked on each other, with the

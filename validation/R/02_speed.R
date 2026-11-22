@@ -75,19 +75,25 @@ speed_methods <- function() {
   add("Weibull, gamma frailty", "SurvX::parsurv", "frailty", function(d) parsurv(Event(time, status) ~ x1 + x2 + frailty(id), d))
   if (has("parfm")) add("Weibull, gamma frailty", "parfm::parfm", "frailty",
                         function(d) parfm::parfm(survival::Surv(time, status) ~ x1 + x2, cluster = "id", data = d, dist = "weibull", frailty = "gamma"))
+  # constrained direct model, three causes (gen_aft), without and with time ratios of the competing causes
+  add("direct CIF (constrained, 3 causes)", "SurvX::directcif", "aft",
+      function(d) directcif(Event(time, status) ~ x1 + x2, d, estimation = "constrained", cond = "weibull"))
+  add("direct CIF (constrained, 3 causes, timing = ~ x2)", "SurvX::directcif", "aft",
+      function(d) directcif(Event(time, status) ~ x1 + x2, d, estimation = "constrained", cond = "weibull", timing = ~ x2))
   S
 }
 
-run_speed <- function(cfg) {
-  logmsg("Part 2: speed")
+# one stage of the speed study: design "n" (stage value: the sample size, p = 5) or design "p"
+# (n = 5000, p = 2, 10, 30). too_slow: the methods not run any more (from the earlier stages).
+# Every stage is seeded on its own so that stages can be run in separate sessions.
+run_speed_stage <- function(cfg, design, n = NULL, too_slow = character(0)) {
   ms <- speed_methods()
-  too_slow <- character(0)
-  set.seed(cfg$seed + 2L)
-  # (a) sample size, p = 5
-  for (n in cfg$speed_n) {
+  if (design == "n") {
+    set.seed(cfg$seed + 2L + n)
+    progress_start(cfg$speed_reps)
     for (rep in seq_len(cfg$speed_reps)) {
       dat <- list(surv = gen_surv(n, p = 5, strata = TRUE), cure = gen_surv(n, p = 2, plateau = 0.3), cr = gen_cr(n, p = 5),
-                  ic = gen_ic(n), frailty = gen_frailty(max(2L, n %/% 4L), 4L))
+                  ic = gen_ic(n), frailty = gen_frailty(max(2L, n %/% 4L), 4L), aft = gen_aft(n))
       for (m in ms) {
         key <- paste(m$model, m$impl)
         if (key %in% too_slow) { if (rep == 1L) rec_add("speed", data.frame(design = "n", model = m$model, impl = m$impl, n = n, p = 5L, rep = rep, seconds = NA_real_, status = "skipped (too slow)")); next }
@@ -96,19 +102,30 @@ run_speed <- function(cfg) {
         rec_add("speed", data.frame(design = "n", model = m$model, impl = m$impl, n = n, p = 5L, rep = rep, seconds = tm$seconds, status = st))
         if (is.finite(tm$seconds) && tm$seconds > cfg$speed_max_seconds) too_slow <- union(too_slow, key)
       }
+      progress_tick()
     }
     logmsg("  speed: n = ", n, " done")
-  }
-  # (b) number of covariates at n = 5000, for the regression models
-  reg <- Filter(function(m) m$model %in% c("Cox", "Fine-Gray", "cause-specific Cox", "Weibull PH", "direct CIF (joint, Gompertz PH)"), ms)
-  for (p in cfg$speed_p) for (rep in seq_len(cfg$speed_reps)) {
-    dat <- list(surv = gen_surv(5000, p = p), cr = gen_cr(5000, p = p))
-    for (m in reg) {
-      tm <- time_it(function() m$fun(dat[[m$family]]))
-      rec_add("speed", data.frame(design = "p", model = m$model, impl = m$impl, n = 5000L, p = as.integer(p), rep = rep, seconds = tm$seconds,
-                                  status = if (failed(tm$value)) paste("error:", substr(fail_msg(tm$value), 1, 80)) else "ok"))
+  } else {
+    set.seed(cfg$seed + 2L)
+    progress_start(length(cfg$speed_p) * cfg$speed_reps)
+    reg <- Filter(function(m) m$model %in% c("Cox", "Fine-Gray", "cause-specific Cox", "Weibull PH", "direct CIF (joint, Gompertz PH)"), ms)
+    for (p in cfg$speed_p) for (rep in seq_len(cfg$speed_reps)) {
+      dat <- list(surv = gen_surv(5000, p = p), cr = gen_cr(5000, p = p))
+      for (m in reg) {
+        tm <- time_it(function() m$fun(dat[[m$family]]))
+        rec_add("speed", data.frame(design = "p", model = m$model, impl = m$impl, n = 5000L, p = as.integer(p), rep = rep, seconds = tm$seconds,
+                                    status = if (failed(tm$value)) paste("error:", substr(fail_msg(tm$value), 1, 80)) else "ok"))
+      }
+      progress_tick()
     }
+    logmsg("  speed: covariates done")
   }
-  logmsg("  speed: covariates done")
   invisible(rec_get("speed"))
+}
+
+# methods that went over the time limit in the finished stages (they are not run at larger n)
+speed_too_slow <- function(tab, limit) {
+  if (is.null(tab)) return(character(0))
+  slow <- tab[tab$design == "n" & is.finite(tab$seconds) & tab$seconds > limit, , drop = FALSE]
+  unique(paste(slow$model, slow$impl))
 }

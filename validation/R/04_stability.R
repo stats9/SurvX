@@ -66,9 +66,11 @@ run_stability <- function(cfg) {
                        transform(basecr, status = ifelse(seq_along(status) == which(status == 1)[1], 1L, ifelse(status == 2L, 2L, 0L)))),
     "collinear covariates (x2 = 2 x1)" = list(transform(base, x2 = 2 * x1), transform(basecr, x2 = 2 * x1)),
     "no plateau (cure model)" = list(gen_surv(400, p = 2, cens_max = 40), gen_cr(400, p = 2)))
+  progress_start(length(cases) + 1L)
   for (nm in names(cases)) {
     a <- fit_all(cases[[nm]][[1]]); for (f in names(a)) stab_rec(nm, f, a[[f]])
     b <- fit_all(cases[[nm]][[2]], cr = TRUE); for (f in names(b)) stab_rec(nm, f, b[[f]])
+    progress_tick()
   }
   # invalid input: must stop with a message
   bad <- list(
@@ -138,6 +140,7 @@ run_stability <- function(cfg) {
   m2 <- attempt(compare_models(Event(time, status) ~ x1 + x2, basecr, times = event_quantiles(basecr)[2], seed = 3))
   inv_rec("same seed twice", "compare_models (cross-validation)", md(as.data.frame(m1)[sapply(as.data.frame(m1), is.numeric)],
                                                                       as.data.frame(m2)[sapply(as.data.frame(m2), is.numeric)]), 0)
+  progress_tick()
   st <- rec_get("stability")
   logmsg("  ", nrow(st), " checks: ", sum(st$status == "PASS"), " PASS, ", sum(st$status == "FAIL"), " FAIL")
   invisible(st)

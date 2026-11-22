@@ -27,7 +27,10 @@ adjusted_risk(fit, data, treatment, times = NULL, cause = 1L,
   \code{\link{directcif}}, \code{\link{parsurv}}, \code{\link{cure}} or the result of
   \code{\link{time_effects}}. It must contain the treatment as a covariate (or, for \code{cox} and
   \code{csc}, as a stratum) and should contain the confounders. It must have been fitted with
-  \code{data = }, so that it can be refitted in bootstrap samples.}
+  \code{data = }, so that it can be refitted in bootstrap samples. A \code{cox()} or \code{parsurv()}
+  model with \code{+ frailty(id)} is standardised with the frailty integrated out (the marginal
+  risk of a subject from a new cluster, \code{predict(fit, frailty = "marginal")}); in the bootstrap
+  the clusters are resampled whole, and a cluster drawn twice enters the refit as two clusters.}
 \item{data}{the data frame the model was fitted to.}
 \item{treatment}{the name of the treatment variable (a column of \code{data}): a factor, character,
   logical or 0/1 variable with at most 10 values.}
@@ -44,8 +47,7 @@ adjusted_risk(fit, data, treatment, times = NULL, cause = 1L,
 \item{trim}{truncation of the weights at the \code{trim} and \code{1 - trim} quantiles (for example
   0.01) when some weights are extreme; 0 (default) for none.}
 \item{B}{number of bootstrap samples; 0 for point estimates only.}
-\item{seed}{seed of the bootstrap; the state of the random number generator of the session is
-  restored afterwards.}
+\item{seed}{seed of the bootstrap: a whole number, or \code{NULL} to take the seed from the random numbers of the session (so that \code{set.seed()} before the call governs the result). All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the session's generator is left as it was.}
 \item{level}{confidence level.}
 \item{reference}{the treatment value against which the others are compared; default the first
   level.}

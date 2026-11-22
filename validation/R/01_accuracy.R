@@ -372,6 +372,7 @@ acc_metrics <- function(d, label, vars) {
 run_accuracy <- function(cfg) {
   logmsg("Part 1: accuracy against reference implementations")
   set.seed(cfg$seed + 1L)
+  progress_start(cfg$acc_reps + 1L)
   designs <- list(
     standard = function() gen_surv(500, p = 3),
     ties = function() gen_surv(500, p = 3, ties = 15),
@@ -398,6 +399,7 @@ run_accuracy <- function(cfg) {
       acc_metrics(d, lab, vars)
     }
     logmsg("  accuracy replication ", rep, " of ", cfg$acc_reps, " done")
+    progress_tick()
   }
   # real data
   rd <- real_data()
@@ -418,6 +420,17 @@ run_accuracy <- function(cfg) {
       acc_metrics(d, nm, vars)
     }
   }
+  progress_tick()
+  acc <- rec_get("accuracy")
+  logmsg("  ", nrow(acc), " comparisons: ", sum(acc$status == "PASS"), " PASS, ", sum(acc$status == "FAIL"), " FAIL, ",
+         sum(acc$status == "ERROR"), " ERROR")
+  invisible(acc)
+}
+
+# the methods added after 1.0.0, as a stage of its own (seeded on its own, so that it can be run
+# separately and gives the same data whether or not the first stage ran in the same session)
+run_accuracy_new <- function(cfg) {
+  set.seed(cfg$seed + 11L)
   acc_new_methods(cfg)
   acc <- rec_get("accuracy")
   logmsg("  ", nrow(acc), " comparisons: ", sum(acc$status == "PASS"), " PASS, ", sum(acc$status == "FAIL"), " FAIL, ",

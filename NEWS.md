@@ -53,6 +53,43 @@
   error over time and the calibration; `report()` writes a self-contained HTML report with a
   methods paragraph and references.
 
+## One numerical core for every front end
+
+* All numerical work now runs in the C++ core, including what was computed in R until now:
+  normal and chi-square distributions, gamma quantiles and sample quantiles (identical to
+  `stats::quantile` types 1 and 7), every confidence interval, Nelson-Aalen and Kaplan-Meier limits,
+  frailty summaries and the half chi-square test, the propensity model, weights, balance and
+  weighted cumulative incidence of `adjusted_risk()`, the summaries, test and bootstrap of
+  `turnbull()`, the prediction measures and the one-standard-error ranking of `model_scan()` and
+  `cv_compare()`, the tests of proportional hazards with Holm adjustment, the splitting of
+  follow-up, the time functions (including the natural spline basis, identical to `splines::ns`),
+  the effects and predictions of `time_effects()`, the Fine-Gray data with delayed entry, the
+  merging of tied times, the robust variance, the residuals of parametric and cure models, the
+  covariance of the Fine-Gray bootstrap, the bootstrap summaries of `cif()`, the smoother of
+  `plot(ph_test())` and log-scale limits of positive predictions. The results are those of the previous R code to
+  rounding error (tested in `tests/testthat/test-core-parity.R`), and a Python front end calls the
+  same code.
+* The small computations on results moved to the core as well: Wald tables, standard errors,
+  AIC, BIC and likelihood ratio tests, survival predictions of Cox models (also with strata) and the
+  linear predictor, the effects of `tt()` terms, Cox residuals, scaled Schoenfeld residuals, the
+  curves of the diagnostic plots, frailty summaries, contrasts of `adjusted_risk()`, the averages,
+  stacked curves and summaries of `cif()`, `model_scan()` and the plots, the default time grids
+  (`seq()` and `pretty()` as R computes them) and `signif()` and `round()` of displayed values. What
+  remains in R computes no result: model frames, counting for printouts, validation, printing and
+  plot layout (`dev/ARCHITECTURE.md`).
+* Every random draw (bootstrap resamples, permutations, cross-validation folds) is made by R's own
+  generator: the C++ core takes its indices from `R_unif_index()`, as `sample.int()` does, so
+  `RNGkind()` and `set.seed()` govern them. A bootstrap resample is exactly
+  `sample.int(n, n, replace = TRUE)`, and the folds of a stratum are `sample(rep_len(1:folds, m))`.
+  `seed` keeps its default (`1L`): a number gives the same result on every call and leaves the
+  random numbers of the session as they were. New: `seed = NULL` takes the seed from the session
+  (one draw), so that `set.seed()` before the call reproduces the result. The core keeps a
+  seeded generator of its own (splitmix64) for front ends that install none. Fold assignments and
+  the bootstraps of `cif()`, `compare_models()` and `turnbull()` differ from those of 1.0.0 for the
+  same seed.
+* The C API is checked under AddressSanitizer, UndefinedBehaviorSanitizer and valgrind by
+  `validation/memcheck/memcheck_capi.cpp` and the new `memcheck_support.cpp`.
+
 ## Improvements to existing functions
 
 * `directcif(estimation = "weighted")`: new argument `variance`. The default, `"ipcw"`, is a
@@ -68,6 +105,34 @@
   (`share_` coefficients, odds ratios of one competing cause against the first); the long-term
   incidences add up to one for every covariate value. `cond` may give one distribution per
   competing cause. K = 2 is unchanged.
+* `directcif(estimation = "constrained")`: new arguments `timing` and `shape` let covariates change
+  *when* the competing events occur, not only how many there are. `timing = ~ age` makes the time
+  distribution G_k of every competing cause an accelerated failure time model,
+  G_k(t | z) = G_k0(t exp(-eta_k'z)), so that exp(eta) is a time ratio (`time_` coefficients;
+  TR > 1: later events); `shape` lets the shape of G_k depend on covariates as well (`shape_`
+  coefficients). A list such as `list("2" = ~ age, "3" = ~ age + sex)` gives each competing cause
+  its own covariates. Every G_k(. | z) stays a distribution function, so the long-run incidences
+  still add up to one for every covariate value. Works for two causes and for K >= 3, with all four
+  forms of G_k, exact gradients and Hessians, and covariates centred internally for a well
+  conditioned fit. The model without these covariates is fitted first and the fit with them starts
+  from it, so its log-likelihood is never lower; without `timing` and `shape` the results are
+  identical, digit for digit, and as fast as before. `print()`, `summary()`, `estimates()`,
+  `predict()`, `cif_plot()`, `cif_data()` and `adjusted_risk()` handle the new coefficients.
+* `compare_models()`: new argument `constrained`, a list of constrained direct models with options
+  that `direct` cannot express (`timing`, `shape`, one `cond` per cause), cross-validated with the
+  same folds and with comparable AIC. Constrained models are no longer limited to two causes: with
+  three or more causes they are fitted by `directcif()` (and the default set includes one).
+* `model_scan()`: for competing risks, the candidates (`depth = "standard"` and `"full"`) include
+  the constrained model with time ratios of the competing causes for all covariates.
+* Shared frailty in the other functions: `adjusted_risk()` standardises a `cox()` or `parsurv()`
+  model with `+ frailty(id)` with the frailty integrated out (marginal risks) and resamples whole
+  clusters in the bootstrap (a cluster drawn twice enters the refit as two clusters);
+  `model_scan()` takes `+ frailty(id)` for one event type (Cox and parametric frailty models, and
+  Cox, Weibull and cure models with the clusters ignored, in folds of whole clusters);
+  `cv_compare()` takes it too (folds of whole clusters) and now scores `cox()`, `parsurv()` and
+  `cure()` fits for one event type directly; `compare_models()` points to these two.
+* The C API of the non-parametric estimators (Kaplan-Meier, Nelson-Aalen, RMST, Aalen-Johansen)
+  refuses negative times and weights, as its documentation says (R already did).
 * `ph_test()` and `model_scan()` point to `time_effects()` when a covariate fails the test of
   proportional hazards.
 * Functions that need exact times (Kaplan-Meier, Cox, Fine-Gray, residuals, prediction metrics,
@@ -250,7 +315,7 @@ First release on CRAN.
 * New test file of all generic functions (print, summary, plot, coef, vcov, confint, logLik, AIC,
   BIC, nobs, formula, getCall, terms, model.matrix, update, predict, residuals, as.data.frame) on
   every class, run on all platforms including R-devel.
-* `splines` (base R) is now imported, for the smooth of `plot(ph_test())`.
+* `splines` (base R) moves from Imports to Suggests: the smooth of `plot(ph_test())` is computed by the core.
 
 # SurvX 0.6.1
 

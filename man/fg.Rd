@@ -50,8 +50,7 @@ fg(formula, data, cause = 1L, variance = c("robust", "model", "bootstrap"),
 \item{tol}{convergence tolerance on the relative change of the log pseudo-likelihood.}
 \item{B}{\code{variance = "bootstrap"}: number of bootstrap samples (default 200; 500 or more for
   final results).}
-\item{seed}{\code{variance = "bootstrap"}: seed of the resampling, so that the same call gives
-  the same standard errors. The random number generator of the session is restored afterwards.}
+\item{seed}{\code{variance = "bootstrap"}: seed of the resampling: a whole number, or \code{NULL} to take the seed from the random numbers of the session (so that \code{set.seed()} before the call governs the result). All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the session's generator is left as it was.}
 }
 \details{
 \subsection{The model}{

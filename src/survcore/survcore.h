@@ -211,6 +211,27 @@ int sc_constrainedK_eval(int n, int p, const double* time, const int* cause, con
 int sc_constrainedK_predict(int p, int K, int alpha_free, double alpha_value, int baseline, const int* family,
                             const double* theta, const double* var, int k, int average, int n_new, const double* Xnew,
                             int nt, const double* times, double* out_cif, double* out_se);
+/* The same with covariates for the time distributions G_k: an accelerated failure time model,
+ * G_k(t | w, v) = G_k0(t exp(-eta_k' w)) with the shape of G_k0 shifted by zeta_k' v (see
+ * ConstrainedKModel in directcif_ext.hpp for the exact form per family). W: n x nw and V: n x nv,
+ * row-major; wuse, vuse: (K - 1) x nw and (K - 1) x nv flags of 0/1, row k - 2 for cause k, the
+ * columns used for that cause. Parameters: as above, then eta_k for k = 2..K (the flagged columns
+ * in order), then zeta_k for k = 2..K. nw = nv = 0 gives sc_constrainedK_fit exactly. In
+ * predict, Wnew and Vnew have n_new rows. */
+int sc_constrainedK_fit_cov(int n, int p, const double* time, const int* cause, const double* X, int K,
+                            int alpha_free, double alpha_value, int baseline, const int* family,
+                            int nw, const double* W, const int* wuse, int nv, const double* V, const int* vuse,
+                            const double* init, int max_iter, double tol,
+                            double* theta, double* var, sc_fit_info* info);
+int sc_constrainedK_eval_cov(int n, int p, const double* time, const int* cause, const double* X, int K,
+                             int alpha_free, double alpha_value, int baseline, const int* family,
+                             int nw, const double* W, const int* wuse, int nv, const double* V, const int* vuse,
+                             const double* theta, double* loglik, double* grad, double* info_matrix);
+int sc_constrainedK_predict_cov(int p, int K, int alpha_free, double alpha_value, int baseline, const int* family,
+                                int nw, const int* wuse, int nv, const int* vuse,
+                                const double* theta, const double* var, int k, int average, int n_new, const double* Xnew,
+                                const double* Wnew, const double* Vnew,
+                                int nt, const double* times, double* out_cif, double* out_se);
 int sc_constrained_fit(int n, int p, const double* time, const int* cause, const double* X,
                        int alpha_free, double alpha_value, int baseline, int family,
                        const double* init, int max_iter, double tol,
@@ -298,6 +319,200 @@ int sc_parcsc_predict(int K, const int* dist, const int* aft, const int* nk, con
 /* Kernel-smoothed hazard (survcore/hazard.hpp); bw <= 0: least-squares cross-validation. */
 int sc_kernel_hazard(int m, const double* et, const double* d, const double* Y, double bw, int boundary,
                      int nx, const double* x, double* out_h, double* out_se, double* bw_used);
+
+/* ---------------- numerical summaries shared by the front ends (capi_support.cpp) ----------------
+ * Distribution functions: standard normal (pnorm, qnorm), upper tail of the chi-square, gamma
+ * quantile (shape, rate). sc_quantile: sample quantiles exactly as R's quantile() of type 1 or 7,
+ * NA and NaN dropped. sc_cif_interval: limits of a cumulative incidence on the
+ * complementary log-log scale (NaN where F is 0 or 1). sc_step_at: right-continuous step function
+ * (jump times t increasing; `before` before the first jump). Frailty: half chi-square test of no
+ * frailty; size, events and posterior mean and limits of every cluster (cluster codes 0..C-1);
+ * cumulative hazards from Breslow jumps (out n x nt); survival in mode 0 marginal, 1 conditional,
+ * 2 for the cluster of each row. sc_na_table: Nelson-Aalen estimate, standard error and limits. */
+double sc_qnorm(double p);
+double sc_pnorm(double x);
+double sc_pchisq_upper(double x, double df);
+double sc_qgamma(double p, double shape, double rate);
+int sc_quantile(int n, const double* x, int np, const double* p, int type, double* out);
+int sc_cif_interval(int n, const double* F, const double* se, double zq, double* lower, double* upper);
+int sc_step_at(int m, const double* t, const double* v, int ns, const double* s, double before, double* out);
+int sc_frailty_lrt(double ll, double ll0, int boundary, double* stat, double* p);
+int sc_frailty_clusters(int n, const int* status, const int* cluster, int C, const double* shape, const double* rate,
+                        int boundary, double level, double* size, double* events, double* mean, double* lower,
+                        double* upper);
+int sc_breslow_cumhaz(int nb, const double* bh_time, const double* bh_hazard, int n, int p, const double* X,
+                      const double* beta, int nt, const double* times, double* out);
+int sc_frailty_survival(int n, int nt, const double* H, double theta, int mode, const double* shape, const double* rate,
+                        double* out);
+int sc_na_table(int m, const double* d, const double* Y, double zq, double* H, double* se, double* lower,
+                double* upper);
+/* Kaplan-Meier limits on the log scale (NaN where S = 0); first time at which a curve is at or
+ * below p (NaN if never); events and numbers at risk at the distinct event times of cause k. */
+int sc_km_limits(int m, const double* S, const double* se, double zq, double* lower, double* upper);
+int sc_first_below(int m, const double* t, const double* v, double p, double* out);
+int sc_event_counts(int n, const double* time, const int* status, int k, const double* entry, double* et, double* d,
+                    double* Y, int* m);
+/* Adjusted risks (survcore/adjust.hpp). sc_mlogit: multinomial logistic model of a (codes 0..K-1)
+ * on X (n x p, with an intercept column), P n x K row-major. sc_ipw_weights: stabilised weights,
+ * trimmed at the trim and 1 - trim quantiles. sc_balance: standardised mean differences of the q
+ * columns of Xc ((K - 1) x q, NaN where undefined) and weight diagnostics per level.
+ * sc_weighted_cif: weighted Aalen-Johansen estimate of cause k (entry may be null).
+ * sc_boot_summary: standard deviation and percentile limits of every column of nb x m draws.
+ * sc_resample: B samples of 0..n-1 with replacement (B x n). sc_stratified_folds: folds 1..folds
+ * balanced within strata. Both seeded (splitmix64), the same in every front end. */
+int sc_mlogit(int n, int p, const double* X, const int* a, int K, double* P, int* iterations);
+int sc_ipw_weights(int n, int K, const double* P, const int* a, double trim, double* w);
+int sc_balance(int n, int q, const double* Xc, const int* a, int K, const double* w, const double* P, double* before,
+               double* after, double* size, double* ess, double* max_weight, double* ps_min, double* ps_max);
+int sc_weighted_cif(int n, const double* time, const int* status, const double* entry, const double* w, int k, int nt,
+                    const double* tt, double* out);
+int sc_boot_summary(int nb, int m, const double* draws, int finite_only, double level, double* sd, double* lower,
+                    double* upper);
+int sc_resample(unsigned long long seed, int n, int B, int* out);
+int sc_stratified_folds(int n, const int* strata, int folds, unsigned long long seed, int* out);
+/* Turnbull NPMLE summaries (survcore/interval_summary.hpp), from the innermost intervals and
+ * masses of sc_turnbull. sc_tb_surv: P(T > t) (left = 1: P(T >= t)) with the identified bounds.
+ * sc_tb_steps: the curve as a polyline (outputs 2 (2 J + 1)). sc_tb_quantile: first time the
+ * curve drops to p. sc_tb_test: Finkelstein scores, permutational variance (group codes 0..G-1).
+ * sc_tb_bootstrap: B x ng bootstrap curves (seeded). sc_grid_boot_limits, sc_column_limits,
+ * sc_tb_median_limits: percentile limits from bootstrap curves. sc_approx_rows: rows interpolated
+ * linearly at xout (as R's approx(rule = 1)). */
+int sc_tb_surv(int J, const double* lo, const double* hi, const double* p, int nt, const double* t, int left, double* est,
+               double* lower, double* upper);
+int sc_tb_steps(int J, const double* lo, const double* hi, const double* p, double* time, double* surv, int* m);
+int sc_tb_quantile(int m, const double* time, const double* surv, double p, double* out);
+int sc_tb_test(int n, const double* L, const double* R, const int* g, int G, int max_iter, double tol, double* stat, int* df,
+               double* p, double* size, double* U, double* sd);
+int sc_tb_bootstrap(int n, const double* L, const double* R, int ng, const double* grid, int B, unsigned long long seed,
+                    int max_iter, double tol, double* out);
+int sc_grid_boot_limits(int ng, const double* grid, int B, const double* draws, int nt, const double* times, double level,
+                        int min_n, double* lower, double* upper);
+int sc_column_limits(int B, int m, const double* draws, double level, int min_n, double* lower, double* upper);
+int sc_tb_median_limits(int ng, const double* grid, int B, const double* draws, double level, double* lower, double* upper);
+int sc_approx_rows(int nr, int nx, const double* x, const double* Y, int nout, const double* xout, double* out);
+/* Prediction measures of risks (n x nt) of cause `interest` at every time (sc_brier, sc_auc,
+ * sc_calibration; NaN where undefined); trapezoidal mean of y over (0, grid]; non-parametric
+ * probability of the event (1 - Kaplan-Meier) or cumulative incidence of `cause` at `at`. */
+int sc_measures(int n, const double* time, const int* cause, int interest, int nt, const double* t, const double* risk,
+                int groups, double* brier, double* brier_null, double* ipa, double* auc, double* calib);
+int sc_integrate_grid(int m, const double* grid, const double* y, double* out);
+int sc_np_curve(int n, const double* time, const int* status, int cause, int nt, const double* at, double* out);
+/* Ranking of models on a cross-validated loss with the one-standard-error rule (rank 0 for models
+ * without a finite loss); fold_loss M x folds. */
+int sc_rank_one_se(int M, int folds, const double* loss, const double* fold_loss, int* rank, double* diff, double* se,
+                   int* equivalent);
+/* Score test of proportional hazards of a Cox model (Grambsch & Therneau 1994; survcore/phtest.hpp).
+ * transform 0 identity, 1 log, 2 rank, 3 Kaplan-Meier, 4 weighted Kaplan-Meier of the event times. */
+int sc_ph_test(int n, int p, const double* time, const int* status, const double* X, const double* beta, const double* vcov,
+               const double* w, const double* entry, const int* strata, int transform, const int* term_of, int nterm,
+               double* chi_col, double* p_col, double* chi_term, double* df_term, double* p_term, double* chi_glob,
+               double* p_glob, int* nd, int* rows, double* ev_time, double* g, double* scaled);
+/* Holm's adjustment of p-values (NaN left out), as R's p.adjust(method = "holm"). */
+int sc_p_adjust_holm(int n, const double* p, double* out);
+/* Time-varying effects (survcore/timeeffects.hpp). sc_te_split_size, sc_te_split: rows (start, stop]
+ * cut at the sorted event times et strictly inside them (idx 0-based source rows). sc_te_basis:
+ * built-in time functions, form 1 log(max(t, tmin/2)/tm), 2 t - tm, 3 steps 1{t > breaks_j},
+ * 4 natural cubic spline in log(max(t, tmin/2)) (as splines::ns with knots and boundary knots on
+ * the log scale); out nt x q. sc_te_effect: b[ix] combined with (1, B(t)), delta-method standard
+ * error, hazard ratio, limits and p. sc_cum_predict: mode 0 survival, 1 cumulative incidence of one
+ * hazard, 2 cumulative incidence of cause `cause` (0-based) from K cause-specific hazards, from
+ * hazard increments dH (K x nr x m) on the event times tj. */
+int sc_te_split_size(int n, const double* start, const double* stop, int m, const double* et, double* out);
+int sc_te_split(int n, const double* start, const double* stop, const int* status, int m, const double* et, int cap, int* idx,
+                double* s0, double* s1, int* st, int* nrow);
+int sc_te_basis(int form, int nt, const double* t, double tmin, double tm, int nbreak, const double* breaks, int nknot,
+                const double* knots, double bl, double br, double* out);
+/* sc_te_effect: ix = (constant column, time-function columns), 0-based; ix[0] = -1 when there is no constant */
+int sc_te_effect(int nt, int q, const double* B, int P, const double* b, const double* V, const int* ix, double zq, double* est,
+                 double* se, double* hr, double* lower, double* upper, double* p);
+int sc_cum_predict(int mode, int nr, int m, const double* tj, int K, const double* dH, int cause, int product_limit, int nt,
+                   const double* times, double* out);
+
+/* Fine-Gray counting-process data with delayed entry (Geskus 2011): call with cap = 0 for *nrow,
+   then with arrays of that length; id 0-based; rows with weight 0 are left out */
+int sc_fg_expand(int n, const double* time, const int* status, const double* entry, int cause, int cap, int* id,
+                 double* start, double* stop, int* st, double* w, int* nrow);
+/* merge time values closer than tol, absolutely or relative to the mean absolute time (in place) */
+int sc_timefix(int n, double* v, double tol, int* changed);
+/* robust (sandwich) variance V (sum_c U_c U_c') V; U n x p row-major; cl 0-based cluster codes or NULL */
+int sc_sandwich(int n, int p, const double* U, const int* cl, int nc, const double* V, double* out);
+
+
+/* Source of random indices. Every random draw of the core (bootstrap resamples, permutations,
+   folds) is a uniform index in 0..n-1. With no source installed (the default) it comes from
+   splitmix64 started at the seed argument of the call; fn, when installed, is called instead with
+   n and must return an integer value in [0, n), and the seed arguments are then not used. The R
+   front end installs R_unif_index around each call, so that set.seed() and RNGkind() govern the
+   draws. Pass NULL to return to the default. Not thread-safe: install it on the calling thread. */
+typedef double (*sc_index_fn)(double n);
+void sc_set_index_source(sc_index_fn fn);
+
+
+/* Residuals at the subjects' own times: type 0 Cox-Snell, 1 martingale, 2 deviance; entry NULL or
+   delayed entry times (the cumulative hazard at entry is subtracted). Parametric and cure models. */
+int sc_par_residuals(int dist, int aft, int nk, const double* knots, int p, const double* theta, int n, const double* X,
+                     const double* time, const double* entry, const int* status, int type, double* out);
+int sc_cure_residuals(int dist, int aft, int nk, const double* knots, int pl, int pc, int mixture, const double* theta, int n,
+                      const double* Xl, const double* Xc, const double* time, const double* entry, const int* status, int type,
+                      double* out);
+
+
+/* sample covariance of the rows of X (nb x p, row-major) that have no NaN, as stats::cov of the
+   complete cases; *nok: the number of rows used (NaN output below 2) */
+int sc_cov_complete(int nb, int p, const double* X, double* out, int* nok);
+
+
+/* least squares smoother y ~ 1 + ns(x, df), as stats::lm(y ~ splines::ns(x, df)), with the fit and
+   pointwise limits fit +- z se at the grid; -4 when rank deficient or too few points */
+int sc_ns_smooth(int n, const double* x, const double* y, int df, int ng, const double* grid, double z, double* fit, double* lower,
+                 double* upper);
+
+
+/* elementwise prediction formulas. sc_subdist_cif: Fine-Gray cumulative incidence
+   1 - exp(-exp(x_i' beta) H_j), nr x nt row-major. sc_log_limits: limits est exp(-+ z se / est)
+   of a positive quantity (hazard, cumulative hazard, quantile, RMST); NaN where undefined */
+int sc_subdist_cif(int nr, int p, const double* X, const double* beta, int nt, const double* H, double* out);
+int sc_log_limits(int n, const double* est, const double* se, double z, double* lower, double* upper);
+
+
+/* Toolkit (survcore/toolkit.hpp): the small computations on results, so that no front end computes
+   anything itself. sc_elementwise: out = f(x) or f(x, y) for code 1 exp, 2 log, 3 plogis, 4 logit,
+   5 qnorm, 6 1 - x, 7 -log x, 8 x - y, 9 x / y, 10 log(x / y), 11 two-sided normal p of x / y,
+   12 exp(x) sqrt(y), 13 interval midpoint (x left, y right), 14 -log(max(x, 1e-300)), 15 x y,
+   16 sqrt x, 17 x + y, 18 qnorm(1 - x), 19 log((1 - x) / x), 20 exp(-x). sc_reduce: 0 sum, 1 mean,
+   2 max |x|, 3 max, 4 min (as R; na_rm leaves out NaN). sc_means: column (or row) means.
+   sc_group_means: means within groups. sc_cumsum_rows: running sums along rows, capped at cap >= 0.
+   sc_linpred: X beta. sc_ph_predict: survival (mode 0) or cumulative incidence (1) from a cumulative
+   baseline. sc_np_curve_inc: Nelson-Aalen (0), exp(-H) (1) or Kaplan-Meier (2) from counts.
+   sc_info_criteria, sc_lr_test, sc_wald_table, sc_se_diag, sc_scaled_schoenfeld: as named. */
+int sc_elementwise(int code, int n, const double* x, const double* y, double* out);
+int sc_reduce(int code, int n, const double* x, int na_rm, double* out);
+int sc_means(int nr, int nc, const double* M, int by_row, int na_rm, double* out);
+int sc_group_means(int n, const int* g, const double* x, int G, double* out);
+int sc_cumsum_rows(int nr, int nc, const double* M, double cap, double* out);
+int sc_linpred(int nr, int p, const double* X, const double* beta, double* out);
+int sc_ph_predict(int mode, int nr, int p, const double* X, const double* beta, int nt, const double* H, int by_row, double* out);
+int sc_np_curve_inc(int m, const double* d, const double* Y, int mode, double* out);
+int sc_info_criteria(int n, const double* ll, const double* k, const double* nobs, double* aic, double* bic);
+int sc_lr_test(int n, const double* ll1, const double* ll0, const double* df, double* stat, double* p);
+int sc_wald_table(int n, const double* est, const double* se, double z, const int* expo, double* lo, double* hi, double* zs,
+                  double* p, double* eest, double* elo, double* ehi);
+int sc_se_diag(int p, const double* V, double* out);
+int sc_scaled_schoenfeld(int nd, int p, const double* S, const double* V, const double* beta, double* out);
+/* residuals from cumulative hazards H (minus that at entry): type 0 Cox-Snell, 1 martingale, 2 deviance;
+   with the martingale residuals given in place of H: 3 deviance, 4 Cox-Snell */
+int sc_hazard_residuals(int n, const double* H, const int* status, int type, double* out);
+
+
+/* grids as R: kind 0 seq(from, to, length.out = n), 1 seq(from, to, by), 2 pretty(c(from, to), n);
+   call with cap = 0 for *m, then with an array of that length. sc_elementwise codes 21 |x - y|,
+   22 signif(x, y), 23 round(x) (halves to even, as R) */
+int sc_grid(int kind, double from, double to, double by, int n, int cap, double* out, int* m);
+
+
+/* hazard increments dH0 exp(LP) of rows on a grid of times, from a stratified cumulative baseline */
+int sc_hazard_increments(int nb, const double* btime, const double* bcum, const int* bstr, int nr, const int* rstr, int m,
+                         const double* tj, const double* LP, int lp_by_time, double* out);
 
 #ifdef __cplusplus
 }

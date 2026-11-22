@@ -30,8 +30,8 @@ URL: https://github.com/stats9/SurvX
 BugReports: https://github.com/stats9/SurvX/issues
 Encoding: UTF-8
 Depends: R (>= 4.1.0)
-Imports: S7, stats, graphics, grDevices, utils, splines
-Suggests: survival, cmprsk, riskRegression, prodlim, ggplot2, flexsurv, flexsurvcure, timereg, testthat (>= 3.1.5), knitr, rmarkdown
+Imports: S7, stats, graphics, grDevices, utils
+Suggests: splines, survival, cmprsk, riskRegression, prodlim, ggplot2, flexsurv, flexsurvcure, timereg, testthat (>= 3.1.5), knitr, rmarkdown
 LazyData: true
 VignetteBuilder: knitr
 Config/testthat/edition: 3

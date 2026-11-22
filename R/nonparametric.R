@@ -238,7 +238,7 @@ km <- function(formula, data, level = 0.95) {
   cl <- match.call()
   f <- .sx_groups(formula, data, what = "this estimator")
   if (any(f$status > 1L)) stop("km() needs a 0/1 status; use aj() for competing risks", call. = FALSE)
-  zq <- stats::qnorm(1 - (1 - level) / 2)
+  zq <- .zq(level)
   curves <- list(); counts <- NULL
   for (lev in levels(f$group)) {
     i <- f$group == lev; n <- sum(i)
@@ -247,11 +247,17 @@ km <- function(formula, data, level = 0.95) {
     .sx_rc(r$rc, "km")
     k <- seq_len(r$m)
     S <- r$surv[k]; se <- r$se[k]
-    w <- suppressWarnings(exp(zq * se / S))                 # interval on the log scale
+    lim <- .C("SX_km_limits", length(S), as.double(S), as.double(se), as.double(zq), lower = double(length(S)),
+              upper = double(length(S)), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")   # interval on the log scale
+    .sx_rc(lim$rc, "km")
     cv <- data.frame(time = r$time[k], n.risk = r$nrisk[k], n.event = r$nevent[k], surv = S, se = se,
-                     lower = ifelse(S > 0, S / w, NA_real_), upper = ifelse(S > 0, pmin(1, S * w), NA_real_))
+                     lower = ifelse(is.nan(lim$lower), NA_real_, lim$lower), upper = ifelse(is.nan(lim$upper), NA_real_, lim$upper))
     curves[[lev]] <- cv
-    first <- function(v) { j <- which(v <= 0.5); if (length(j)) cv$time[j[1L]] else NA_real_ }
+    first <- function(v) {
+      q <- .C("SX_first_below", length(v), as.double(cv$time), as.double(v), 0.5, out = double(1), rc = integer(1),
+              NAOK = TRUE, PACKAGE = "SurvX")$out
+      if (is.nan(q)) NA_real_ else q
+    }
     counts <- rbind(counts, data.frame(group = lev, n = n, events = sum(f$status[i]),
                                        median = first(cv$surv), median.lower = first(cv$lower), median.upper = first(cv$upper),
                                        stringsAsFactors = FALSE))
@@ -368,7 +374,7 @@ aj <- function(formula, data, level = 0.95) {
   f <- .sx_groups(formula, data, what = "this estimator")
   K <- max(f$status)
   if (K < 1L) stop("no events", call. = FALSE)
-  zq <- stats::qnorm(1 - (1 - level) / 2)
+  zq <- .zq(level)
   curves <- list(); counts <- NULL
   for (lev in levels(f$group)) {
     i <- f$group == lev; n <- sum(i)

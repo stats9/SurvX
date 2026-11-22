@@ -32,7 +32,8 @@ make_config <- function(args) {
     kv <- strsplit(a, "=", fixed = TRUE)[[1]]
     val <- strsplit(kv[2], ",", fixed = TRUE)[[1]]
     num <- suppressWarnings(as.numeric(val))
-    cfg[[kv[1]]] <- if (all(is.finite(num))) (if (all(num == round(num))) as.integer(num) else num) else val
+    cfg[[kv[1]]] <- if (all(toupper(val) %in% c("TRUE", "FALSE"))) toupper(val) == "TRUE"
+                    else if (all(is.finite(num))) (if (all(num == round(num))) as.integer(num) else num) else val
   }
   cfg
 }
@@ -195,13 +196,47 @@ time_it <- function(expr_fun, min_total = 0.5, max_inner = 200L) {
 }
 
 # parallel lapply that also works on Windows (PSOCK cluster; the workers load SurvX and WORKER_FILES)
-plapply <- function(X, FUN, cores, export = character(0)) {
-  if (cores <= 1L || length(X) < 2L) return(lapply(X, FUN))
+# lapply on `cores` workers; with chunks > 1 the work is sent in that many pieces (one cluster) and
+# progress_tick() is called after each, so that the progress of the stage is shown
+plapply <- function(X, FUN, cores, export = character(0), chunks = 1L) {
+  pieces <- split(seq_along(X), cut(seq_along(X), max(1L, min(chunks, length(X))), labels = FALSE))
+  if (cores <= 1L || length(X) < 2L) {
+    out <- vector("list", length(X))
+    for (pc in pieces) { out[pc] <- lapply(X[pc], FUN); if (chunks > 1L) progress_tick() }
+    return(out)
+  }
   cl <- parallel::makeCluster(cores)
   on.exit(parallel::stopCluster(cl), add = TRUE)
   parallel::clusterCall(cl, function(files) { suppressPackageStartupMessages(library(SurvX)); for (f in files) source(f); NULL }, WORKER_FILES)
   if (length(export)) parallel::clusterExport(cl, export, envir = globalenv())
-  parallel::parLapplyLB(cl, X, FUN)
+  out <- vector("list", length(X))
+  for (pc in pieces) { out[pc] <- parallel::parLapplyLB(cl, X[pc], FUN); if (chunks > 1L) progress_tick() }
+  out
+}
+
+# ---- progress of a run: stage k of K, and the share of the current stage done with the time left --
+.PROG <- new.env()
+.PROG$stage_k <- 0L; .PROG$stage_n <- 0L; .PROG$label <- ""; .PROG$total <- 0L; .PROG$done <- 0L; .PROG$t0 <- Sys.time()
+fmt_dur <- function(sec) {
+  if (!is.finite(sec)) return("?")
+  if (sec < 90) return(paste0(round(sec), " s"))
+  if (sec < 5400) return(paste0(round(sec / 60), " min"))
+  paste0(round(sec / 3600, 1), " h")
+}
+progress_stage <- function(k, n, label) { .PROG$stage_k <- k; .PROG$stage_n <- n; .PROG$label <- label; .PROG$total <- 0L; .PROG$done <- 0L }
+# the number of units (replications, sample sizes, cases) of the current stage
+progress_start <- function(total) { .PROG$total <- as.integer(total); .PROG$done <- 0L; .PROG$t0 <- Sys.time() }
+progress_tick <- function(by = 1L) {
+  if (.PROG$total < 1L) return(invisible())
+  .PROG$done <- min(.PROG$total, .PROG$done + as.integer(by))
+  el <- as.numeric(difftime(Sys.time(), .PROG$t0, units = "secs"))
+  f <- .PROG$done / .PROG$total
+  left <- if (f > 0) el * (1 - f) / f else NA_real_
+  overall <- if (.PROG$stage_n > 0L) 100 * ((.PROG$stage_k - 1) + f) / .PROG$stage_n else NA_real_
+  cat(sprintf("%s    [stage %d/%d, run %3.0f%%] %s: %d/%d (%3.0f%%), %s so far, about %s left\n", format(Sys.time(), "%H:%M:%S"),
+              .PROG$stage_k, .PROG$stage_n, overall, .PROG$label, .PROG$done, .PROG$total, 100 * f, fmt_dur(el), fmt_dur(left)))
+  utils::flush.console()
+  invisible()
 }
 
 fmt_num <- function(x, digits = 3) ifelse(is.na(x), "", formatC(x, format = "g", digits = digits))

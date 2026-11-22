@@ -22,7 +22,7 @@ Fine (2006, 2007), in one package with one formula interface and one style of ou
 - **Cox regression:** Efron and Breslow ties, strata, delayed entry and (start, stop] data, time-varying coefficients (`tt()`), case weights, clustered data with robust variance, residuals and proportional hazards tests.
 - **Competing risks regression:** cause-specific hazards (Cox or parametric) and the Fine-Gray model, with delayed entry and robust or bootstrap variance, and predicted absolute risks.
 - **Parametric and cure models:** exponential, Weibull, Gompertz, log-normal, log-logistic, generalized gamma, piecewise exponential and Royston-Parmar spline models (PH or AFT), and mixture and non-mixture cure models.
-- **Direct parametric CIF regression:** eight baseline families and three links (proportional subdistribution hazards, proportional odds, generalized odds rate). Three estimators are available: joint likelihood, inverse-probability-of-censoring weighted likelihood, and the constrained two-cause model of Shi, Cheng and Jeong (2013).
+- **Direct parametric CIF regression:** eight baseline families and three links (proportional subdistribution hazards, proportional odds, generalized odds rate). Three estimators are available: joint likelihood, inverse-probability-of-censoring weighted likelihood, and the constrained model of Shi, Cheng and Jeong (2013), extended to any number of causes and to covariates that change when the competing events occur (accelerated failure time).
 - **Prediction performance:** IPCW Brier score, index of prediction accuracy (IPA), time-dependent AUC and calibration. Models are compared side by side with cross-validation.
 - **Time-varying effects:** `time_effects()` screens every covariate of a Cox, cause-specific Cox or Fine-Gray model for a change of its effect over time, chooses the form of the change and reports the hazard ratio over follow-up.
 - **Adjusted risks and causal contrasts:** `adjusted_risk()` gives the absolute risk under each treatment by standardisation (g-formula) or inverse probability weighting, with risk differences and ratios and balance diagnostics.
@@ -158,11 +158,11 @@ patient, which keeps the plateau parameters interpretable and stabilises the fit
 | `predict(fit, newdata, times, cause, se)` | absolute risks (CIF or survival) for new patients; delta-method standard errors for direct models |
 | `cif_data()`, `cif_plot()` | data behind, and drawing of, cumulative incidence curves for any model(s) |
 | `brier_score()`, `auc_t()`, `calibration()` | IPCW Brier score, time-dependent AUC, calibration in risk groups, at a time horizon |
-| `compare_models(formula, data, times, direct, cause, folds)` | cross-validated comparison of direct, Fine-Gray and cause-specific Cox models; runs in the C++ core |
-| `cv_compare(formula, data, models, times, ...)` | the same for any list of fitting functions with a `predict` method |
-| `model_scan(formula, data, cause, goal, depth)` | fits every suitable model (one event type or competing risks), ranks them by cross-validated prediction with the equally good ones grouped, AIC only among comparable models, checks of every model; `plot()` and an HTML `report()` |
+| `compare_models(formula, data, times, direct, cause, folds, constrained)` | cross-validated comparison of direct, Fine-Gray and cause-specific Cox models (runs in the C++ core), and of constrained models with any number of causes and time ratios of the competing causes |
+| `cv_compare(formula, data, models, times, ...)` | the same for any list of fitting functions with a `predict` method; with `+ frailty(id)`, folds of whole clusters |
+| `model_scan(formula, data, cause, goal, depth)` | fits every suitable model (one event type, competing risks, or one event type with `+ frailty(id)`: frailty models in folds of whole clusters), ranks them by cross-validated prediction with the equally good ones grouped, AIC only among comparable models, checks of every model; `plot()` and an HTML `report()` |
 | `time_effects(fit, forms, fix, screen, bootstrap)` | for a Cox, cause-specific Cox or Fine-Gray model: tests every covariate for a time-varying effect (Holm-adjusted), compares forms of the change (log-linear, step at a change point, spline in log time, your own functions) by AIC and likelihood ratio tests, refits with the chosen forms and reports the hazard ratio over time; optional bootstrap of the whole procedure; `plot()`, `predict()` and an HTML `report()` |
-| `adjusted_risk(fit, data, treatment, method, B)` | absolute risks (one event type) or cumulative incidences (competing risks) had everyone received each treatment value, by standardisation of any SurvX model (g-formula) and/or inverse probability of treatment weighting, with risk differences and ratios, bootstrap intervals with refitted models, balance and weight diagnostics; `plot()` and an HTML `report()` |
+| `adjusted_risk(fit, data, treatment, method, B)` | absolute risks (one event type) or cumulative incidences (competing risks) had everyone received each treatment value, by standardisation of any SurvX model (g-formula; frailty models with the frailty integrated out and clusters resampled whole) and/or inverse probability of treatment weighting, with risk differences and ratios, bootstrap intervals with refitted models, balance and weight diagnostics; `plot()` and an HTML `report()` |
 | `Interval(left, right, cause)` | outcome for interval-censored times (event between two visits, left- and right-censored and exact times mixed), used by `turnbull()`, `parsurv()` and `directcif()` |
 | `turnbull(Interval(L, R) ~ group, B)` | Turnbull NPMLE of the survival curve (EM-ICM hybrid algorithm, Kuhn-Tucker convergence check; 5000 subjects in a fraction of a second), bootstrap bands, medians, logrank test with Finkelstein scores and permutational variance; `plot()`, `predict()` with the identified range |
 | `cox(... + frailty(id))`, `parsurv(... + frailty(id))` | shared gamma frailty: marginal likelihood with a Breslow baseline (profile likelihood, standard errors that account for the frailty variance) or any parametric baseline (exact derivatives); variance with interval, likelihood ratio test on the boundary, Kendall's tau, frailty of every cluster, marginal, conditional and cluster-specific predictions |
@@ -210,7 +210,7 @@ generalized odds rate family (Dabrowska and Doksum 1988; Jeong and Fine 2007).
 | --- | --- | --- |
 | `"joint"` (default) | all causes together by the full likelihood | some subjects never fail, so the CIFs level off below a total of one |
 | `"weighted"` | the cause of interest (`cause =`) alone. Competing events enter through Kaplan-Meier censoring weights, as in Fine & Gray (1999). Sandwich standard errors | no model for the other causes is needed; robust when the joint model is misspecified |
-| `"constrained"` | two causes with long-run risks adding up to one: F<sub>2</sub>(t; z) = {1 − F<sub>1</sub>(∞; z)} G(t). G is chosen by `cond`: `"logistic"`, `"weibull"`, `"loglogistic"` or `"lognormal"` | every subject eventually fails from one of the two causes |
+| `"constrained"` | all causes, with long-run risks adding up to one: F<sub>k</sub>(t; z) = {1 − F<sub>1</sub>(∞; z)} π<sub>k</sub>(z) G<sub>k</sub>(t). G<sub>k</sub> is chosen by `cond`: `"logistic"`, `"weibull"`, `"loglogistic"` or `"lognormal"`; `timing = ~ age` makes it an accelerated failure time model (time ratios), `shape =` lets its shape depend on covariates | every subject eventually fails from one of the causes |
 
 References for the estimators:
 - joint: Jeong & Fine (2006, 2007)
@@ -223,6 +223,7 @@ fp <- update(fj, link = "PO")                                                   
 fw <- directcif(Event(time, status) ~ sex + age + hgb + mspike, d, estimation = "weighted", cause = 1)
 fk <- directcif(Event(time, status) ~ sex + age + hgb + mspike, d, estimation = "constrained",
                 cause = 1, cond = "weibull")
+fa <- update(fk, timing = ~ age)  # older patients: competing events come sooner (time ratio)
 AIC(fj, fp)                       # joint and constrained fits have a full likelihood
 ```
 
@@ -431,7 +432,10 @@ The full results are summarised in `vignette("validation", "SurvX")`. On n = 10,
 about 0.01 s against 150 s for `cmprsk::crr`, and `cure()` 0.03 s against 2.9 s for
 `flexsurvcure`. `inst/validation/check_SurvX.R` is an earlier, shorter check script kept with the
 package. The C++ core has its own tests: gradients and information matrices against numerical
-derivatives, and AddressSanitizer and UndefinedBehaviorSanitizer runs.
+derivatives, and AddressSanitizer, UndefinedBehaviorSanitizer and valgrind runs of every entry
+point of its C API (`validation/memcheck`, also run by the `C++ memcheck` workflow on every push).
+The layers of the package (C++ core, C API, R front end) and the parts that a second front end
+would share are described in `dev/ARCHITECTURE.md`.
 
 ## Simulation study and data analysis scripts
 
@@ -621,6 +625,7 @@ package and are documented in the help pages:
 
 - **Mixture baselines.** The baselines `mix_weibull`, `mix_loglogistic` and `mix_lognormal` combine a mixture baseline CIF p·G(t) with the direct-model links. The mixture idea itself goes back to Larson and Dinse (1985).
 - **Families for G.** The constrained model offers Weibull, log-logistic and log-normal families for G, in addition to the modified logistic form used by Shi, Cheng and Jeong (2013).
+- **Constrained model with K causes and covariates of G<sub>k</sub>.** The extension of the constrained model to any number of causes (multinomial shares) and the accelerated failure time model with optional shape regression for the time distributions G<sub>k</sub>, which keeps the long-run incidences adding up to one for every covariate value.
 - **Weighted likelihood.** The weighted estimator uses a time-integrated form of the weighted likelihood. The `censoring_grid` option coarsens the censoring distribution to speed up large fits.
 - **Optimiser.** The fits use a staged strategy (baseline first, then all parameters), detection of stalled or diverging fits, and a rescaled spline basis.
 - **Calibration error.** This is the mean absolute difference between predicted risk and Aalen-Johansen risk within groups of predicted risk.

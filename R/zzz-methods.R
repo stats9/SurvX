@@ -49,7 +49,7 @@ S7::method(report, AdjustedRisk) <- function(x, file = "adjusted_risk_report.htm
       "subject, the risk under each treatment value with the other covariates as observed, and the predictions were averaged. ") else "",
     if (any(r$method == "ipw")) paste0("Inverse probability of treatment weighting (Cole and Hernan 2004): a ",
       if (length(x@levels) == 2L) "logistic" else "multinomial logistic", " model of the treatment (", esc(paste(deparse(x@ps_formula), collapse = " ")),
-      ") gave stabilised weights", if (x@ps$trim > 0) paste0(", truncated at the ", 100 * x@ps$trim, "th and ", 100 * (1 - x@ps$trim), "th percentiles") else "",
+      ") gave stabilised weights", if (x@ps$trim > 0) paste0(", truncated at the ", .sx_pct(x@ps$trim), "th and ", .sx_pct(.sx_ew("complement", x@ps$trim)), "th percentiles") else "",
       "; the weighted ", if (x@kind == "single") "Kaplan-Meier" else "Aalen-Johansen", " estimate was computed in each treatment group ",
       "(Neumann and Billionnet 2016 for competing risks). Balance was checked by standardised mean differences (Austin and Stuart 2015). ") else "",
     if (x@B > 0L) paste0("Percentile intervals come from ", x@ok, " bootstrap samples in which the models were refitted (Efron and Tibshirani 1993).") else "",

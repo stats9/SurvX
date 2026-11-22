@@ -20,8 +20,8 @@ on the odds scale, or when all causes are to be modelled together with coherent 
 \usage{
 directcif(formula, data, baseline = "gompertz", link = "PH",
     estimation = c("joint", "weighted", "constrained"), cause = 1L,
-    cond = c("logistic", "weibull", "loglogistic", "lognormal"), df = 3L,
-    knots = NULL, constraint = FALSE, censoring_grid = 0L,
+    cond = c("logistic", "weibull", "loglogistic", "lognormal"), timing = NULL,
+    shape = NULL, df = 3L, knots = NULL, constraint = FALSE, censoring_grid = 0L,
     variance = c("ipcw", "robust", "model"), init = NULL, max_iter = 500L,
     tol = 1e-10)
 }
@@ -50,6 +50,14 @@ directcif(formula, data, baseline = "gompertz", link = "PH",
   \code{"weibull"}, \code{"loglogistic"} or \code{"lognormal"}. One value for all competing
   causes, or one per competing cause (in the order of the cause codes, the cause of interest left
   out).}
+\item{timing}{\code{"constrained"} only: covariates of the time to a competing event, through an
+  accelerated failure time model for \eqn{G_k} (see the section Covariates of the time
+  distributions). A one-sided formula such as \code{~ age} for every competing cause, or a list
+  of them named by the competing causes, such as \code{list("2" = ~ age, "3" = ~ age + sex)}.
+  Its terms must also be terms of the model formula. \code{NULL} (default): \eqn{G_k} has no
+  covariates, the model of Shi, Cheng and Jeong (2013).}
+\item{shape}{\code{"constrained"} only: covariates of the shape of \eqn{G_k} (the same forms as
+  \code{timing}). With \code{timing}, the time ratio then changes with time.}
 \item{df}{degrees of freedom of the spline baseline.}
 \item{knots}{optional list with the knots (log time, boundary knots first and last) of every
   cause, for the spline baseline.}
@@ -96,9 +104,11 @@ directcif(formula, data, baseline = "gompertz", link = "PH",
     with the first competing cause as reference (\eqn{\gamma = 0, \delta = 0}), so that
     \eqn{\sum_k F_k(\infty \mid z) = 1} for every \eqn{z}. The cause of interest keeps the direct
     regression model and its interpretation; the share of each competing cause can depend on the
-    covariates, in the manner of the mixture model of Larson and Dinse (1985); \eqn{G_k} has no
-    covariates. Needs a baseline with a plateau for the cause of interest (not \code{"weibull"},
-    not \code{"spline"}). Appropriate when every subject eventually fails from one of the causes.}
+    covariates, in the manner of the mixture model of Larson and Dinse (1985). By default
+    \eqn{G_k} has no covariates; \code{timing} and \code{shape} let covariates change when the
+    competing events occur (section Covariates of the time distributions). Needs a baseline with a
+    plateau for the cause of interest (not \code{"weibull"}, not \code{"spline"}). Appropriate
+    when every subject eventually fails from one of the causes.}
 }
 }
 \subsection{Baseline families}{
@@ -145,6 +155,13 @@ are flagged and their standard errors should not be used.
     \code{share_(Intercept)} is that log odds at \eqn{z = 0}. The effect of a covariate on the
     incidence of a competing cause combines its effect on the cause of interest (through
     \eqn{1 - F_1(\infty \mid z)}) and on the share; \code{predict()} gives the incidences.}
+  \item{Time ratios (constrained model, \code{timing})}{\code{time_} coefficients of cause
+    \eqn{k}: \eqn{e^{\eta}} is a \strong{time ratio}: among subjects who fail from cause \eqn{k},
+    a one-unit increase of the covariate multiplies the time to the event by \eqn{e^{\eta}}
+    (TR > 1: later events). It does not change how many fail from cause \eqn{k} in the long run.}
+  \item{Shape effects (\code{shape})}{\code{shape_} coefficients: \eqn{e^{\zeta}} multiplies the
+    shape parameter of \eqn{G_k} (\eqn{\kappa} for the Weibull and log-logistic forms,
+    \eqn{\sigma} for the log-normal form, the steepness for the modified logistic form).}
 }
 The long-term incidence \code{predict(fit, newdata, times = Inf)} is often the most useful
 summary with plateau families. A sentence for a report: \emph{"In a direct Gompertz model for
@@ -181,6 +198,45 @@ information with numerical differentiation to \eqn{10^{-9}}; in 300 simulated da
 three causes (\eqn{n = 800}) the bias of every parameter was below 0.01, the ratio of mean
 standard error to empirical standard deviation 0.94 to 1.03, and the coverage of the 95\%
 intervals 93.7 to 95.7\%.
+}
+\section{Covariates of the time distributions}{
+In the constrained model the covariates act on the long-run risk of the cause of interest and on
+the shares of the competing causes, but by default not on when the competing events occur. When
+they do (older patients die of other causes sooner, for example), \code{timing} makes
+\eqn{G_k} an accelerated failure time model,
+\deqn{G_k(t \mid z) = G_{k0}\{t\, e^{-\eta_k^\top z}\},}
+and \code{shape} lets the shape of \eqn{G_{k0}} depend on covariates as well. Every
+\eqn{G_k(\cdot \mid z)} is a distribution function, so the incidences still add up to one at
+infinity for every covariate value, and the long-run risks and shares keep their meaning; only the
+timing of the competing events changes. The model without these covariates is nested in the model
+with them: it is fitted first, and the fit with them starts from it, so its log-likelihood is never
+lower; compare the two with \code{AIC()} or a likelihood ratio test. The parameters of \eqn{G_k}
+describe \eqn{G_k} at zero values of its covariates; the fit itself uses centred covariates, which
+does not change the estimates. Each time ratio or shape effect is a parameter of the time
+distribution of one cause and is informed mainly by the events of that cause (and by
+the censored subjects): a warning is given when a cause has fewer than 10 events per parameter of its time distribution. A shape
+effect needs more events than a time ratio.
+
+Validation: the log-likelihood agrees with independent code written from the model definition to
+\eqn{10^{-15}} for all four forms of \eqn{G_k}, the score and information with numerical
+differentiation to \eqn{10^{-8}}, and the maximum and its covariance with a general-purpose
+optimiser of the same likelihood; without these covariates the results are identical, digit for
+digit, to those of the model without them. In simulations from the model (\eqn{n = 1000}, two to
+four causes, time ratios and shape effects) the bias was below 0.26 standard deviations for every
+parameter, the ratio of mean standard error to empirical standard deviation 0.83 to 1.06 (0.93 to
+1.10 with \eqn{n = 4000}) and the coverage of the 95\% intervals 91 to 97\%.
+}
+\section{Interval-censored data}{
+When the time of the event is only known to lie between two visits but its type is known
+(\code{\link{Interval}(left, right, cause = )}), the joint likelihood uses
+\eqn{F_k(R) - F_k(L)} for an event of cause \eqn{k} in \eqn{(L, R]} (\eqn{F_k(R)} when
+\eqn{L = 0}), \eqn{1 - \sum_k F_k(L)} for a subject event-free at the last visit \eqn{L} and the
+density for exact times (Hudgens, Satten and Longini 2001 for the likelihood; the direct parametric
+models of Jeong and Fine 2006, 2007 for \eqn{F_k}). Only \code{estimation = "joint"} is available
+(the weighted and constrained estimators need exact times). The fit starts from the fit to the
+midpoints of the intervals. Predictions, \code{estimates()} and \code{\link{cif_plot}} work as
+usual; the Aalen-Johansen reference and the numbers at risk are not drawn, as they are not defined
+for these data.
 }
 \value{
 An S7 object of class \code{DirectCIFFit}. Coefficients are named \code{"<cause>:<term>"};
@@ -235,18 +291,6 @@ Stat Med 37:82-97.
 
 All references: \code{sx_references("directcif")}.
 }
-\section{Interval-censored data}{
-When the time of the event is only known to lie between two visits but its type is known
-(\code{\link{Interval}(left, right, cause = )}), the joint likelihood uses
-\eqn{F_k(R) - F_k(L)} for an event of cause \eqn{k} in \eqn{(L, R]} (\eqn{F_k(R)} when
-\eqn{L = 0}), \eqn{1 - \sum_k F_k(L)} for a subject event-free at the last visit \eqn{L} and the
-density for exact times (Hudgens, Satten and Longini 2001 for the likelihood; the direct parametric
-models of Jeong and Fine 2006, 2007 for \eqn{F_k}). Only \code{estimation = "joint"} is available
-(the weighted and constrained estimators need exact times). The fit starts from the fit to the
-midpoints of the intervals. Predictions, \code{estimates()} and \code{\link{cif_plot}} work as
-usual; the Aalen-Johansen reference and the numbers at risk are not drawn, as they are not defined
-for these data.
-}
 \seealso{
 \code{\link{Interval}}, \code{\link{turnbull}};
 \code{\link{fg}} (semi-parametric Fine-Gray), \code{\link{csc}}, \code{\link{aj}},
@@ -284,4 +328,10 @@ f3 <- directcif(Event(time, status) ~ x, d3, estimation = "constrained", cause =
                 cond = "weibull")
 f3
 rowSums(sapply(1:3, function(k) predict(f3, nd, times = Inf, cause = k)))
+
+## 6. x also changes when the competing events occur (time ratio of cause 2 and 3 events)
+f4 <- directcif(Event(time, status) ~ x, d3, estimation = "constrained", cause = 1,
+                cond = "weibull", timing = ~ x)
+f4
+AIC(f3, f4)
 }

@@ -16,7 +16,10 @@
 #'   median (resampling subjects within groups); \code{0} for none.
 #' @param level confidence level.
 #' @param test with groups, compute the test of equal survival.
-#' @param seed seed of the random numbers of the bootstrap (the global random state is left as it was).
+#' @param seed seed of the bootstrap (group k uses seed + k - 1): a whole number, or \code{NULL} to
+#'   take the seed from the random numbers of the session (so that \code{set.seed()} before the call
+#'   governs the result). All random draws come from R's generator (see \code{RNGkind()}); with a
+#'   number the state of the session's generator is left as it was.
 #' @param max_iter,tol maximum number of iterations and convergence tolerance of the algorithm.
 #'
 #' @details
@@ -103,6 +106,7 @@
 #' @export
 turnbull <- function(formula, data, times = NULL, B = 200L, level = 0.95, test = TRUE, seed = 1L,
                      max_iter = 100000L, tol = 1e-10) {
+  seed <- .resolve_seed(seed)
   cl <- match.call()
   if (!inherits(formula, "formula")) stop("formula must be a formula, e.g. Interval(left, right) ~ group", call. = FALSE)
   if (missing(data)) stop("data is required", call. = FALSE)
@@ -141,33 +145,24 @@ turnbull <- function(formula, data, times = NULL, B = 200L, level = 0.95, test =
   fin <- c(L, R[is.finite(R)])
   tmax <- max(fin)
   ptimes <- if (length(times)) as.double(times[is.finite(times)]) else .default_times(tmax)
-  grid <- sort(unique(c(seq(0, tmax, length.out = 201L), ptimes)))
+  grid <- sort(unique(c(.sx_seq(0, tmax, 201L), ptimes)))
   boot <- NULL
   if (B > 0L) {
-    boot <- .with_seed(seed, lapply(levs, function(lv) {
-      f <- fits[[lv]]; n <- length(f$L)
-      t(vapply(seq_len(B), function(b) {
-        w <- tabulate(sample.int(n, n, replace = TRUE), n)
-        fb <- .tb_fit(f$L, f$R, as.double(w), max_iter, 1e-8)
-        .tb_surv(fb, grid)$estimate
-      }, numeric(length(grid))))
-    }))
+    # resamples of the subjects of every group from R's generator (group k: set.seed(seed + k - 1))
+    boot <- lapply(seq_along(levs), function(k) {
+      f <- fits[[levs[k]]]; n <- length(f$L); ng <- length(grid)
+      r <- .with_seed(as.integer((as.double(seed) + k - 1) %% .Machine$integer.max), .C("SX_tb_bootstrap", as.integer(n), as.double(f$L), as.double(f$R), as.integer(ng), as.double(grid),
+              as.integer(B), as.integer(max_iter), 1e-8, out = double(B * ng), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX"))
+      .sx_rc(r$rc, "Turnbull bootstrap")
+      out <- .matrix_rm(r$out, B, ng)
+      out[is.nan(out)] <- NA_real_
+      out
+    })
     names(boot) <- levs
   }
   tst <- if (isTRUE(test) && length(levs) > 1L) .tb_test(L, R, g, max_iter, tol) else NULL
   TurnbullFit(model_call = cl, groups = levs, variable = variable, fits = fits, times = grid, boot = boot, B = B,
               level = level, test = tst, n = length(L), print_times = ptimes)
-}
-
-.with_seed <- function(seed, expr) {
-  if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
-    old <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
-    on.exit(assign(".Random.seed", old, envir = globalenv()), add = TRUE)
-  } else {
-    on.exit(if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) rm(".Random.seed", envir = globalenv()), add = TRUE)
-  }
-  set.seed(seed)
-  expr
 }
 
 # NPMLE on the innermost intervals (compiled); w: case weights or NULL
@@ -184,48 +179,34 @@ turnbull <- function(formula, data, times = NULL, B = 200L, level = 0.95, test =
 }
 
 # survival P(T > t) (left = FALSE) or P(T >= t) (left = TRUE): estimate with the mass of an innermost
-# interval spread uniformly over it, and the lower and upper limits over all spreads
+# interval spread uniformly over it, and the lower and upper limits over all spreads (C++ core)
 .tb_surv <- function(tb, t, left = FALSE) {
-  lo <- tb$lo; hi <- tb$hi; p <- tb$p
-  pt <- lo == hi
-  est <- lower <- upper <- numeric(length(t))
-  for (m in seq_along(t)) {
-    s <- t[m]
-    sure <- if (left) ifelse(pt, lo >= s, lo >= s) else ifelse(pt, lo > s, lo >= s)
-    amb <- !pt & lo < s & hi > s
-    lower[m] <- sum(p[sure])
-    upper[m] <- lower[m] + sum(p[amb])
-    if (any(amb & !is.finite(hi) & p > 0)) est[m] <- NA_real_
-    else est[m] <- lower[m] + sum(p[amb] * (hi[amb] - s) / (hi[amb] - lo[amb]))
-  }
-  list(estimate = est, lower = lower, upper = upper)
+  J <- length(tb$lo); nt <- length(t)
+  r <- .C("SX_tb_surv", as.integer(J), as.double(tb$lo), as.double(tb$hi), as.double(tb$p), as.integer(nt), as.double(t),
+          as.integer(left), est = double(nt), lower = double(nt), upper = double(nt), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "Turnbull survival")
+  list(estimate = ifelse(is.nan(r$est), NA_real_, r$est), lower = r$lower, upper = r$upper)
 }
 
 # the curve as a polyline: at every end point the left limit and the value
 .tb_steps <- function(tb) {
-  g <- sort(unique(c(0, tb$lo, tb$hi[is.finite(tb$hi)])))
-  s1 <- .tb_surv(tb, g, left = TRUE)$estimate
-  s2 <- .tb_surv(tb, g)$estimate
-  time <- rep(g, each = 2L); surv <- as.vector(rbind(s1, s2))
-  ok <- is.finite(surv)
-  data.frame(time = time[ok], surv = surv[ok])
+  J <- length(tb$lo); mx <- 2L * (2L * J + 1L)
+  r <- .C("SX_tb_steps", as.integer(J), as.double(tb$lo), as.double(tb$hi), as.double(tb$p), time = double(mx), surv = double(mx),
+          m = integer(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "Turnbull curve")
+  k <- seq_len(r$m)
+  data.frame(time = r$time[k], surv = r$surv[k])
 }
 
 # weighted logrank test, Finkelstein (1986) scores, permutation central limit variance (Fay & Shaw 2010)
 .tb_test <- function(L, R, g, max_iter, tol) {
-  tb <- .tb_fit(L, R, NULL, max_iter, tol)
-  cs <- c(rev(cumsum(rev(tb$p))), 0)            # cs[j] = sum_{l >= j} p_l
-  SL <- cs[tb$a]; SR <- cs[tb$b + 1L]
-  xlx <- function(s) ifelse(s > 0, s * log(s), 0)
-  sc <- (xlx(SL) - xlx(SR)) / (SL - SR)
-  N <- length(sc); ng <- as.vector(table(g))
-  U <- as.vector(tapply(sc, g, sum)) - ng * mean(sc)
-  vc <- sum((sc - mean(sc))^2) / (N - 1)
-  V <- vc * (diag(ng, length(ng)) - outer(ng, ng) / N)
-  G <- length(ng)
-  stat <- if (G == 2L) U[1L]^2 / V[1L, 1L] else drop(crossprod(U[-G], solve(V[-G, -G, drop = FALSE], U[-G])))
-  list(statistic = stat, df = G - 1L, p.value = stats::pchisq(stat, G - 1L, lower.tail = FALSE),
-       table = data.frame(group = levels(g), n = ng, score = U, sd = sqrt(diag(V))))
+  G <- nlevels(g)
+  r <- .C("SX_tb_test", length(L), as.double(L), as.double(R), as.integer(g) - 1L, as.integer(G), as.integer(max_iter),
+          as.double(tol), stat = double(1), df = integer(1), p = double(1), size = double(G), U = double(G), sd = double(G),
+          rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "Turnbull test")
+  list(statistic = r$stat, df = r$df, p.value = r$p,
+       table = data.frame(group = levels(g), n = as.integer(r$size), score = r$U, sd = r$sd))
 }
 
 .ic_count_line <- function(type) {
@@ -236,28 +217,17 @@ turnbull <- function(formula, data, times = NULL, B = 200L, level = 0.95, test =
 
 .tb_table <- function(x, times) {
   out <- NULL
-  a <- (1 - x@level) / 2
   for (lv in x@groups) {
     f <- x@fits[[lv]]
     s <- .tb_surv(f, times)
     lo <- hi <- rep(NA_real_, length(times))
     if (!is.null(x@boot)) {
       bm <- x@boot[[lv]]
-      for (m in seq_along(times)) {
-        j <- which.min(abs(x@times - times[m]))
-        if (abs(x@times[j] - times[m]) < 1e-8 * max(1, times[m])) v <- bm[, j]
-        else {
-          # between two grid times: the bootstrap curves interpolated linearly
-          j1 <- max(which(x@times < times[m]), 1L); j2 <- min(which(x@times > times[m]), length(x@times))
-          if (j1 == j2 || !is.finite(times[m]) || times[m] > max(x@times)) next
-          f <- (times[m] - x@times[j1]) / (x@times[j2] - x@times[j1])
-          v <- (1 - f) * bm[, j1] + f * bm[, j2]
-        }
-        v <- v[is.finite(v)]
-        if (length(v) >= 10L) {
-          q <- stats::quantile(v, c(a, 1 - a), names = FALSE); lo[m] <- q[1L]; hi[m] <- q[2L]
-        }
-      }
+      r <- .C("SX_grid_boot_limits", length(x@times), as.double(x@times), nrow(bm), .rm(bm), length(times), as.double(times),
+              as.double(x@level), 10L, lower = double(length(times)), upper = double(length(times)), rc = integer(1),
+              NAOK = TRUE, PACKAGE = "SurvX")
+      .sx_rc(r$rc, "Turnbull bootstrap limits")
+      lo <- ifelse(is.nan(r$lower), NA_real_, r$lower); hi <- ifelse(is.nan(r$upper), NA_real_, r$upper)
     }
     out <- rbind(out, data.frame(group = lv, time = times, survival = s$estimate, lower = lo, upper = hi,
                                  bound_low = s$lower, bound_high = s$upper, stringsAsFactors = FALSE))
@@ -267,26 +237,23 @@ turnbull <- function(formula, data, times = NULL, B = 200L, level = 0.95, test =
 
 # time at which a curve given on a grid first drops to p (linear interpolation)
 .tb_quant <- function(time, surv, p = 0.5) {
-  ok <- is.finite(surv)
-  time <- time[ok]; surv <- surv[ok]
-  i <- which(surv <= p)
-  if (!length(i)) return(NA_real_)
-  i <- i[1L]
-  if (i == 1L) return(time[1L])
-  if (surv[i - 1L] == surv[i]) return(time[i])
-  time[i - 1L] + (surv[i - 1L] - p) / (surv[i - 1L] - surv[i]) * (time[i] - time[i - 1L])
+  r <- .C("SX_tb_quantile", length(time), as.double(time), as.double(surv), as.double(p), out = double(1), rc = integer(1),
+          NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "Turnbull quantile")
+  if (is.nan(r$out)) NA_real_ else r$out
 }
 
 .tb_medians <- function(x) {
-  a <- (1 - x@level) / 2
   do.call(rbind, lapply(x@groups, function(lv) {
     st <- .tb_steps(x@fits[[lv]])
     md <- .tb_quant(st$time, st$surv)
     ci <- c(NA_real_, NA_real_)
     if (!is.null(x@boot)) {
-      bm <- apply(x@boot[[lv]], 1L, function(s) .tb_quant(x@times, s))
-      bm <- bm[is.finite(bm)]
-      if (length(bm) >= 0.5 * x@B && length(bm) >= 10L) ci <- stats::quantile(bm, c(a, 1 - a), names = FALSE)
+      bm <- x@boot[[lv]]
+      r <- .C("SX_tb_median_limits", length(x@times), as.double(x@times), nrow(bm), .rm(bm), as.double(x@level),
+              lower = double(1), upper = double(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+      .sx_rc(r$rc, "Turnbull median")
+      ci <- ifelse(is.nan(c(r$lower, r$upper)), NA_real_, c(r$lower, r$upper))
     }
     data.frame(group = lv, median = md, lower = ci[1L], upper = ci[2L], stringsAsFactors = FALSE)
   }))
@@ -306,7 +273,7 @@ turnbull <- function(formula, data, times = NULL, B = 200L, level = 0.95, test =
   shown <- data.frame(time = .num(tab$time, 3L), survival = .num(tab$survival, 3L), stringsAsFactors = FALSE)
   if (grp) shown <- cbind(group = tab$group, shown, stringsAsFactors = FALSE)
   if (!is.null(ci_lab)) shown[[ci_lab]] <- ifelse(is.finite(tab$lower), .ci_text(tab$lower, tab$upper, 3L), "-")
-  shown[["identified range"]] <- ifelse(abs(tab$bound_high - tab$bound_low) < 1e-10, "exact",
+  shown[["identified range"]] <- ifelse(.sx_ew("absdiff", tab$bound_high, tab$bound_low) < 1e-10, "exact",
                                         .ci_text(tab$bound_low, tab$bound_high, 3L))
   out <- c(out, "Survival probability", .table_lines(shown), "")
   md <- .tb_medians(x)
@@ -361,11 +328,14 @@ S7::method(predict, TurnbullFit) <- function(object, times, ...) {
   if (!is.null(x@boot) && !all(times %in% x@times)) {
     # bootstrap curves at the new times, interpolated linearly on the stored grid
     g <- sort(unique(c(x@times, times)))
-    nb <- lapply(x@boot, function(bm) t(apply(bm, 1L, function(s) {
-      ok <- is.finite(s)
-      if (sum(ok) < 2L) return(rep(NA_real_, length(g)))
-      stats::approx(x@times[ok], s[ok], g, rule = 1)$y
-    })))
+    nb <- lapply(x@boot, function(bm) {
+      r <- .C("SX_approx_rows", nrow(bm), length(x@times), as.double(x@times), .rm(bm), length(g), as.double(g),
+              out = double(nrow(bm) * length(g)), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+      .sx_rc(r$rc, "interpolation")
+      out <- .matrix_rm(r$out, nrow(bm), length(g))
+      out[is.nan(out)] <- NA_real_
+      out
+    })
     x@boot <- nb
     x@times <- g
   }
@@ -399,8 +369,10 @@ S7::method(plot, TurnbullFit) <- function(x, conf.int = !is.null(x@boot), col = 
     a <- (1 - x@level) / 2
     for (k in seq_len(G)) {
       bm <- x@boot[[k]]
-      q <- apply(bm, 2L, function(v) { v <- v[is.finite(v)]; if (length(v) < 10L) c(NA, NA) else stats::quantile(v, c(a, 1 - a), names = FALSE) })
-      .band(x@times, q[1L, ], q[2L, ], col[k])
+      r <- .C("SX_column_limits", nrow(bm), ncol(bm), .rm(bm), as.double(x@level), 10L, lower = double(ncol(bm)),
+              upper = double(ncol(bm)), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+      .sx_rc(r$rc, "bootstrap band")
+      .band(x@times, ifelse(is.nan(r$lower), NA_real_, r$lower), ifelse(is.nan(r$upper), NA_real_, r$upper), col[k])
     }
   }
   for (k in seq_len(G)) graphics::lines(st[[k]]$time, st[[k]]$surv, col = col[k], lwd = lwd, lty = lty[k])

@@ -18,7 +18,12 @@
 # value at `times` of a right-continuous step function with jumps at x (increasing) to values y
 .step_at <- function(x, y, times, left = 0) {
   if (!length(x)) return(rep(left, length(times)))
-  c(left, y)[findInterval(times, x) + 1L]
+  r <- .C("SX_step_at", length(x), as.double(x), as.double(y), length(times), as.double(times), as.double(left),
+          out = double(length(times)), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "step function")
+  out <- r$out
+  out[is.nan(out)] <- NA_real_
+  out
 }
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
@@ -189,16 +194,6 @@
 }
 
 
-# confidence limits of a cumulative incidence F with standard error se on the complementary log-log scale:
-# F^exp(-/+ z se / (F log F)); NA where F is 0 or 1
-.cif_interval <- function(Fv, se, zq) {
-  ok <- is.finite(Fv) & is.finite(se) & Fv > 0 & Fv < 1
-  e <- suppressWarnings(zq * se / (Fv * log(Fv)))
-  lower <- suppressWarnings(Fv^exp(-e)); upper <- suppressWarnings(Fv^exp(e))
-  lower[!ok] <- NA_real_; upper[!ok] <- NA_real_
-  list(lower = lower, upper = upper)
-}
-
 # methods that need the covariates at a single time point do not apply to models with tt() terms
 .no_tt <- function(object, what) {
   if (S7::S7_inherits(object, CoxFit) && !is.null(object@tt))
@@ -207,9 +202,22 @@
   invisible(TRUE)
 }
 
-# evaluate expr with the given seed and restore the state of the random number generator afterwards,
-# so that calling a SurvX function never changes the random numbers the user draws next
+# ---- random numbers -----------------------------------------------------------------------------
+# Every random draw of SurvX (bootstrap resamples, permutations, folds) is made by R's generator:
+# the C++ core receives its indices from R_unif_index, as sample.int() does, so RNGkind() and
+# set.seed() govern them. seed = NULL takes the seed from the session's random numbers (one draw,
+# so set.seed() before the call reproduces it); a number gives the same draws on every call and
+# leaves the session's random numbers as they were.
+.resolve_seed <- function(seed) {
+  if (is.null(seed)) return(sample.int(.Machine$integer.max, 1L))
+  if (length(seed) != 1L || !is.numeric(seed) || !is.finite(seed) || seed != round(seed) || abs(seed) > .Machine$integer.max)
+    stop("seed must be NULL or a whole number", call. = FALSE)
+  as.integer(seed)
+}
+
+# evaluate expr after set.seed(seed) and put the state of the session's generator back afterwards
 .with_seed <- function(seed, expr) {
+  if (is.null(seed)) return(expr)
   had <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
   if (had) old <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
   on.exit(if (had) assign(".Random.seed", old, envir = globalenv()) else
@@ -218,10 +226,5 @@
   expr
 }
 
-.rng_save <- function() {
-  if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) get(".Random.seed", envir = globalenv(), inherits = FALSE) else NULL
-}
-.rng_restore <- function(state) {
-  if (is.null(state)) { if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) rm(".Random.seed", envir = globalenv()) }
-  else assign(".Random.seed", state, envir = globalenv())
-}
+# the same object with every value 0 (covariates switched off for unadjusted curves)
+.zero_like <- function(x) { x[] <- 0; x }

@@ -144,17 +144,11 @@ print.SurvXEvent <- function(x, ...) {
 .timefix <- function(y, tol = sqrt(.Machine$double.eps)) {
   m <- unclass(y)
   cols <- intersect(c("time", "entry"), colnames(m))
-  v <- m[, cols]
-  u <- sort(unique(v[is.finite(v)]))
-  if (length(u) < 2L) return(y)
-  du <- diff(u)
-  tied <- du <= tol | du / mean(abs(u)) <= tol
-  if (!any(tied)) return(y)
-  cuts <- u[c(TRUE, !tied)]
-  for (cn in cols) {
-    ok <- is.finite(m[, cn])
-    m[ok, cn] <- cuts[findInterval(m[ok, cn], cuts)]
-  }
+  v <- as.double(m[, cols])
+  r <- .C("SX_timefix", length(v), v = v, as.double(tol), changed = integer(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "time values")
+  if (!r$changed) return(y)
+  m[, cols] <- r$v
   if ("entry" %in% cols) {
     ok <- is.finite(m[, "entry"]) & is.finite(m[, "time"])
     if (any(m[ok, "entry"] >= m[ok, "time"]))
@@ -299,7 +293,7 @@ as.character.SurvXInterval <- function(x, ...) format(x)
 .ic_type <- function(L, R) ifelse(!is.finite(R), 0L, ifelse(L == R, 1L, ifelse(L == 0, 3L, 2L)))
 
 # a single time per subject for starting values and knots: the midpoint of the interval
-.ic_mid <- function(L, R) ifelse(!is.finite(R), L, ifelse(L == 0, R / 2, (L + R) / 2))
+.ic_mid <- function(L, R) .sx_ew("ic_mid", as.double(L), as.double(R))
 
 .is_ic <- function(fit) {
   v <- tryCatch(S7::prop(fit, "interval"), error = function(e) NULL)

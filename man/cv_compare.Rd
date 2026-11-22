@@ -19,11 +19,13 @@ cv_compare(formula, data, models, times, cause = 1L, folds = 5L, seed = 1L,
 \item{models}{a named list of functions \code{function(formula, data)} that return a fitted model
   with a \code{predict(fit, newdata, times, cause)} method giving the cumulative incidence of
   the cause. Wrap any model, with its own options, in such
-  a function.}
+  a function. Fits of \code{cox()}, \code{parsurv()} and \code{cure()} for one event type are scored
+  by \code{1 - predict(fit, newdata, times, type = "survival")}. With \code{+ frailty(id)} in
+  \code{formula}, the folds keep every cluster whole and frailty models predict for a new cluster.}
 \item{times}{time horizons.}
 \item{cause}{cause of interest.}
 \item{folds}{number of folds (less than 2: apparent performance only).}
-\item{seed}{seed of the fold assignment (the state of the random number generator is restored).}
+\item{seed}{seed of the fold assignment: a whole number, or \code{NULL} to take the seed from the random numbers of the session (so that \code{set.seed()} before the call governs the result). All random draws come from R's generator (see \code{RNGkind()}); with a number the state of the session's generator is left as it was.}
 \item{groups}{number of risk groups for the calibration error.}
 }
 \section{Interpreting the result}{

@@ -1,52 +1,6 @@
 # Residuals, the test of proportional hazards and plots for choosing a distribution.
 
-# risk-set sums of a Cox model (Breslow): for every event row, the weighted mean x-bar(t) and covariance
-# V(t) of the covariates over the subjects still at risk
-.cox_risksets <- function(time, status, X, beta, w = NULL, entry = NULL, strata = NULL) {
-  if (!is.null(entry) || !is.null(strata)) return(.cox_risksets_general(time, status, X, beta, w, entry, strata))
-  n <- length(time); p <- ncol(X)
-  if (is.null(w)) w <- rep(1, n)
-  r <- w * exp(drop(X %*% beta))
-  o <- order(time)
-  ts <- time[o]
-  rc <- function(v) rev(cumsum(rev(v)))                 # sum over j >= i in time order
-  S0 <- rc(r[o])
-  S1 <- apply(X[o, , drop = FALSE] * r[o], 2L, rc)
-  if (!is.matrix(S1)) S1 <- matrix(S1, ncol = p)
-  ev <- which(status == 1L)
-  ev <- ev[order(time[ev])]
-  first <- match(time[ev], ts)                           # first position of each event time: everybody with time >= t
-  s0 <- S0[first]; xbar <- S1[first, , drop = FALSE] / s0
-  # second moments
-  S2 <- array(0, c(length(ev), p, p))
-  for (a in seq_len(p)) for (b in seq_len(a)) {
-    v <- rc(X[o, a] * X[o, b] * r[o])[first] / s0 - xbar[, a] * xbar[, b]
-    S2[, a, b] <- v; S2[, b, a] <- v
-  }
-  list(rows = ev, time = time[ev], xbar = xbar, V = S2, w = w[ev])
-}
 
-# the same with (entry, time] intervals and strata: risk set of an event at t in stratum s is
-# {j in s: entry_j < t <= time_j}; O(n x events), used only when entry or strata are present
-.cox_risksets_general <- function(time, status, X, beta, w, entry, strata) {
-  n <- length(time); p <- ncol(X)
-  if (is.null(w)) w <- rep(1, n)
-  if (is.null(entry)) entry <- rep(-Inf, n)
-  if (is.null(strata)) strata <- integer(n)
-  r <- w * exp(drop(X %*% beta) - max(drop(X %*% beta)))
-  ev <- which(status == 1L)
-  ev <- ev[order(strata[ev], time[ev])]
-  xbar <- matrix(0, length(ev), p); V <- array(0, c(length(ev), p, p))
-  for (q in seq_along(ev)) {
-    k <- ev[q]; t <- time[k]
-    at <- which(strata == strata[k] & entry < t & time >= t)
-    ra <- r[at]; Xa <- X[at, , drop = FALSE]; s0 <- sum(ra)
-    m <- colSums(Xa * ra) / s0
-    xbar[q, ] <- m
-    V[q, , ] <- crossprod(Xa * sqrt(ra)) / s0 - tcrossprod(m)
-  }
-  list(rows = ev, time = time[ev], xbar = xbar, V = V, w = w[ev])
-}
 
 # martingale residuals and Schoenfeld means from the C++ core (Efron or Breslow form, as survival)
 .cox_resid_c <- function(time, status, X, w, ties, beta, entry, strata) {
@@ -61,9 +15,8 @@
 .resid_cox_core <- function(time, status, X, beta, vcov, ties, type, w = NULL, baseline = NULL, entry = NULL, strata = NULL) {
   rc <- .cox_resid_c(time, status, X, w, ties, beta, entry, strata)
   if (type %in% c("martingale", "deviance", "coxsnell")) {
-    m <- rc$mart
-    return(switch(type, martingale = m, coxsnell = status - m,
-                  deviance = sign(m) * sqrt(-2 * (m + ifelse(status == 1L, log(pmax(status - m, 1e-300)), 0)))))
+    if (type == "martingale") return(rc$mart)
+    return(.sx_hazard_resid(rc$mart, status, paste0(type, "_from_m")))
   }
   ev <- which(status == 1L)
   ev <- ev[if (is.null(strata)) order(time[ev]) else order(strata[ev], time[ev])]
@@ -71,21 +24,25 @@
   dimnames(sch) <- list(format(time[ev], trim = TRUE), colnames(X))
   if (type == "schoenfeld") return(structure(sch, time = time[ev]))
   nd <- length(ev)
-  sc <- sch %*% vcov * nd + matrix(beta, nd, length(beta), byrow = TRUE)
-  dimnames(sc) <- dimnames(sch)
+  p <- ncol(sch)
+  r <- .C("SX_scaled_schoenfeld", as.integer(nd), as.integer(p), .rm(sch), .rm(vcov), as.double(beta), out = double(nd * p),
+          rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "scaled Schoenfeld residuals")
+  sc <- .matrix_rm(r$out, nd, p, dimnames(sch))
   structure(sc, time = time[ev])
 }
 
 .par_resid <- function(m, type) {
   .no_ic(m, "residuals()", "compare the fit with the Turnbull estimate: hazard_plot(fit, type = \"survival\")")
-  Xn <- m@X; n <- m@n
-  Ht <- vapply(seq_len(n), function(i) .par_predict_X(m, Xn[i, , drop = FALSE], m@time[i], "cumhaz", FALSE, 0.95)[1L, 1L], numeric(1))
-  if (!is.null(m@entry)) Ht <- Ht - vapply(seq_len(n), function(i)
-    if (m@entry[i] > 0) .par_predict_X(m, Xn[i, , drop = FALSE], m@entry[i], "cumhaz", FALSE, 0.95)[1L, 1L] else 0, numeric(1))
-  mres <- m@status - Ht
-  switch(type, coxsnell = Ht, martingale = mres,
-         deviance = sign(mres) * sqrt(-2 * (mres + ifelse(m@status == 1L, log(pmax(m@status - mres, 1e-300)), 0))),
-         stop("parametric models have martingale, deviance and Cox-Snell residuals", call. = FALSE))
+  code <- match(type, c("coxsnell", "martingale", "deviance")) - 1L
+  if (is.na(code)) stop("parametric models have martingale, deviance and Cox-Snell residuals", call. = FALSE)
+  kn <- m@knots; he <- !is.null(m@entry)
+  r <- .C("SX_par_residuals", m@dist_code, m@aft, as.integer(length(kn)), if (length(kn)) as.double(kn) else double(1),
+          as.integer(ncol(m@X)), as.double(m@coefficients), as.integer(m@n), .rm(m@X), as.double(m@time), as.integer(he),
+          if (he) as.double(m@entry) else double(1), as.integer(m@status), code, out = double(m@n), rc = integer(1),
+          NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "residuals")
+  r$out
 }
 
 #' Residuals of hazard models
@@ -211,44 +168,34 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
   out
 }
 
-# ----------------------------------------------------------------------------------------------
-# test of proportional hazards
-# ----------------------------------------------------------------------------------------------
-.time_transform <- function(time, status, t_event, transform, entry = NULL, rows = NULL) {
-  switch(transform,
-         identity = t_event,
-         log = log(t_event),
-         # rank of the event time among all observed (stop) times, censored included, as in
-         # survival::cox.zph (version 3.0 and later)
-         rank = if (is.null(rows)) rank(t_event) else rank(time)[rows],
-         km = {                                                # 1 - Kaplan-Meier just before each event time
-           inc <- .na_increments(time, status, 1L, entry)
-           S <- cumprod(1 - inc$d / inc$Y)
-           1 - c(1, S)[match(t_event, inc$time)]
-         })
+
+# score test of proportional hazards and scaled Schoenfeld residuals (C++ core, survcore/phtest.hpp)
+.ph_codes <- c(identity = 0L, log = 1L, rank = 2L, km = 3L, km_weighted = 4L)
+
+.ph_core <- function(time, status, X, beta, vcov, transform, w = NULL, entry = NULL, strata = NULL, term_of = NULL) {
+  n <- length(time); p <- ncol(X)
+  term_of <- term_of %||% seq_len(p)
+  tf <- factor(term_of, levels = unique(term_of)); nterm <- nlevels(tf)
+  r <- .C("SX_ph_test", as.integer(n), as.integer(p), as.double(time), as.integer(status), .rm(X), as.double(beta), .rm(vcov),
+          as.integer(!is.null(w)), if (is.null(w)) double(1) else as.double(w), as.integer(!is.null(entry)),
+          if (is.null(entry)) double(1) else as.double(entry), as.integer(!is.null(strata)),
+          if (is.null(strata)) integer(1) else as.integer(strata), .ph_codes[[transform]], as.integer(tf) - 1L, as.integer(nterm),
+          chi_col = double(p), p_col = double(p), chi_term = double(nterm), df_term = double(nterm), p_term = double(nterm),
+          chi_glob = double(1), p_glob = double(1), nd = integer(1), rows = integer(n), ev_time = double(n), g = double(n),
+          scaled = double(n * p), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  if (r$rc == -4L) stop("the test of proportional hazards cannot be computed (singular information or no events)", call. = FALSE)
+  .sx_rc(r$rc, "test of proportional hazards")
+  k <- seq_len(r$nd)
+  scaled <- .matrix_rm(r$scaled[seq_len(r$nd * p)], r$nd, p, list(NULL, colnames(X)))
+  list(r = r, k = k, scaled = scaled, terms = levels(tf))
 }
 
 .zph_core <- function(time, status, X, beta, vcov, transform, w = NULL, entry = NULL, strata = NULL) {
-  rs <- .cox_risksets(time, status, X, beta, w, entry, strata)
-  sch <- X[rs$rows, , drop = FALSE] - rs$xbar
-  g <- .time_transform(time, status, rs$time, transform, entry, rs$rows)
-  g <- g - mean(g)
-  p <- ncol(X); nd <- length(rs$rows)
-  U <- colSums(sch * g)
-  Ibb <- apply(rs$V, c(2L, 3L), sum)
-  Ibg <- apply(rs$V * g, c(2L, 3L), sum)
-  Igg <- apply(rs$V * g^2, c(2L, 3L), sum)
-  Ibb_inv <- solve(Ibb)
-  A <- Igg - t(Ibg) %*% Ibb_inv %*% Ibg                 # efficient information for the time-varying terms
-  chi <- vapply(seq_len(p), function(k) U[k]^2 / A[k, k], numeric(1))
-  glob <- drop(t(U) %*% solve(A, U))
-  tab <- data.frame(chisq = c(chi, glob), df = c(rep(1L, p), p),
-                    p = stats::pchisq(c(chi, glob), c(rep(1L, p), p), lower.tail = FALSE),
+  z <- .ph_core(time, status, X, beta, vcov, transform, w, entry, strata)
+  r <- z$r; p <- ncol(X)
+  tab <- data.frame(chisq = c(r$chi_col, r$chi_glob), df = c(rep(1L, p), p), p = c(r$p_col, r$p_glob),
                     row.names = c(colnames(X), "GLOBAL"))
-  scaled <- sch %*% vcov * nd + matrix(beta, nd, p, byrow = TRUE)
-  colnames(scaled) <- colnames(X)
-  list(table = tab, x = g + mean(.time_transform(time, status, rs$time, transform, entry, rs$rows)), y = scaled, time = rs$time,
-       transform = transform, beta = beta, vcov = vcov)
+  list(table = tab, x = r$g[z$k], y = z$scaled, time = r$ev_time[z$k], transform = transform, beta = beta, vcov = vcov)
 }
 
 #' Test and plot of the proportional hazards assumption
@@ -347,6 +294,9 @@ S7::method(residuals, ParCSCFit) <- function(object, type = c("martingale", "dev
 #' @export
 ph_test <- function(fit, transform = c("km", "rank", "identity", "log")) {
   transform <- match.arg(transform)
+  if (S7::S7_inherits(fit, FrailtyFit))
+    stop("ph_test() is not available for models with frailty() (there is no standard test of proportional hazards ",
+         "given a frailty); check the model without frailty() instead", call. = FALSE)
   if (S7::S7_inherits(fit, CoxFit)) {
     .no_tt(fit, "ph_test()")
     r <- .zph_core(fit@time, fit@status, fit@X, fit@coefficients, fit@vcov_model %||% fit@vcov, transform, fit@weights,
@@ -397,6 +347,17 @@ S7::method(print, PHTest) <- function(x, ...) {
   invisible(x)
 }
 
+# natural spline smoother y ~ ns(x, df) with pointwise limits on a grid of 101 points (C++ core, as
+# stats::lm(y ~ splines::ns(x, df))); NULL when the fit is not possible
+.ns_smooth <- function(x, y, df, level, ng = 101L) {
+  grid <- .sx_seq(min(x), max(x), ng)
+  r <- .C("SX_ns_smooth", length(x), as.double(x), as.double(y), as.integer(df), as.integer(ng), as.double(grid), as.double(.zq(level)),
+          fit = double(ng), lower = double(ng), upper = double(ng), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+  if (r$rc == -4L) return(NULL)
+  .sx_rc(r$rc, "smoother")
+  list(x = grid, fit = r$fit, lower = r$lower, upper = r$upper)
+}
+
 S7::method(plot, PHTest) <- function(x, var = NULL, cause = 1L, df = 4L, level = 0.95, col = "#0072B2", xlab = NULL, ylab = NULL,
                          main = NULL, cex = 0.85, ...) {
   r <- x@tests[[min(cause, length(x@tests))]]
@@ -412,12 +373,11 @@ S7::method(plot, PHTest) <- function(x, var = NULL, cause = 1L, df = 4L, level =
     # natural spline regression of the scaled residuals on g(t), with pointwise limits
     k <- min(as.integer(df), length(unique(xx[ok])) - 1L)
     if (k >= 1L) {
-      fit <- stats::lm(y ~ splines::ns(x, df = k), data = data.frame(x = xx[ok], y = y[ok]))
-      grid <- seq(min(xx[ok]), max(xx[ok]), length.out = 101L)
-      pr <- stats::predict(fit, newdata = data.frame(x = grid), se.fit = TRUE)
-      zq <- .zq(level)
-      .band(grid, pr$fit - zq * pr$se.fit, pr$fit + zq * pr$se.fit, col)
-      graphics::lines(grid, pr$fit, col = col, lwd = 2)
+      sm <- .ns_smooth(xx[ok], y[ok], k, level)
+      if (!is.null(sm)) {
+        .band(sm$x, sm$lower, sm$upper, col)
+        graphics::lines(sm$x, sm$fit, col = col, lwd = 2)
+      }
     }
     graphics::abline(h = r$beta[[v]], lty = 2, col = "grey40")
   }
@@ -492,15 +452,14 @@ dist_plot <- function(x, data = NULL, cause = 1L, col = NULL, cex = 0.85, ...) {
     sel <- f$group == g
     inc <- .na_increments(f$time[sel], f$status[sel], cause, if (is.null(f$entry)) NULL else f$entry[sel])
     if (is.null(inc)) return(NULL)
-    H <- cumsum(inc$d / inc$Y)
-    data.frame(group = g, time = inc$time, H = H, S = exp(-H))
+    data.frame(group = g, time = inc$time, H = .sx_np_curve_inc(inc$d, inc$Y, "na"), S = .sx_np_curve_inc(inc$d, inc$Y, "na_surv"))
   })
   names(cur) <- groups
   panels <- list(
     exponential = list(x = function(d) d$time, y = function(d) d$H, xl = "Time", yl = "Cumulative hazard H(t)"),
-    Weibull = list(x = function(d) log(d$time), y = function(d) log(d$H), xl = "log time", yl = "log H(t)"),
-    "log-normal" = list(x = function(d) log(d$time), y = function(d) stats::qnorm(1 - d$S), xl = "log time", yl = "probit(1 - S(t))"),
-    "log-logistic" = list(x = function(d) log(d$time), y = function(d) log((1 - d$S) / d$S), xl = "log time", yl = "logit(1 - S(t))"))
+    Weibull = list(x = function(d) .sx_ew("log", d$time), y = function(d) .sx_ew("log", d$H), xl = "log time", yl = "log H(t)"),
+    "log-normal" = list(x = function(d) .sx_ew("log", d$time), y = function(d) .sx_ew("qnorm_comp", d$S), xl = "log time", yl = "probit(1 - S(t))"),
+    "log-logistic" = list(x = function(d) .sx_ew("log", d$time), y = function(d) .sx_ew("logit_comp", d$S), xl = "log time", yl = "logit(1 - S(t))"))
   op <- graphics::par(mfrow = c(2L, 2L), cex = cex, mar = c(4.5, 4.5, 3, 1)); on.exit(graphics::par(op))
   for (nm in names(panels)) {
     pn <- panels[[nm]]
@@ -525,7 +484,7 @@ dist_plot <- function(x, data = NULL, cause = 1L, col = NULL, cex = 0.85, ...) {
     r <- residuals(x, type = "coxsnell"); st <- x@status
   } else stop("dist_plot() takes a formula or a model fitted by parsurv(), cox() or csc()", call. = FALSE)
   inc <- .na_increments(r, st, 1L)
-  H <- cumsum(inc$d / inc$Y)
+  H <- .sx_np_curve_inc(inc$d, inc$Y, "na")
   col <- if (is.null(col)) .okabe_ito[1L] else col[1L]
   op <- graphics::par(cex = cex, mar = c(4.5, 4.5, 3, 1)); on.exit(graphics::par(op))
   lim <- c(0, max(c(inc$time, H)))

@@ -106,3 +106,55 @@ test_that("frailty predictions, cluster estimates and messages", {
   expect_error(cox(Event(time, status) ~ x + frailty(id), data = d, weights = rep(1, nrow(d))), "weights")
   expect_error(cox(Event(time, status) ~ x + frailty(id) + cluster(id), data = d), "cannot be combined")
 })
+
+test_that("adjusted_risk() standardises a frailty model with the frailty integrated out", {
+  d <- fr_data(C = 60, m = 4)
+  for (fit in list(cox(Event(time, status) ~ x + trt + frailty(id), data = d),
+                   parsurv(Event(time, status) ~ x + trt + frailty(id), data = d))) {
+    ar <- adjusted_risk(fit, d, "trt", times = c(3, 6), B = 0)
+    # g-formula by hand: the mean marginal risk with everybody given each treatment value
+    by_hand <- vapply(0:1, function(a) {
+      nd <- d; nd$trt <- a
+      colMeans(1 - predict(fit, nd, times = c(3, 6), type = "survival", frailty = "marginal"))
+    }, numeric(2))
+    r <- ar@risk[ar@risk$method == "gformula", ]
+    expect_equal(r$risk[order(r$level, r$time)], as.numeric(by_hand), tolerance = 1e-10)
+    expect_output(print(ar), "shared frailty")
+  }
+  arb <- adjusted_risk(cox(Event(time, status) ~ x + trt + frailty(id), data = d), d, "trt", times = 4, B = 20, seed = 3)
+  expect_gte(arb@ok, 15L)
+  expect_true(all(is.finite(arb@risk$lower)))
+})
+
+test_that("model_scan() and cv_compare() take frailty(id): whole clusters in every fold", {
+  d <- fr_data(C = 60, m = 4)
+  fold <- SurvX:::.scan_folds_cluster(d$id, 5L, 1L)
+  expect_true(all(tapply(fold, d$id, function(v) length(unique(v))) == 1L))     # no cluster is split
+  expect_equal(SurvX:::.drop_frailty(Event(time, status) ~ x + frailty(id) + trt), Event(time, status) ~ x + trt,
+               ignore_attr = TRUE)
+  ms <- model_scan(Event(time, status) ~ x + trt + frailty(id), d, depth = "quick", folds = 3)
+  nm <- ms@table$model
+  expect_true(all(c("Cox + frailty", "Cox, clusters ignored", "parametric Weibull (PH) + frailty") %in% nm))
+  expect_true(all(ms@table$fitted[nm %in% c("Cox + frailty", "parametric Weibull (PH) + frailty")]))
+  expect_true(is.finite(ms@table$ibs_cv[nm == "parametric Weibull (PH) + frailty"]))
+  expect_output(print(ms), "folds of whole clusters")
+  expect_error(model_scan(Event(time, status) ~ x + frailty(id), transform(d, status = status * (1 + (x > 1)))),
+               "one event type")
+  cv <- cv_compare(Event(time, status) ~ x + trt + frailty(id), d, times = c(3, 6), folds = 3, models = list(
+    frailty = function(f, d) cox(f, d),
+    ignored = function(f, d) cox(Event(time, status) ~ x + trt, d)))
+  expect_true(all(is.finite(cv@table$brier_cv)))
+  expect_error(compare_models(Event(time, status) ~ x + frailty(id), d, times = 3), "model_scan\\(\\) or cv_compare\\(\\)")
+})
+
+test_that("functions that do not apply to frailty models say so, and as.data.frame() is uniform", {
+  d <- fr_data(C = 40, m = 4)
+  f <- cox(Event(time, status) ~ x + trt + frailty(id), data = d)
+  expect_error(ph_test(f), "not available for models with frailty")
+  expect_error(time_effects(f), "not available for models with frailty")
+  expect_error(residuals(f), "not available for models with frailty")
+  g <- cox(Event(time, status) ~ x + trt, data = d)
+  expect_identical(as.data.frame(g), estimates(g))
+  expect_identical(as.data.frame(f), estimates(f))
+  expect_equal(nrow(as.data.frame(f, what = "frailty")), 40L)
+})

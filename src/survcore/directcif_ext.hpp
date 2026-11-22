@@ -795,21 +795,101 @@ inline FitResult constrained_fit(const ConstrainedCIFModel& m, std::size_t n, co
 // (gamma_k, delta_k) for k = 3..K.
 // Likelihood: f_1(t) for cause 1 events; {1 - p_1} pi_k g_k(t) for cause k events;
 // S = 1 - F_1(t) - {1 - p_1} sum_k pi_k G_k(t) for censored observations.
+//
+// Covariates of the time distributions (optional, CondCovariates). G_k may depend on covariates
+// through an accelerated failure time model with, optionally, a regression for its shape:
+//   G_k(t | w, v) = G_k0(t e^{-u}; shape shifted by s),  u = eta_k' w,  s = zeta_k' v,
+// so that e^{eta} is a time ratio (> 1: events of type k come later). In the two parameters of
+// cond_Gg this is, exactly,
+//   Weibull, log-logistic (a = log lambda, b = log kappa):  a - u,  b + s
+//   log-normal            (a = mu,         b = log sigma):  a + u,  b + s
+//   modified logistic     (a = log rate,   b = centre c):   a - u + s,  b e^u
+// (for the logistic form s multiplies the rate with the centre fixed, i.e. it changes the
+// dimensionless steepness rate * c). Every G_k(. | w, v) is a distribution function, so the
+// incidences still add up to one for every subject. The proportion of the competing causes and
+// their shares are not affected by w and v; only the timing of the events is.
+// Parameters (appended, so that the layout without these covariates is unchanged): eta_k for
+// k = 2..K (the columns wcol[k-2] of W), then zeta_k for k = 2..K (the columns vcol[k-2] of V).
+// Derivatives: the local variables of G_k are (a_k, b_k, u, s), slots 0..3 of D2, so that
+// gradients and Hessians stay exact.
 // ---------------------------------------------------------------------------
+struct CondCovariates {
+  const double* W = nullptr;              // n x nw, row-major: covariates of the location (time ratio)
+  std::size_t nw = 0;
+  const double* V = nullptr;              // n x nv, row-major: covariates of the shape
+  std::size_t nv = 0;
+  std::vector<std::vector<std::size_t>> wcol, vcol;   // per competing cause k = 2..K (index k - 2): columns used
+  bool empty() const {
+    for (const auto& c : wcol) if (!c.empty()) return false;
+    for (const auto& c : vcol) if (!c.empty()) return false;
+    return true;
+  }
+};
+
 class ConstrainedKModel : public DirectCIFModel {
  public:
   // cause: 0 = censored, 1 = modelled directly, 2..K = competing causes; family[k-2] for G_k.
   ConstrainedKModel(std::size_t n, const double* time, const int* cause, const double* X, const DirectSpec& spec,
-                    int K, const std::vector<int>& family)
-      : DirectCIFModel(n, time, cause, X, spec), K_(K), fam_(family), P1_(spec.nparam()) {
-    PG_ = P1_ + 2 * static_cast<std::size_t>(K_ - 1);
+                    int K, const std::vector<int>& family, const CondCovariates& cov = CondCovariates())
+      : DirectCIFModel(n, time, cause, X, spec), K_(K), fam_(family), P1_(spec.nparam()), cov_(cov) {
+    const std::size_t Kc = static_cast<std::size_t>(K_ - 1);
+    PG_ = P1_ + 2 * Kc;
     PT_ = PG_ + static_cast<std::size_t>(K_ - 2) * (1 + spec.p);
+    cov_.wcol.resize(Kc);
+    cov_.vcol.resize(Kc);
+    has_cov_ = !cov_.empty();
+    epos_.assign(Kc, 0); zpos_.assign(Kc, 0);
+    std::size_t o = PT_;
+    for (std::size_t k = 0; k < Kc; ++k) { epos_[k] = o; o += cov_.wcol[k].size(); }
+    for (std::size_t k = 0; k < Kc; ++k) { zpos_[k] = o; o += cov_.vcol[k].size(); }
+    PA_ = o;
   }
-  std::size_t nparam() const { return PT_; }
+  std::size_t nparam() const { return PA_; }
+  std::size_t nparam_base() const { return PT_; }          // without the covariates of the G_k
+  bool has_cond_covariates() const { return has_cov_; }
+  const double* data_X() const { return X_; }
+  const CondCovariates& cond_covariates() const { return cov_; }
   int K() const { return K_; }
+  const std::vector<int>& families() const { return fam_; }
   std::size_t gpos(int k) const { return P1_ + 2 * static_cast<std::size_t>(k - 2); }               // a_k, b_k
   std::size_t lpos(int k) const { return PG_ + static_cast<std::size_t>(k - 3) * (1 + s_.p); }     // gamma_k, delta_k
+  std::size_t epos(int k) const { return epos_[static_cast<std::size_t>(k - 2)]; }                // eta_k
+  std::size_t zpos(int k) const { return zpos_[static_cast<std::size_t>(k - 2)]; }                // zeta_k
   bool feasible_in_range(const std::vector<double>&) const { return true; }
+
+  // G_k(t) (and log g_k(t) when logg is given) for the covariate rows w (length nw) and v (length
+  // nv) of one subject, as D2 in the local variables (a_k, b_k, u, s); terms (optional) receive
+  // the map from the local variables to the parameters. Without covariates for G_k this is
+  // exactly cond_Gg in (a_k, b_k).
+  void cond_local(const std::vector<double>& th, int k, double t, const double* w, const double* v, D2& G, D2* logg,
+                  std::vector<Term>* terms) const {
+    const std::size_t o = gpos(k), kk = static_cast<std::size_t>(k - 2);
+    const std::vector<std::size_t>& wc = cov_.wcol[kk];
+    const std::vector<std::size_t>& vc = cov_.vcol[kk];
+    D2 a = D2::variable(0, th[o]), b = D2::variable(1, th[o + 1]);
+    if (!wc.empty() || !vc.empty()) {
+      double uv = 0.0, sv = 0.0;
+      for (std::size_t j = 0; j < wc.size(); ++j) uv += th[epos_[kk] + j] * w[wc[j]];
+      for (std::size_t j = 0; j < vc.size(); ++j) sv += th[zpos_[kk] + j] * v[vc[j]];
+      const D2 u = D2::variable(2, uv), s = D2::variable(3, sv);
+      switch (fam_[kk]) {
+        case COND_LOGISTIC: a = a - u + s; b = b * exp(u); break;
+        case COND_LOGNORMAL: a = a + u; b = b + s; break;
+        default: a = a - u; b = b + s; break;
+      }
+    }
+    cond_Gg<D2>(fam_[kk], t, a, b, G, logg);
+    if (terms) {
+      terms->clear();
+      terms->push_back({o, 0, 1.0});
+      terms->push_back({o + 1, 1, 1.0});
+      for (std::size_t j = 0; j < wc.size(); ++j) terms->push_back({epos_[kk] + j, 2, w[wc[j]]});
+      for (std::size_t j = 0; j < vc.size(); ++j) terms->push_back({zpos_[kk] + j, 3, v[vc[j]]});
+    }
+  }
+  // covariate rows of subject i (null without covariates)
+  const double* wrow(std::size_t i) const { return cov_.W ? cov_.W + i * cov_.nw : nullptr; }
+  const double* vrow(std::size_t i) const { return cov_.V ? cov_.V + i * cov_.nv : nullptr; }
 
   // shares pi_k, k = 2..K (index k - 2)
   void shares(const std::vector<double>& th, const double* x, std::vector<double>& pi) const {
@@ -827,18 +907,23 @@ class ConstrainedKModel : public DirectCIFModel {
     for (double& v : pi) v /= sum;
   }
 
-  double cifk(const std::vector<double>& th, int k, const double* x, double t) const {
+  // CIF of cause k at time t for the covariate row x (and the rows w, v of the covariates of the
+  // G_k, needed only when the model has them).
+  double cifk(const std::vector<double>& th, int k, const double* x, double t, const double* w = nullptr,
+              const double* v = nullptr) const {
     if (t <= 0.0) return 0.0;
     if (k == 1) return cif(th, 0, x, t);
     const double q = 1.0 - cif(th, 0, x, std::numeric_limits<double>::infinity());
     std::vector<double> pi;
     shares(th, x, pi);
     double G = 1.0;
-    cond_Gg<double>(fam_[k - 2], t, th[gpos(k)], th[gpos(k) + 1], G, nullptr);
+    if (has_cov_) { D2 Gd; cond_local(th, k, t, w, v, Gd, nullptr, nullptr); G = Gd.v; }
+    else cond_Gg<double>(fam_[k - 2], t, th[gpos(k)], th[gpos(k) + 1], G, nullptr);
     return q * pi[k - 2] * G;
   }
-  double cifk_grad(const std::vector<double>& th, int k, const double* x, double t, std::vector<double>& grad) const {
-    grad.assign(PT_, 0.0);
+  double cifk_grad(const std::vector<double>& th, int k, const double* x, double t, std::vector<double>& grad,
+                   const double* w = nullptr, const double* v = nullptr) const {
+    grad.assign(PA_, 0.0);
     if (t <= 0.0) return 0.0;
     std::vector<double> g1;
     if (k == 1) {
@@ -851,12 +936,11 @@ class ConstrainedKModel : public DirectCIFModel {
     std::vector<double> pi;
     shares(th, x, pi);
     D2 G;
-    const std::size_t o = gpos(k);
-    cond_Gg<D2>(fam_[k - 2], t, D2::variable(0, th[o]), D2::variable(1, th[o + 1]), G, nullptr);
+    std::vector<Term> tg;
+    cond_local(th, k, t, w, v, G, nullptr, &tg);
     const double pk = pi[k - 2];
     for (std::size_t j = 0; j < P1_; ++j) grad[j] = -g1[j] * pk * G.v;
-    grad[o] = q * pk * G.g[0];
-    grad[o + 1] = q * pk * G.g[1];
+    for (const Term& e : tg) grad[e.idx] += q * pk * G.g[e.loc] * e.coef;
     for (int j = 3; j <= K_; ++j) {                          // d pi_k / d l_j = pi_k (1{k=j} - pi_j)
       const double dl = q * G.v * pk * ((k == j ? 1.0 : 0.0) - pi[j - 2]);
       const std::size_t oj = lpos(j);
@@ -867,7 +951,7 @@ class ConstrainedKModel : public DirectCIFModel {
   }
 
   void eval(const std::vector<double>& th, Eval& out, bool need_hess) const {
-    const std::size_t P = PT_, p = s_.p, Kc = static_cast<std::size_t>(K_ - 1);
+    const std::size_t P = PA_, p = s_.p, Kc = static_cast<std::size_t>(K_ - 1);
     const double inf = std::numeric_limits<double>::infinity();
     out.ll = 0.0;
     out.g.assign(P, 0.0);
@@ -875,12 +959,15 @@ class ConstrainedKModel : public DirectCIFModel {
     out.H.zero();
     std::vector<double> z, dz, gS(P), pi, HS(need_hess ? P * P : 0);
     std::vector<Term> t1;
+    std::vector<std::vector<Term>> tg(Kc);                   // local variables of G_k -> parameters
     D2 q[3], lf, Ft, Finf;
     std::vector<D2> G(Kc), logg(Kc);
     // d l_j / d theta: l_j = gamma_j + delta_j' x  (j = 3..K)
     auto lidx = [&](int j, std::size_t r) { return lpos(j) + r; };   // r = 0: gamma, r >= 1: delta_{r-1}
     for (std::size_t i = 0; i < n_; ++i) {
       const double* x = X_ + i * p;
+      const double* wi = wrow(i);
+      const double* vi = vrow(i);
       const double t = time_[i];
       const int c = cause_[i];
       const D2 al = D2::variable(3, alpha_of(th, 0)), et = D2::variable(4, eta_of(th, 0, x));
@@ -900,16 +987,12 @@ class ConstrainedKModel : public DirectCIFModel {
       shares(th, x, pi);
       if (c >= 2) {                                         // log(1 - p_1) + log pi_c + log g_c(t)
         const int k = c;
-        const std::size_t o = gpos(k);
-        cond_Gg<D2>(fam_[k - 2], t, D2::variable(0, th[o]), D2::variable(1, th[o + 1]), G[0], &logg[0]);
+        cond_local(th, k, t, wi, vi, G[0], &logg[0], &tg[0]);
         if (!std::isfinite(logg[0].v) || !(pi[k - 2] > 0.0)) { bad(out); return; }
         const D2 lq = chain(Finf, std::log(qv), -1.0 / qv, -1.0 / (qv * qv));
         out.ll += lq.v + std::log(pi[k - 2]) + logg[0].v;
         add_terms(t1, lq, 1.0, out, need_hess, nullptr);
-        out.g[o] += logg[0].g[0]; out.g[o + 1] += logg[0].g[1];
-        if (need_hess) {
-          out.H(o, o) += logg[0].h[0][0]; out.H(o + 1, o) += logg[0].h[1][0]; out.H(o + 1, o + 1) += logg[0].h[1][1];
-        }
+        add_terms(tg[0], logg[0], 1.0, out, need_hess, nullptr);
         for (int j = 3; j <= K_; ++j) {                     // d log pi_k / d l_j = 1{k=j} - pi_j
           const double dj = (k == j ? 1.0 : 0.0) - pi[j - 2];
           for (std::size_t r = 0; r <= p; ++r) out.g[lidx(j, r)] += dj * lcoef(r);
@@ -929,8 +1012,7 @@ class ConstrainedKModel : public DirectCIFModel {
       if (!direct_Ff<D2>(s_.baseline[0], t, q, al, et, &Ft, nullptr)) { bad(out); return; }
       double M = 0.0;
       for (int k = 2; k <= K_; ++k) {
-        const std::size_t o = gpos(k);
-        cond_Gg<D2>(fam_[k - 2], t, D2::variable(0, th[o]), D2::variable(1, th[o + 1]), G[k - 2], nullptr);
+        cond_local(th, k, t, wi, vi, G[k - 2], nullptr, &tg[k - 2]);
         M += pi[k - 2] * G[k - 2].v;
       }
       const double S = 1.0 - Ft.v - qv * M;
@@ -945,11 +1027,8 @@ class ConstrainedKModel : public DirectCIFModel {
         for (int k = 2; k <= K_; ++k) s += G[k - 2].v * pi[k - 2] * ((k == j ? 1.0 : 0.0) - pi[j - 2]);
         dMl[j - 2] = s;
       }
-      for (int k = 2; k <= K_; ++k) {
-        const std::size_t o = gpos(k);
-        gS[o] = -qv * pi[k - 2] * G[k - 2].g[0];
-        gS[o + 1] = -qv * pi[k - 2] * G[k - 2].g[1];
-      }
+      for (int k = 2; k <= K_; ++k)
+        for (const Term& e : tg[k - 2]) gS[e.idx] += -qv * pi[k - 2] * G[k - 2].g[e.loc] * e.coef;
       for (int j = 3; j <= K_; ++j) for (std::size_t r = 0; r <= p; ++r) gS[lidx(j, r)] += -qv * dMl[j - 2] * lcoef(r);
       for (std::size_t a = 0; a < P; ++a) out.g[a] += gS[a] / S;
       if (!need_hess) continue;
@@ -962,20 +1041,21 @@ class ConstrainedKModel : public DirectCIFModel {
       std::vector<double> dFi(P1_, 0.0);
       for (const Term& e : t1) dFi[e.idx] += Finf.g[e.loc] * e.coef;
       for (int k = 2; k <= K_; ++k) {
-        const std::size_t o = gpos(k);
         const double pk = pi[k - 2];
         const D2& Gk = G[k - 2];
-        // G_k block: -q pi_k H_Gk
-        H(o, o) += -qv * pk * Gk.h[0][0]; H(o + 1, o) += -qv * pk * Gk.h[1][0]; H(o + 1, o + 1) += -qv * pk * Gk.h[1][1];
+        const std::vector<Term>& tk = tg[k - 2];
+        // G_k block: -q pi_k H_Gk (parameters of G_k and of its covariates; lower triangle)
+        for (const Term& e : tk)
+          for (const Term& f : tk)
+            if (f.idx <= e.idx) H(e.idx, f.idx) += -qv * pk * Gk.h[e.loc][f.loc] * e.coef * f.coef;
         // block 1 x G_k: dFinf pi_k dG_k
-        for (std::size_t j = 0; j < P1_; ++j) { H(o, j) += dFi[j] * pk * Gk.g[0]; H(o + 1, j) += dFi[j] * pk * Gk.g[1]; }
+        for (const Term& e : tk)
+          for (std::size_t j = 0; j < P1_; ++j) H(e.idx, j) += dFi[j] * pk * Gk.g[e.loc] * e.coef;
         // G_k x l_j: -q dG_k dpi_k/dl_j
         for (int j = 3; j <= K_; ++j) {
           const double dp = pk * ((k == j ? 1.0 : 0.0) - pi[j - 2]);
-          for (std::size_t r = 0; r <= p; ++r) {
-            H(lidx(j, r), o) += -qv * Gk.g[0] * dp * lcoef(r);
-            H(lidx(j, r), o + 1) += -qv * Gk.g[1] * dp * lcoef(r);
-          }
+          for (std::size_t r = 0; r <= p; ++r)
+            for (const Term& e : tk) H(lidx(j, r), e.idx) += -qv * Gk.g[e.loc] * e.coef * dp * lcoef(r);
         }
       }
       for (int j = 3; j <= K_; ++j) {
@@ -1009,7 +1089,10 @@ class ConstrainedKModel : public DirectCIFModel {
  private:
   int K_;
   std::vector<int> fam_;
-  std::size_t P1_, PG_ = 0, PT_ = 0;
+  std::size_t P1_, PG_ = 0, PT_ = 0, PA_ = 0;
+  CondCovariates cov_;
+  bool has_cov_ = false;
+  std::vector<std::size_t> epos_, zpos_;     // first parameter of eta_k, zeta_k (index k - 2)
 };
 
 inline std::vector<int> constrainedK_roles(const DirectSpec& s, int K) {
@@ -1042,12 +1125,71 @@ inline std::vector<double> constrainedK_start(std::size_t n, const double* time,
   return th;
 }
 
+// Without covariates of the G_k: the staged fit. With them (and no start values) the fit is
+// nested: first the model without them (exactly the fit above), then all parameters from that
+// maximum with the new coefficients at zero. Every accepted step of the final stage increases
+// the likelihood, so the fit is never worse than the model without these covariates.
 inline FitResult constrainedK_fit(const ConstrainedKModel& m, std::size_t n, const double* time, const int* cause,
                                   const std::vector<int>& family, const std::vector<double>* init, int max_iter, double tol) {
   const DirectSpec& s = m.spec();
-  return staged_fit(m, init ? *init : constrainedK_start(n, time, cause, s, m.K(), family), constrainedK_roles(s, m.K()),
-                    init != nullptr, false, max_iter, tol,
-                    [&s](std::vector<double>& v) { v[base_level_index(s.baseline[0])] -= 0.5; });
+  auto shrink = [&s](std::vector<double>& v) { v[base_level_index(s.baseline[0])] -= 0.5; };
+  const std::vector<int> role0 = constrainedK_roles(s, m.K());
+  if (!m.has_cond_covariates()) {
+    return staged_fit(m, init ? *init : constrainedK_start(n, time, cause, s, m.K(), family), role0,
+                      init != nullptr, false, max_iter, tol, shrink);
+  }
+  std::vector<int> role = role0;
+  role.resize(m.nparam(), 1);
+  if (init) return staged_fit(m, *init, role, true, false, max_iter, tol, shrink);
+  const ConstrainedKModel m0(n, time, cause, m.data_X(), s, m.K(), family);
+  const FitResult f0 = staged_fit(m0, constrainedK_start(n, time, cause, s, m.K(), family), role0, false, false, max_iter, tol, shrink);
+  if (f0.flags & FIT_NONFINITE) { FitResult r = f0; r.beta.resize(m.nparam(), 0.0); return r; }
+  std::vector<double> th = f0.beta;
+  th.resize(m.nparam(), 0.0);
+  FitResult f = staged_fit(m, th, role, true, false, max_iter, tol, shrink);
+  f.ll_init = f0.ll_init;
+  f.iterations += f0.iterations;
+  return f;
+}
+
+// The parameters of G_k fitted with centred covariates (W - mw, V - mv) expressed for the
+// covariates themselves, and the Jacobian of that map (P x P, row-major). The map is the identity
+// except for (a_k, b_k): with c = eta_k' mw and d = zeta_k' mv,
+//   Weibull, log-logistic: a = a^c + c,  b = b^c - d;   log-normal: a = a^c - c,  b = b^c - d;
+//   modified logistic:     a = a^c + c - d,  b = b^c e^{-c}.
+// The likelihood is the same function of either set, so the maximum and the inverse information
+// transform exactly (the Hessian term with the gradient vanishes at a stationary point).
+inline void cond_uncentre(const ConstrainedKModel& m, const std::vector<double>& mw, const std::vector<double>& mv,
+                          std::vector<double>& th, std::vector<double>& J) {
+  const std::size_t P = m.nparam();
+  J.assign(P * P, 0.0);
+  for (std::size_t a = 0; a < P; ++a) J[a * P + a] = 1.0;
+  const CondCovariates& cv = m.cond_covariates();
+  const std::vector<double> th0 = th;
+  for (int k = 2; k <= m.K(); ++k) {
+    const std::size_t kk = static_cast<std::size_t>(k - 2), o = m.gpos(k), e = m.epos(k), z = m.zpos(k);
+    const std::vector<std::size_t>& wc = cv.wcol[kk];
+    const std::vector<std::size_t>& vc = cv.vcol[kk];
+    if (wc.empty() && vc.empty()) continue;
+    double c = 0.0, d = 0.0;
+    for (std::size_t j = 0; j < wc.size(); ++j) c += th0[e + j] * mw[wc[j]];
+    for (std::size_t j = 0; j < vc.size(); ++j) d += th0[z + j] * mv[vc[j]];
+    const int fam = m.families()[kk];
+    if (fam == COND_LOGISTIC) {
+      const double ec = std::exp(-c);
+      th[o] = th0[o] + c - d;
+      th[o + 1] = th0[o + 1] * ec;
+      for (std::size_t j = 0; j < wc.size(); ++j) { J[o * P + e + j] = mw[wc[j]]; J[(o + 1) * P + e + j] = -th0[o + 1] * ec * mw[wc[j]]; }
+      for (std::size_t j = 0; j < vc.size(); ++j) J[o * P + z + j] = -mv[vc[j]];
+      J[(o + 1) * P + o + 1] = ec;
+    } else {
+      const double sg = fam == COND_LOGNORMAL ? -1.0 : 1.0;
+      th[o] = th0[o] + sg * c;
+      th[o + 1] = th0[o + 1] - d;
+      for (std::size_t j = 0; j < wc.size(); ++j) J[o * P + e + j] = sg * mw[wc[j]];
+      for (std::size_t j = 0; j < vc.size(); ++j) J[(o + 1) * P + z + j] = -mv[vc[j]];
+    }
+  }
 }
 
 }  // namespace survcore
