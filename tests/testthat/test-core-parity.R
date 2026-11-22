@@ -315,7 +315,7 @@ test_that("the toolkit of the core gives R's own numbers", {
   expect_identical(SurvX:::.sx_seq(0, 7.3, 201L), seq(0, 7.3, length.out = 201L))
   expect_identical(SurvX:::.sx_seq_by(0.2, 0.8, 0.1), seq(0.2, 0.8, by = 0.1))
   expect_identical(SurvX:::.sx_upper_prob(0.95), 1 - (1 - 0.95) / 2)
-  m <- runif(15, -2, 0.9); st <- rbinom(15, 1, 0.6)
+  st <- rbinom(15, 1, 0.6); m <- ifelse(st == 1L, runif(15, -2, 0.9), -runif(15, 0, 2))   # censored: M <= 0
   expect_equal(SurvX:::.sx_hazard_resid(m, st, "deviance_from_m"), sign(m) * sqrt(-2 * (m + ifelse(st == 1L, log(pmax(st - m, 1e-300)), 0))))
   bh <- data.frame(time = c(0.5, 1, 2, 0.7, 1.5), cumhaz = c(0.1, 0.3, 0.4, 0.2, 0.6), stratum = c(0L, 0L, 0L, 1L, 1L))
   tj <- sort(bh$time); rs <- c(0L, 1L, 1L, 0L); lp <- rnorm(4)

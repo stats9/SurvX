@@ -164,6 +164,13 @@ inline void cumsum_rows(std::size_t nr, std::size_t nc, const double* M, double 
 
 
 // ---- grids ----------------------------------------------------------------------------------------
+// a * b + c rounded twice, as R's interpreter computes it: the product goes through a volatile so
+// that no compiler fuses it into one fused multiply-add (which rounds once and can differ in the
+// last bit, e.g. 0.2 + 5 * 0.1)
+inline double mul_add_r(double a, double b, double c) {
+  volatile double p = a * b;
+  return p + c;
+}
 // seq(from, to, length.out = n) as R's seq.default: c(from, from + (1:(n - 2)) * ((to - from) / (n - 1)), to)
 inline std::vector<double> seq_length(double from, double to, std::size_t n) {
   std::vector<double> out;
@@ -173,7 +180,7 @@ inline std::vector<double> seq_length(double from, double to, std::size_t n) {
   if (from == to) return std::vector<double>(n, from);
   const double by = (to - from) / static_cast<double>(n - 1);
   out.push_back(from);
-  for (std::size_t i = 1; i + 1 < n; ++i) out.push_back(from + static_cast<double>(i) * by);
+  for (std::size_t i = 1; i + 1 < n; ++i) out.push_back(mul_add_r(static_cast<double>(i), by, from));
   out.push_back(to);
   return out;
 }
@@ -187,7 +194,7 @@ inline std::vector<double> seq_by(double from, double to, double by) {
   if (!(n >= 0) || !std::isfinite(n)) return out;
   const std::size_t k = static_cast<std::size_t>(n + 1e-10);
   for (std::size_t i = 0; i <= k; ++i) {
-    double v = from + static_cast<double>(i) * by;
+    double v = mul_add_r(static_cast<double>(i), by, from);
     if (by > 0 ? v > to : v < to) v = to;
     out.push_back(v);
   }
