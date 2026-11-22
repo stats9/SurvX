@@ -179,7 +179,9 @@
   g <- if (ncol(mf) > 2L) interaction(mf[-1L], drop = TRUE, sep = ", ")
        else if (ncol(mf) == 2L) as.factor(mf[[2L]])
        else factor(rep.int("All patients", nrow(mf)))
-  list(time = as.double(y[, 1L]), status = as.integer(round(y[, 2L])), group = droplevels(as.factor(g)),
+  g <- as.factor(g)
+  if (!all(tabulate(as.integer(g), nlevels(g)) > 0L)) g <- droplevels(g)   # droplevels() only when needed
+  list(time = as.double(y[, 1L]), status = as.integer(round(y[, 2L])), group = g,
        entry = if (ncol(y) >= 3L) as.double(y[, 3L]) else NULL)
 }
 

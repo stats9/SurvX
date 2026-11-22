@@ -405,10 +405,21 @@ parsurv <- function(formula, data, baseline = "weibull", scale = NULL, df = 3L, 
       stop("no starting values: the model could not be fitted to the midpoints of the intervals; give init", call. = FALSE)
     unname(s0$theta)
   }
-  r <- .par_fit_ic(L, R, type, f$X, dist, scale, start_of(f$X, init), max_iter, tol, kn)
+  # The model without covariates is fitted first (its log-likelihood is reported) and, unless init is
+  # given, its estimates with all coefficients 0 start the full model: this saves the fit of the full
+  # model to the midpoints. If the full model does not converge from there, it is started from that
+  # midpoint fit as before. The estimates are those of the interval-censored likelihood either way.
   X0 <- f$X[, 0L, drop = FALSE]
-  ln <- if (ncol(f$X)) tryCatch(.par_fit_ic(L, R, type, X0, dist, scale, start_of(X0, NULL), max_iter, tol, kn)$loglik,
-                                error = function(e) NA_real_) else r$loglik
+  p <- ncol(f$X)
+  r0 <- if (p) tryCatch(.par_fit_ic(L, R, type, X0, dist, scale, start_of(X0, NULL), max_iter, tol, kn),
+                        error = function(e) NULL) else NULL
+  st <- if (!is.null(init)) as.double(init)
+        else if (!is.null(r0) && isTRUE(r0$converged)) unname(c(r0$theta[1L], rep(0, p), r0$theta[-1L]))
+        else NULL
+  r <- if (is.null(st)) NULL else tryCatch(.par_fit_ic(L, R, type, f$X, dist, scale, st, max_iter, tol, kn), error = function(e) NULL)
+  if (is.null(r) || (is.null(init) && !isTRUE(r$converged)))
+    r <- .par_fit_ic(L, R, type, f$X, dist, scale, start_of(f$X, init), max_iter, tol, kn)
+  ln <- if (p) (if (is.null(r0)) NA_real_ else r0$loglik) else r$loglik
   ParSurvFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,
              coefficients = r$theta, vcov = r$var, loglik = r$loglik, n = length(L),
              nevent = as.integer(r$nevent), iterations = as.integer(r$iterations), converged = isTRUE(r$converged),

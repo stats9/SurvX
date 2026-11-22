@@ -107,6 +107,12 @@
   logarithm per point (the same limits up to rounding, below 1e-12 relative). `aj()` no longer
   applies the rounding rule for tied times a second time in Gray's test (the times from `Event()`
   have it already, and with `Event(..., timefix = FALSE)` it is now skipped there too, as asked).
+  The table of Gray's tests is built once, and groups that are already factors without unused
+  levels are not rebuilt (also in `km()`, `logrank_test()` and `gray_test()`).
+* `parsurv()` with an `Interval()` outcome fits the model without covariates first (its
+  log-likelihood is reported anyway) and starts the full model from it with all coefficients 0,
+  instead of from a separate fit of the full model to the midpoints of the intervals (still used
+  if the full model does not converge from there). Same estimates, about one fit less.
 * `directcif(estimation = "weighted")`: new argument `variance`. The default, `"ipcw"`, is a
   sandwich variance that includes the effect of estimating the censoring distribution (the exact
   influence of each subject with the Kaplan-Meier estimate recomputed; the discrete form of the

@@ -105,7 +105,10 @@
 #' @export
 logrank_test <- function(time, status, group, strata = NULL, rho = 0, timefix = TRUE) {
   if (isTRUE(timefix)) time <- .timefix_vec(time)
-  g <- droplevels(as.factor(group)); K <- nlevels(g); n <- length(time)
+  # a factor without unused levels (as km() and aj() pass it) is used as it is: droplevels() costs
+  # more than the test itself on small data
+  g <- if (is.factor(group) && all(tabulate(as.integer(group), nlevels(group)) > 0L)) group else droplevels(as.factor(group))
+  K <- nlevels(g); n <- length(time)
   if (K < 2L) stop("at least two groups are needed", call. = FALSE)
   st <- if (is.null(strata)) integer(n) else as.integer(as.factor(strata)) - 1L
   r <- .C("SX_logrank", as.integer(n), as.double(time), as.integer(status > 0), as.integer(g) - 1L, as.integer(K),
@@ -122,7 +125,10 @@ logrank_test <- function(time, status, group, strata = NULL, rho = 0, timefix = 
 #' @export
 gray_test <- function(time, status, group, cause = 1L, strata = NULL, rho = 0, timefix = TRUE) {
   if (isTRUE(timefix)) time <- .timefix_vec(time)
-  g <- droplevels(as.factor(group)); K <- nlevels(g); n <- length(time)
+  # a factor without unused levels (as km() and aj() pass it) is used as it is: droplevels() costs
+  # more than the test itself on small data
+  g <- if (is.factor(group) && all(tabulate(as.integer(group), nlevels(group)) > 0L)) group else droplevels(as.factor(group))
+  K <- nlevels(g); n <- length(time)
   if (K < 2L) stop("at least two groups are needed", call. = FALSE)
   st <- if (is.null(strata)) integer(n) else as.integer(as.factor(strata)) - 1L
   r <- .C("SX_gray", as.integer(n), as.double(time), as.integer(status), as.integer(g) - 1L, as.integer(K),
@@ -396,13 +402,16 @@ aj <- function(formula, data, level = 0.95) {
   counts <- .df(list(group = levs, counts = cnt))
   tests <- NULL
   if (nlevels(f$group) > 1L) {
-    tests <- do.call(rbind, lapply(seq_len(K), function(j) {
+    # one row per cause; the table is built once (a data.frame() per row and rbind() took longer than
+    # the tests themselves on small data)
+    st <- rep(NA_real_, K); dfs <- rep(NA_integer_, K); pv <- rep(NA_real_, K)
+    for (j in seq_len(K)) {
       # the times come from Event(), which already applied (or, with timefix = FALSE, skipped) the
       # rounding rule: not applied a second time here
       g <- tryCatch(gray_test(f$time, f$status, f$group, cause = j, timefix = FALSE), error = function(e) NULL)
-      if (is.null(g)) data.frame(cause = j, statistic = NA_real_, df = NA_integer_, p.value = NA_real_)
-      else data.frame(cause = j, statistic = g$statistic, df = g$df, p.value = g$p.value)
-    }))
+      if (!is.null(g)) { st[j] <- g$statistic; dfs[j] <- as.integer(g$df); pv[j] <- g$p.value }
+    }
+    tests <- .df(list(cause = seq_len(K), statistic = st, df = dfs, p.value = pv))
   }
   AJFit(model_call = cl, curves = curves, K = as.integer(K), counts = counts, tests = tests, level = level,
         time = f$time, status = f$status, group = f$group)
