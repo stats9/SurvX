@@ -86,6 +86,23 @@ make_report <- function(cfg, out_dir, missing = character(0)) {
                sum(acc$status == "ERROR"), sum(acc$status == "INFO")))
     bad <- acc[acc$status %in% c("FAIL", "ERROR"), c("func", "reference", "data", "quantity", "max_abs_diff", "max_rel_diff", "status", "note")]
     tx("1b. ACCURACY: every comparison that did not pass", bad)
+    # maximised log-likelihoods that differ: the higher one is the better maximum of the same likelihood
+    if (!is.null(acc$ours_minus_ref)) {
+      ll <- acc[grepl("log-likelihood$", acc$quantity) & !grepl("not below", acc$quantity) & is.finite(acc$ours_minus_ref) &
+                  abs(acc$ours_minus_ref) > 1e-4, , drop = FALSE]
+      if (nrow(ll)) {
+        ll$group <- paste(ll$func, "|", ll$reference, "|", ll$quantity)
+        lt <- do.call(rbind, lapply(split(ll, ll$group), function(a) data.frame(
+          func = a$func[1], reference = a$reference[1], quantity = a$quantity[1], data_sets = nrow(a),
+          SurvX_higher = sum(a$ours_minus_ref > 0), reference_higher = sum(a$ours_minus_ref < 0),
+          largest_SurvX_gain = max(c(0, a$ours_minus_ref)), largest_reference_gain = max(c(0, -a$ours_minus_ref)), stringsAsFactors = FALSE)))
+        note <- c("Data sets where the two maximised log-likelihoods differ by more than 1e-4. The model and the data are the same,",
+                  "so the higher value is the better maximum: SurvX_higher means the reference package stopped short of the maximum.")
+        tx("1c. ACCURACY: which package reached the higher log-likelihood", lt, note)
+        md <- c(md, "### Which package reached the higher log-likelihood", "", note, "", md_table(lt), "")
+      } else tx("1c. ACCURACY: which package reached the higher log-likelihood",
+                lines = "Every maximised log-likelihood agrees with the reference to 1e-4.")
+    }
     if (nrow(bad)) {
       md <- c(md, "### Comparisons that did not pass", "", md_table(utils::head(bad, 200)), "")
       verdict <- c(verdict, sprintf("Accuracy: %d comparisons FAIL or ERROR (see section 1).", nrow(bad)))

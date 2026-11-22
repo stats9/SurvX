@@ -6,6 +6,7 @@
 #include <limits>
 #include <numeric>
 #include <vector>
+#include "survcore/scaling.hpp"
 #include "survcore/survcore.h"
 #include "survcore/hazard.hpp"
 #include "survcore/parametric.hpp"
@@ -67,9 +68,11 @@ int sc_par_fit(int n, int p, int dist, int aft, int nk, const double* knots, con
     if (status[i]) ++events;
   }
   if (!events) return -3;
-  ParData dat; dat.n = n; dat.entry = entry; dat.time = time; dat.status = status; dat.X = X;
+  const ColumnScale cs = scale_columns(static_cast<std::size_t>(n), static_cast<std::size_t>(p), X);   // scaling.hpp
+  ParData dat; dat.n = n; dat.entry = entry; dat.time = time; dat.status = status; dat.X = cs.data(X);
   ParModel m{sp, dat};
   std::vector<double> start = init ? std::vector<double>(init, init + sp.npar()) : par_start(sp, dat);
+  if (init) coef_to_scaled(cs, 1, start.data());
   if (!init && sp.dist == PD_GENGAMMA) {
     // start from the Weibull AFT fit, which is the generalized gamma with Q = 1
     ParSpec w = sp; w.dist = PD_WEIBULL; w.knots.clear();
@@ -81,6 +84,8 @@ int sc_par_fit(int n, int p, int dist, int aft, int nk, const double* knots, con
   const std::size_t P = sp.npar();
   for (std::size_t j = 0; j < P; ++j) theta[j] = r.beta[j];
   if (var) for (std::size_t j = 0; j < P * P; ++j) var[j] = r.var.n == P ? r.var.a[j] : kNaN;
+  coef_from_scaled(cs, 1, theta);
+  var_from_scaled(cs, 1, P, var);
   if (info) {
     info->loglik_init = r.ll_init; info->loglik = r.ll; info->grad_maxabs = r.grad_maxabs;
     info->iterations = r.iterations; info->converged = r.converged; info->flags = r.flags; info->n_events = events;
@@ -104,12 +109,17 @@ int sc_par_fit_ic(int n, int p, int dist, int aft, int nk, const double* knots, 
     if (ty) ++events;
   }
   if (!events) return -3;
-  ParData dat; dat.n = n; dat.time = time; dat.status = type; dat.X = X; dat.time2 = time2;
+  const ColumnScale cs = scale_columns(static_cast<std::size_t>(n), static_cast<std::size_t>(p), X);   // scaling.hpp
+  ParData dat; dat.n = n; dat.time = time; dat.status = type; dat.X = cs.data(X); dat.time2 = time2;
   ParModel m{sp, dat};
-  FitResult r = par_newton(m, std::vector<double>(init, init + sp.npar()), max_iter, tol);
+  std::vector<double> start(init, init + sp.npar());
+  coef_to_scaled(cs, 1, start.data());
+  FitResult r = par_newton(m, start, max_iter, tol);
   const std::size_t P = sp.npar();
   for (std::size_t j = 0; j < P; ++j) theta[j] = r.beta[j];
   if (var) for (std::size_t j = 0; j < P * P; ++j) var[j] = r.var.n == P ? r.var.a[j] : kNaN;
+  coef_from_scaled(cs, 1, theta);
+  var_from_scaled(cs, 1, P, var);
   if (info) {
     info->loglik_init = r.ll_init; info->loglik = r.ll; info->grad_maxabs = r.grad_maxabs;
     info->iterations = r.iterations; info->converged = r.converged; info->flags = r.flags; info->n_events = events;
@@ -330,10 +340,14 @@ int sc_cure_fit(int n, int pl, int pc, int dist, int aft, int nk, const double* 
   if (!events) return -3;
   CureModel m;
   m.sp = sp; m.pc = pc; m.mixture = mixture != 0;
-  m.dat.n = n; m.dat.entry = entry; m.dat.time = time; m.dat.status = status; m.dat.Xl = Xl; m.dat.Xc = Xc;
+  const ColumnScale csl = scale_columns(static_cast<std::size_t>(n), static_cast<std::size_t>(pl), Xl);   // scaling.hpp
+  const ColumnScale csc = scale_columns(static_cast<std::size_t>(n), static_cast<std::size_t>(pc), Xc);
+  const double* XlS = csl.data(Xl);
+  m.dat.n = n; m.dat.entry = entry; m.dat.time = time; m.dat.status = status; m.dat.Xl = XlS; m.dat.Xc = csc.data(Xc);
   const int P = m.npar();
+  const std::size_t cure0 = static_cast<std::size_t>(sp.npar()) + 1;   // first cure coefficient
   std::vector<double> start(P, 0.0);
-  if (init) start.assign(init, init + P);
+  if (init) { start.assign(init, init + P); coef_to_scaled(csl, 1, start.data()); coef_to_scaled(csc, cure0, start.data()); }
   else {
     // latency: the parametric model fitted to the event times alone (the uncured fail);
     // cure intercept: logit of the Kaplan-Meier estimate at the last time, kept within [0.02, 0.9]
@@ -343,7 +357,7 @@ int sc_cure_fit(int n, int pl, int pc, int dist, int aft, int nk, const double* 
     std::vector<int> de(idx.size(), 1);
     for (std::size_t k = 0; k < idx.size(); ++k) {
       te[k] = time[idx[k]];
-      for (int j = 0; j < pl; ++j) xe[k * pl + j] = Xl[static_cast<std::size_t>(idx[k]) * pl + j];
+      for (int j = 0; j < pl; ++j) xe[k * pl + j] = XlS[static_cast<std::size_t>(idx[k]) * pl + j];
     }
     ParData de_dat; de_dat.n = static_cast<int>(idx.size()); de_dat.time = te.data(); de_dat.status = de.data(); de_dat.X = xe.data();
     ParSpec ws = sp;
@@ -370,6 +384,8 @@ int sc_cure_fit(int n, int pl, int pc, int dist, int aft, int nk, const double* 
   for (int j = 0; j < P; ++j) theta[j] = r.beta[j];
   const std::size_t PP = static_cast<std::size_t>(P) * P;
   if (var) for (std::size_t j = 0; j < PP; ++j) var[j] = r.var.n == static_cast<std::size_t>(P) ? r.var.a[j] : kNaN;
+  coef_from_scaled(csl, 1, theta); coef_from_scaled(csc, cure0, theta);
+  var_from_scaled(csl, 1, static_cast<std::size_t>(P), var); var_from_scaled(csc, cure0, static_cast<std::size_t>(P), var);
   if (info) {
     info->loglik_init = r.ll_init; info->loglik = r.ll; info->grad_maxabs = r.grad_maxabs;
     info->iterations = r.iterations; info->converged = r.converged; info->flags = r.flags; info->n_events = events;

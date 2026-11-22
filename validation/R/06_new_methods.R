@@ -279,5 +279,6 @@ acc_new_methods <- function(cfg) {
       acc_interval(b, "bcos", vars = "x1")
     }
   }
+  progress_tick()
   invisible()
 }

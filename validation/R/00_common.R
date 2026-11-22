@@ -86,7 +86,7 @@ TOL <- list(exact = c(abs = 1e-6, rel = 1e-6), optimiser = c(abs = 1e-3, rel = 1
             info = c(abs = Inf, rel = Inf))
 check <- function(area, func, reference, data, quantity, ours, ref, tol = "exact", note = "") {
   row <- data.frame(area = area, func = func, reference = reference, data = data, quantity = quantity,
-                    n_values = NA_integer_, max_abs_diff = NA_real_, max_rel_diff = NA_real_, tol = tol,
+                    n_values = NA_integer_, max_abs_diff = NA_real_, max_rel_diff = NA_real_, ours_minus_ref = NA_real_, tol = tol,
                     status = "ERROR", note = note, stringsAsFactors = FALSE)
   if (failed(ours) || failed(ref)) {
     row$note <- paste0(if (failed(ours)) paste("SurvX:", fail_msg(ours)) else "", if (failed(ref)) paste(" reference:", fail_msg(ref)) else "")
@@ -103,6 +103,7 @@ check <- function(area, func, reference, data, quantity, ours, ref, tol = "exact
   if (any(ok)) {
     d <- abs(a[ok] - b[ok])
     row$max_abs_diff <- max(d); row$max_rel_diff <- max(d / pmax(abs(b[ok]), 1e-8))
+    row$ours_minus_ref <- (a[ok] - b[ok])[which.max(d)]          # signed: which package is higher
     tl <- TOL[[tol]]
     row$status <- if (tol == "info") "INFO" else if (mismatch > 0) "FAIL"
                   else if (row$max_abs_diff <= tl[["abs"]] || row$max_rel_diff <= tl[["rel"]]) "PASS" else "FAIL"
@@ -218,7 +219,7 @@ plapply <- function(X, FUN, cores, export = character(0), chunks = 1L) {
 .PROG <- new.env()
 .PROG$stage_k <- 0L; .PROG$stage_n <- 0L; .PROG$label <- ""; .PROG$total <- 0L; .PROG$done <- 0L; .PROG$t0 <- Sys.time()
 fmt_dur <- function(sec) {
-  if (!is.finite(sec)) return("?")
+  if (!is.finite(sec)) return("? (not known yet)")
   if (sec < 90) return(paste0(round(sec), " s"))
   if (sec < 5400) return(paste0(round(sec / 60), " min"))
   paste0(round(sec / 3600, 1), " h")
@@ -231,7 +232,7 @@ progress_tick <- function(by = 1L) {
   .PROG$done <- min(.PROG$total, .PROG$done + as.integer(by))
   el <- as.numeric(difftime(Sys.time(), .PROG$t0, units = "secs"))
   f <- .PROG$done / .PROG$total
-  left <- if (f > 0) el * (1 - f) / f else NA_real_
+  left <- if (f > 0 && el >= 1) el * (1 - f) / f else NA_real_
   overall <- if (.PROG$stage_n > 0L) 100 * ((.PROG$stage_k - 1) + f) / .PROG$stage_n else NA_real_
   cat(sprintf("%s    [stage %d/%d, run %3.0f%%] %s: %d/%d (%3.0f%%), %s so far, about %s left\n", format(Sys.time(), "%H:%M:%S"),
               .PROG$stage_k, .PROG$stage_n, overall, .PROG$label, .PROG$done, .PROG$total, 100 * f, fmt_dur(el), fmt_dur(left)))

@@ -189,6 +189,7 @@ cure <- function(formula, data, cure = NULL, baseline = "weibull", scale = NULL,
   if (anyNA(Xc)) stop("missing values in the covariates of the cured fraction", call. = FALSE)
   cc <- attr(Xc, "contrasts")
   Xc <- Xc[, colnames(Xc) != "(Intercept)", drop = FALSE]
+  .sx_check_collinear(Xc, "covariates of the cured fraction")
   kn <- .par_knots(dist, f$time, f$status, df, knots, cuts)
   r <- .cure_fit(f$time, f$status, f$entry, f$X, Xc, dist, scale, kn, type == "mixture", init, max_iter, tol)
   CureFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,

@@ -239,8 +239,10 @@ km <- function(formula, data, level = 0.95) {
   f <- .sx_groups(formula, data, what = "this estimator")
   if (any(f$status > 1L)) stop("km() needs a 0/1 status; use aj() for competing risks", call. = FALSE)
   zq <- .zq(level)
-  curves <- list(); counts <- NULL
-  for (lev in levels(f$group)) {
+  curves <- list(); levs <- levels(f$group); G <- length(levs)
+  cn <- integer(G); ce <- integer(G); cm <- cl_ <- cu <- double(G)
+  for (gi in seq_len(G)) {
+    lev <- levs[gi]
     i <- f$group == lev; n <- sum(i)
     r <- .C("SX_km", as.integer(n), f$time[i], f$status[i], time = double(n), nrisk = double(n), nevent = double(n),
             surv = double(n), se = double(n), m = integer(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
@@ -250,18 +252,18 @@ km <- function(formula, data, level = 0.95) {
     lim <- .C("SX_km_limits", length(S), as.double(S), as.double(se), as.double(zq), lower = double(length(S)),
               upper = double(length(S)), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")   # interval on the log scale
     .sx_rc(lim$rc, "km")
-    cv <- data.frame(time = r$time[k], n.risk = r$nrisk[k], n.event = r$nevent[k], surv = S, se = se,
-                     lower = ifelse(is.nan(lim$lower), NA_real_, lim$lower), upper = ifelse(is.nan(lim$upper), NA_real_, lim$upper))
+    lo <- lim$lower; lo[is.nan(lo)] <- NA_real_; up <- lim$upper; up[is.nan(up)] <- NA_real_
+    cv <- .df(list(time = r$time[k], n.risk = r$nrisk[k], n.event = r$nevent[k], surv = S, se = se, lower = lo, upper = up))
     curves[[lev]] <- cv
     first <- function(v) {
       q <- .C("SX_first_below", length(v), as.double(cv$time), as.double(v), 0.5, out = double(1), rc = integer(1),
               NAOK = TRUE, PACKAGE = "SurvX")$out
       if (is.nan(q)) NA_real_ else q
     }
-    counts <- rbind(counts, data.frame(group = lev, n = n, events = sum(f$status[i]),
-                                       median = first(cv$surv), median.lower = first(cv$lower), median.upper = first(cv$upper),
-                                       stringsAsFactors = FALSE))
+    cn[gi] <- n; ce[gi] <- sum(f$status[i])
+    cm[gi] <- first(cv$surv); cl_[gi] <- first(cv$lower); cu[gi] <- first(cv$upper)
   }
+  counts <- .df(list(group = levs, n = cn, events = ce, median = cm, median.lower = cl_, median.upper = cu))
   test <- if (nlevels(f$group) > 1L) logrank_test(f$time, f$status, f$group) else NULL
   KMFit(model_call = cl, curves = curves, counts = counts, test = test, level = level, time = f$time, status = f$status, group = f$group)
 }
@@ -375,8 +377,10 @@ aj <- function(formula, data, level = 0.95) {
   K <- max(f$status)
   if (K < 1L) stop("no events", call. = FALSE)
   zq <- .zq(level)
-  curves <- list(); counts <- NULL
-  for (lev in levels(f$group)) {
+  curves <- list(); levs <- levels(f$group); G <- length(levs)
+  cnt <- matrix(0L, G, K + 2L, dimnames = list(NULL, c("n", "censored", paste0("cause.", seq_len(K)))))
+  for (gi in seq_len(G)) {
+    lev <- levs[gi]
     i <- f$group == lev; n <- sum(i)
     r <- .C("SX_aj", as.integer(n), f$time[i], f$status[i], as.integer(K), time = double(n), surv = double(n),
             cif = double(n * K), se = double(n * K), m = integer(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
@@ -386,11 +390,10 @@ aj <- function(formula, data, level = 0.95) {
     se <- .matrix_rm(r$se[seq_len(m * K)], m, K, list(NULL, paste0("se.", seq_len(K))))
     ci <- .cif_interval(cif, se, zq)
     colnames(ci$lower) <- paste0("lower.", seq_len(K)); colnames(ci$upper) <- paste0("upper.", seq_len(K))
-    curves[[lev]] <- data.frame(time = r$time[k], surv = r$surv[k], cif, se, ci$lower, ci$upper)
-    cnt <- data.frame(group = lev, n = n, censored = sum(f$status[i] == 0L), stringsAsFactors = FALSE)
-    for (j in seq_len(K)) cnt[[paste0("cause.", j)]] <- sum(f$status[i] == j)
-    counts <- rbind(counts, cnt)
+    curves[[lev]] <- .df(list(time = r$time[k], surv = r$surv[k], cif = cif, se = se, lower = ci$lower, upper = ci$upper))
+    cnt[gi, ] <- c(n, tabulate(f$status[i] + 1L, K + 1L))
   }
+  counts <- .df(list(group = levs, counts = cnt))
   tests <- NULL
   if (nlevels(f$group) > 1L) {
     tests <- do.call(rbind, lapply(seq_len(K), function(j) {

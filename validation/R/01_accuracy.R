@@ -370,7 +370,6 @@ acc_metrics <- function(d, label, vars) {
 
 # ---- driver ------------------------------------------------------------------------------------------
 run_accuracy <- function(cfg) {
-  logmsg("Part 1: accuracy against reference implementations")
   set.seed(cfg$seed + 1L)
   progress_start(cfg$acc_reps + 1L)
   designs <- list(
@@ -423,7 +422,7 @@ run_accuracy <- function(cfg) {
   progress_tick()
   acc <- rec_get("accuracy")
   logmsg("  ", nrow(acc), " comparisons: ", sum(acc$status == "PASS"), " PASS, ", sum(acc$status == "FAIL"), " FAIL, ",
-         sum(acc$status == "ERROR"), " ERROR")
+         sum(acc$status == "ERROR"), " ERROR, ", sum(acc$status == "INFO"), " INFO (shown, no tolerance)")
   invisible(acc)
 }
 
@@ -434,6 +433,6 @@ run_accuracy_new <- function(cfg) {
   acc_new_methods(cfg)
   acc <- rec_get("accuracy")
   logmsg("  ", nrow(acc), " comparisons: ", sum(acc$status == "PASS"), " PASS, ", sum(acc$status == "FAIL"), " FAIL, ",
-         sum(acc$status == "ERROR"), " ERROR")
+         sum(acc$status == "ERROR"), " ERROR, ", sum(acc$status == "INFO"), " INFO (shown, no tolerance)")
   invisible(acc)
 }

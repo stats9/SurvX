@@ -51,7 +51,6 @@ fit_all <- function(d, cr = FALSE) {
 }
 
 run_stability <- function(cfg) {
-  logmsg("Part 4: stability and invariances")
   set.seed(cfg$seed + 4L)
   base <- gen_surv(400, p = 2); basecr <- gen_cr(400, p = 2)
   cases <- list(

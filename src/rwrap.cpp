@@ -420,4 +420,7 @@ void SX_hazard_increments(int* nb, double* btime, double* bcum, int* bstr, int* 
   *rc = sc_hazard_increments(*nb, btime, bcum, bstr, *nr, rstr, *m, tj, LP, *lp_by_time, out);
 }
 
+
+void SX_collinear(int* n, int* p, double* X, double* tol, int* out, int* ndep, int* rc) { *rc = sc_collinear(*n, *p, X, *tol, out, ndep); }
+
 }  // extern "C"

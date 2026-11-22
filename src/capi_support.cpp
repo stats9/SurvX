@@ -13,6 +13,7 @@
 #include "survcore/phtest.hpp"
 #include "survcore/timeeffects.hpp"
 #include "survcore/toolkit.hpp"
+#include "survcore/scaling.hpp"
 #include "survcore/summaries.hpp"
 
 using namespace survcore;
@@ -855,6 +856,18 @@ int sc_hazard_increments(int nb, const double* btime, const double* bcum, const 
       }
     }
   }
+  return 0;
+} catch (...) { return -9; }
+
+
+// covariates that are linear combinations of the others and of the constant (survcore/scaling.hpp):
+// out (room for p) receives their 0-based indices, *ndep their number
+int sc_collinear(int n, int p, const double* X, double tol, int* out, int* ndep) try {
+  if (n < 0 || p < 0 || !ndep || (n > 0 && p > 0 && (!X || !out)) || !(tol > 0)) return -1;
+  for (std::size_t k = 0; k < static_cast<std::size_t>(n) * p; ++k) if (!std::isfinite(X[k])) return -2;
+  const std::vector<int> d = collinear_columns(static_cast<std::size_t>(n), static_cast<std::size_t>(p), X, tol);
+  *ndep = static_cast<int>(d.size());
+  for (std::size_t k = 0; k < d.size(); ++k) out[k] = d[k];
   return 0;
 } catch (...) { return -9; }
 

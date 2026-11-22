@@ -346,3 +346,17 @@ test_that("signif() and round() of the core are R's", {
   r <- c(0.5, 1.5, 2.5, -0.5, -1.5, 3.4999, 12.5, NA)
   expect_identical(SurvX:::.sx_round(r), round(r))
 })
+
+test_that(".df() gives the same object as data.frame(), and km/aj tables keep their form", {
+  m <- matrix(1:6 + 0.5, 3, dimnames = list(NULL, c("a.1", "a.2")))
+  expect_identical(SurvX:::.df(list(x = c(1, 2, 3), g = c("u", "v", "w"), m = m)),
+                   data.frame(x = c(1, 2, 3), g = c("u", "v", "w"), m, stringsAsFactors = FALSE))
+  d <- sim_cr(150, 3); d$grp <- rep(c("a", "b", "c"), 50); d$dead <- as.integer(d$status > 0)
+  k <- km(Event(time, dead) ~ grp, d)
+  expect_identical(names(k@counts), c("group", "n", "events", "median", "median.lower", "median.upper"))
+  expect_identical(k@counts$n, c(50L, 50L, 50L))
+  a <- aj(Event(time, status) ~ grp, d)
+  expect_identical(names(a@counts), c("group", "n", "censored", paste0("cause.", 1:2)))
+  expect_identical(a@counts$censored + a@counts$cause.1 + a@counts$cause.2, a@counts$n)
+  expect_identical(names(a@curves[[1]])[1:4], c("time", "surv", "cif.1", "cif.2"))
+})

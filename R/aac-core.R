@@ -283,3 +283,23 @@
 # signif() and round() of R, in the core
 .sx_signif <- function(x, digits) .sx_ew("signif", x, digits)
 .sx_round <- function(x) .sx_ew("round", x)
+
+# stop with a clear message when covariates are constant or linear combinations of the others (C++
+# core: QR with column pivoting, tolerance 1e-7 as lm()); skip: columns not checked (tt() columns)
+.sx_check_collinear <- function(X, what = "covariates", skip = integer(0)) {
+  keep <- setdiff(seq_len(ncol(X)), skip)
+  if (length(keep) < 1L || nrow(X) < 1L) return(invisible())
+  Xk <- X[, keep, drop = FALSE]
+  if (any(!is.finite(Xk))) return(invisible())
+  r <- .C("SX_collinear", nrow(Xk), ncol(Xk), .rm(Xk), 1e-7, out = integer(ncol(Xk)), ndep = integer(1), rc = integer(1),
+          NAOK = TRUE, PACKAGE = "SurvX")
+  .sx_rc(r$rc, "collinearity check")
+  if (!r$ndep) return(invisible())
+  dep <- colnames(Xk)[r$out[seq_len(r$ndep)] + 1L]
+  const <- dep[vapply(dep, function(v) length(unique(Xk[, v])) <= 1L, logical(1))]
+  comb <- setdiff(dep, const)
+  msg <- c(if (length(const)) paste0("constant in the data (no information on its effect): ", paste(const, collapse = ", ")),
+           if (length(comb)) paste0("a linear combination of the other ", what, " (its effect cannot be separated from theirs): ",
+                                    paste(comb, collapse = ", ")))
+  stop(paste(msg, collapse = "; "), "; remove ", if (length(dep) == 1L) "it" else "them", " from the formula", call. = FALSE)
+}

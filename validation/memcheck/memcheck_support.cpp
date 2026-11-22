@@ -200,6 +200,13 @@ int main() {
     I bs = {0, 0, 0, 1, 1}; for (auto& v : LP) v = N();
     tally(sc_hazard_increments(5, bt.data(), bc.data(), bs.data(), n, st.data(), 5, tj.data(), LP.data(), rep % 2, dH.data()));
   }
+  // collinearity check, on designs with constant, duplicated and badly scaled columns
+  for (int rep = 0; rep < REPS; ++rep) {
+    const int n = rep % 30, p = 1 + rep % 5;
+    V X(static_cast<size_t>(n) * p + 1); I dep(p);
+    for (int i = 0; i < n; ++i) for (int j = 0; j < p; ++j) X[static_cast<size_t>(i) * p + j] = (j == 2 ? 2 * X[static_cast<size_t>(i) * p] : (j == 3 ? 1.0 : N() * (rep % 3 ? 1e6 : 1e-6)));
+    int nd; tally(sc_collinear(n, p, X.data(), 1e-7, dep.data(), &nd));
+  }
   // invalid input
   int refused = 0, tried = 0;
   { V x(3, 1.0), o(3); I s(3, 1);

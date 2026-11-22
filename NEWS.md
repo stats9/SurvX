@@ -77,6 +77,12 @@
   (`seq()` and `pretty()` as R computes them) and `signif()` and `round()` of displayed values. What
   remains in R computes no result: model frames, counting for printouts, validation, printing and
   plot layout (`dev/ARCHITECTURE.md`).
+* Covariates on very large or very small scales (income in rials, time in seconds) no longer
+  harm convergence: `cox()`, `fg()`, `csc()`, `parsurv()` and `cure()` scale every covariate
+  internally by a power of two and return the results on the original scale. The scaling is exact,
+  so fits of covariates on an ordinary scale do not change.
+* A covariate that is constant in the data or a linear combination of the others (`x2 = 2 * x1`)
+  now stops the fit with a message that names it, instead of a fit that does not converge.
 * Every random draw (bootstrap resamples, permutations, cross-validation folds) is made by R's own
   generator: the C++ core takes its indices from `R_unif_index()`, as `sample.int()` does, so
   `RNGkind()` and `set.seed()` govern them. A bootstrap resample is exactly

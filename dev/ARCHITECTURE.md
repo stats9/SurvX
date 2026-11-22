@@ -51,6 +51,10 @@ install `R_unif_index` for the duration of each call (`RStream` in `rwrap.cpp`, 
 resample equals `sample.int(n, n, TRUE)`. A Python front end can install a callback to
 `numpy.random.Generator.integers` (or keep the splitmix64 default) in the same way.
 
+Every fit scales its covariates internally by powers of two (`scaling.hpp`: exact, results on
+the original scale), and `sc_collinear` finds covariates that are constant or linear combinations
+of the others before a model is fitted.
+
 The small computations on results are in the core too (`toolkit.hpp`, entry points in
 `capi_support.cpp`): elementwise transforms (`sc_elementwise`: exp, log, logit, qnorm, ratios, p
 values, signif and round as R, ...), sums and means as R computes them (`sc_reduce`, `sc_means`,

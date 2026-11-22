@@ -118,6 +118,7 @@
       stop("tt() cannot be part of an interaction; write tt(x) on its own", call. = FALSE)
     tt_cols <- which(attr(X, "assign") %in% tt_terms)
   }
+  .sx_check_collinear(X, skip = tt_cols)
   y <- unclass(y)
   list(time = as.double(y[, 1L]), status = as.integer(round(y[, if (is_ic) 3L else 2L])), X = X, terms = tt,
        xlevels = stats::.getXlevels(tt, mf), contrasts = ctr, mf = mf,
@@ -175,7 +176,9 @@
   if (!inherits(y, "SurvXEvent")) stop("the left-hand side of the formula must be Event(time, status)", call. = FALSE)
   if (!entry_ok) .no_entry(y, what)
   y <- unclass(y)
-  g <- if (ncol(mf) > 1L) interaction(mf[-1L], drop = TRUE, sep = ", ") else factor(rep("All patients", nrow(mf)))
+  g <- if (ncol(mf) > 2L) interaction(mf[-1L], drop = TRUE, sep = ", ")
+       else if (ncol(mf) == 2L) as.factor(mf[[2L]])
+       else factor(rep.int("All patients", nrow(mf)))
   list(time = as.double(y[, 1L]), status = as.integer(round(y[, 2L])), group = droplevels(as.factor(g)),
        entry = if (ncol(y) >= 3L) as.double(y[, 3L]) else NULL)
 }
@@ -228,3 +231,20 @@
 
 # the same object with every value 0 (covariates switched off for unadjusted curves)
 .zero_like <- function(x) { x[] <- 0; x }
+
+# a data frame from a named list of columns of equal length (vectors, or matrices whose columns
+# become columns named by their column names); the same object as data.frame(), without its cost
+.df <- function(cols) {
+  out <- list(); nms <- character(0)
+  for (k in seq_along(cols)) {
+    v <- cols[[k]]
+    if (is.matrix(v)) {
+      for (j in seq_len(ncol(v))) { out[[length(out) + 1L]] <- v[, j]; nms <- c(nms, colnames(v)[j]) }
+    } else { out[[length(out) + 1L]] <- if (is.null(dim(v))) unname(v) else v; nms <- c(nms, names(cols)[k]) }
+  }
+  n <- if (length(out)) length(out[[1L]]) else 0L
+  names(out) <- nms
+  attr(out, "row.names") <- .set_row_names(n)
+  class(out) <- "data.frame"
+  out
+}

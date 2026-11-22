@@ -514,6 +514,14 @@ int sc_grid(int kind, double from, double to, double by, int n, int cap, double*
 int sc_hazard_increments(int nb, const double* btime, const double* bcum, const int* bstr, int nr, const int* rstr, int m,
                          const double* tj, const double* LP, int lp_by_time, double* out);
 
+
+/* covariates (0-based, in *out) that are linear combinations of the others and of the constant:
+   QR with column pivoting of the centred, unit-length columns, tolerance tol (1e-7 as lm()).
+   Every fit (Cox, Fine-Gray, parametric, cure) also scales covariates internally by powers of two,
+   so very large or very small scales do not harm convergence; results are returned on the
+   original scale (survcore/scaling.hpp). */
+int sc_collinear(int n, int p, const double* X, double tol, int* out, int* ndep);
+
 #ifdef __cplusplus
 }
 #endif

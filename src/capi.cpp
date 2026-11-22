@@ -12,6 +12,7 @@
 #include "survcore/finegray.hpp"
 #include "survcore/nonparametric.hpp"
 #include "survcore/tests.hpp"
+#include "survcore/scaling.hpp"
 
 using namespace survcore;
 
@@ -139,11 +140,17 @@ int sc_coxph_ext(int n, int p, const double* entry, const double* time, const in
   if (int rc = check_common(n, p, time, X)) return rc;
   if (!status || !beta || p == 0) return -1;
   if (int rc = check_ext(n, entry, time, strata, weights)) return rc;
-  CoxModel m(n, p, time, status, X, weights, ties == 1 ? EFRON : BRESLOW, entry, strata);
+  const ColumnScale cs = scale_columns(static_cast<std::size_t>(n), static_cast<std::size_t>(p), X);   // scaling.hpp
+  const double* Xs = cs.data(X);
+  CoxModel m(n, p, time, status, Xs, weights, ties == 1 ? EFRON : BRESLOW, entry, strata);
   if (m.n_events() == 0) return -3;
-  FitResult r = newton_fit(m, std::vector<double>(beta, beta + p), max_iter, tol);
-  flag_monotone(r, n, p, X);
+  std::vector<double> b0(beta, beta + p);
+  coef_to_scaled(cs, 0, b0.data());
+  FitResult r = newton_fit(m, b0, max_iter, tol);
+  flag_monotone(r, n, p, Xs);
   export_fit(r, p, static_cast<int>(m.n_events()), beta, var, info);
+  coef_from_scaled(cs, 0, beta);
+  var_from_scaled(cs, 0, static_cast<std::size_t>(p), var);
   return 0;
 } catch (...) { return -9; }
 
@@ -213,11 +220,17 @@ int sc_finegray(int n, int p, const double* time, const int* cause, const double
                 double* beta, double* var_model, double* var_robust, sc_fit_info* info) try {
   if (int rc = check_common(n, p, time, X)) return rc;
   if (!cause || !beta || p == 0 || interest == 0) return -1;
-  FineGrayModel m(n, p, time, cause, X, interest);
+  const ColumnScale cs = scale_columns(static_cast<std::size_t>(n), static_cast<std::size_t>(p), X);   // scaling.hpp
+  const double* Xs = cs.data(X);
+  FineGrayModel m(n, p, time, cause, Xs, interest);
   if (m.n_events() == 0) return -3;
-  FitResult r = newton_fit(m, std::vector<double>(beta, beta + p), max_iter, tol);
-  flag_monotone(r, n, p, X);
+  std::vector<double> b0(beta, beta + p);
+  coef_to_scaled(cs, 0, b0.data());
+  FitResult r = newton_fit(m, b0, max_iter, tol);
+  flag_monotone(r, n, p, Xs);
   export_fit(r, p, static_cast<int>(m.n_events()), beta, var_model, info);
+  coef_from_scaled(cs, 0, beta);
+  var_from_scaled(cs, 0, static_cast<std::size_t>(p), var_model);
   if (var_robust) {
     const std::size_t P = p;
     if (r.var.n == P) {
@@ -233,6 +246,7 @@ int sc_finegray(int n, int p, const double* time, const int* cause, const double
     } else {
       for (std::size_t j = 0; j < P * P; ++j) var_robust[j] = std::numeric_limits<double>::quiet_NaN();
     }
+    var_from_scaled(cs, 0, P, var_robust);
   }
   return 0;
 } catch (...) { return -9; }

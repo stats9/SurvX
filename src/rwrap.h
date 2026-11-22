@@ -113,6 +113,7 @@ void SX_scaled_schoenfeld(int* nd, int* p, double* S, double* V, double* beta, d
 void SX_hazard_residuals(int* n, double* H, int* status, int* type, double* out, int* rc);
 void SX_grid(int* kind, double* from, double* to, double* by, int* n, int* cap, double* out, int* m, int* rc);
 void SX_hazard_increments(int* nb, double* btime, double* bcum, int* bstr, int* nr, int* rstr, int* m, double* tj, double* LP, int* lp_by_time, double* out, int* rc);
+void SX_collinear(int* n, int* p, double* X, double* tol, int* out, int* ndep, int* rc);
 #ifdef __cplusplus
 }
 #endif

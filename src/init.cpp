@@ -114,6 +114,7 @@ static const R_CMethodDef c_methods[] = {
   {"SX_hazard_residuals", (DL_FUNC) &SX_hazard_residuals, 6, NULL},
   {"SX_grid", (DL_FUNC) &SX_grid, 9, NULL},
   {"SX_hazard_increments", (DL_FUNC) &SX_hazard_increments, 12, NULL},
+  {"SX_collinear", (DL_FUNC) &SX_collinear, 7, NULL},
   {NULL, NULL, 0, NULL}
 };
 
