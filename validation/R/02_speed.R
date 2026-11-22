@@ -59,6 +59,22 @@ speed_methods <- function() {
     riskRegression::Score(list(m = matrix(r)), formula = Hist(time, status) ~ 1, data = d, times = event_quantiles(d)[2], cause = 1,
                           metrics = c("auc", "brier"), conf.int = FALSE, null.model = FALSE)
   })
+  # interval censoring (gen_ic) and shared gamma frailty (gen_frailty, clusters of 4)
+  add("Turnbull NPMLE", "SurvX::turnbull", "ic", function(d) turnbull(Interval(left, right) ~ 1, d, B = 0))
+  if (has("icenReg")) add("Turnbull NPMLE", "icenReg::ic_np", "ic", function(d) icenReg::ic_np(cbind(d$left, d$right)))
+  if (has("interval")) add("Turnbull NPMLE", "interval::icfit", "ic",
+                           function(d) interval::icfit(survival::Surv(left2, right2, type = "interval2") ~ 1, data = d))
+  add("Weibull AFT, interval-censored", "SurvX::parsurv", "ic", function(d) parsurv(Interval(left, right) ~ x1 + x2, d, scale = "AFT"))
+  if (has("survival")) add("Weibull AFT, interval-censored", "survival::survreg", "ic",
+                           function(d) survival::survreg(survival::Surv(left2, right2, type = "interval2") ~ x1 + x2, data = d, dist = "weibull"))
+  add("Cox, gamma frailty", "SurvX::cox", "frailty", function(d) cox(Event(time, status) ~ x1 + x2 + frailty(id), d))
+  if (has("survival")) add("Cox, gamma frailty", "survival::coxph", "frailty",
+                           function(d) survival::coxph(survival::Surv(time, status) ~ x1 + x2 + survival::frailty(id, distribution = "gamma"), data = d))
+  if (has("frailtyEM")) add("Cox, gamma frailty", "frailtyEM::emfrail", "frailty",
+                            function(d) frailtyEM::emfrail(survival::Surv(time, status) ~ x1 + x2 + cluster(id), data = d))
+  add("Weibull, gamma frailty", "SurvX::parsurv", "frailty", function(d) parsurv(Event(time, status) ~ x1 + x2 + frailty(id), d))
+  if (has("parfm")) add("Weibull, gamma frailty", "parfm::parfm", "frailty",
+                        function(d) parfm::parfm(survival::Surv(time, status) ~ x1 + x2, cluster = "id", data = d, dist = "weibull", frailty = "gamma"))
   S
 }
 
@@ -70,7 +86,8 @@ run_speed <- function(cfg) {
   # (a) sample size, p = 5
   for (n in cfg$speed_n) {
     for (rep in seq_len(cfg$speed_reps)) {
-      dat <- list(surv = gen_surv(n, p = 5, strata = TRUE), cure = gen_surv(n, p = 2, plateau = 0.3), cr = gen_cr(n, p = 5))
+      dat <- list(surv = gen_surv(n, p = 5, strata = TRUE), cure = gen_surv(n, p = 2, plateau = 0.3), cr = gen_cr(n, p = 5),
+                  ic = gen_ic(n), frailty = gen_frailty(max(2L, n %/% 4L), 4L))
       for (m in ms) {
         key <- paste(m$model, m$impl)
         if (key %in% too_slow) { if (rep == 1L) rec_add("speed", data.frame(design = "n", model = m$model, impl = m$impl, n = n, p = 5L, rep = rep, seconds = NA_real_, status = "skipped (too slow)")); next }

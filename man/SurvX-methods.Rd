@@ -36,6 +36,12 @@ of R work as for \code{lm()} or \code{survival::coxph()}.
     (\code{highlight = FALSE} switches this off) and, for the IPA, a dashed line marks no gain over the
     null model (\code{reference = FALSE} switches it off). \code{measure} is one of \code{"ipa"},
     \code{"brier"}, \code{"auc"}, \code{"calib_error"}.}
+  \item{Objects with their own methods}{\code{\link{turnbull}} (\code{TurnbullFit}),
+    \code{\link{frailty}} models (\code{FrailtyFit}), \code{\link{time_effects}}
+    (\code{TimeEffects}), \code{\link{adjusted_risk}} (\code{AdjustedRisk}) and
+    \code{\link{model_scan}} (\code{ModelScan}) have \code{print}, \code{summary}, \code{plot},
+    \code{as.data.frame} and, where it applies, \code{predict} and \code{report}; their help
+    pages describe the arguments.}
   \item{\code{cex}}{every plot (\code{plot()} of \code{km()}, of a comparison, and \code{cif_plot()}) has a
     \code{cex} argument for the size of all text, default 0.85; titles, captions and axis titles are
     wrapped to the width of the device so that they never run off the page.}

@@ -36,13 +36,20 @@ available).
 | `parsurv` | `flexsurv::flexsurvreg`, `flexsurvspline`, `survival::survreg` | log-likelihood, predicted survival, AFT coefficients; 7 distributions, splines, delayed entry |
 | `cure` | `flexsurvcure` | log-likelihood, predicted survival; mixture and non-mixture |
 | `brier_score`, `auc_t` | `riskRegression::Score`, `timeROC` | Brier score, null model, AUC |
+| `time_effects` | `survival::coxph(tt = )` | coefficients of the log-time form (veteran) |
+| `adjusted_risk` | `riskRegression::ate`, weighted `survival::survfit` | g-formula and IPW risks |
+| `turnbull` | `icenReg::ic_np`, `interval::icfit`, `interval::ictest` | NPMLE log-likelihood and survival, logrank test (Finkelstein scores, pclt) |
+| `parsurv(Interval())` | `survival::survreg(interval2)`, `flexsurv::flexsurvreg` | coefficients, SEs, log-likelihood; exact times written as intervals give the `Event()` fit (also `directcif`) |
+| `cox` / `parsurv` + `frailty()` | `frailtyEM::emfrail`, `parfm::parfm`, `survival::coxph(frailty())` | coefficients, frailty variance, LRT, log-likelihood (coxph's penalized fit reported only) |
 
 Tolerances: 1e-6 for quantities computed by the same formula in both packages; 1e-3 (relative)
 when the reference maximises the likelihood with a general-purpose optimiser; "info" when the two
 packages use different valid estimators (reported, not judged).
 
 `directcif` has no implementation in another package; it is validated in Part 3 against data
-generated from the model.
+generated from the model. Part 3 also covers interval-censored Weibull regression (with the naive
+fit to the midpoints for comparison) and shared gamma frailty (Cox and Weibull, coefficients and
+log(theta), with the naive Cox fit that ignores the clusters).
 
 ## Running
 
@@ -50,7 +57,8 @@ Install the reference packages once:
 
 ```r
 install.packages(c("survival", "cmprsk", "riskRegression", "prodlim", "flexsurv", "flexsurvcure",
-                   "survRM2", "timeROC", "rmarkdown"))
+                   "survRM2", "timeROC", "rmarkdown", "icenReg", "interval", "frailtyEM", "parfm"))
+# interval needs Icens from Bioconductor: install.packages("BiocManager"); BiocManager::install("Icens")
 ```
 
 From this folder (or with the path to it):

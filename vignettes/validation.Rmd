@@ -55,6 +55,24 @@ Largest difference over all data sets of the full run (82 data sets, up to $n = 
 | `cure()` | `flexsurvcure::flexsurvcure` | log-likelihood, predictions | optimiser tolerance |
 | `brier_score()`, `auc_t()` | `riskRegression::Score` | Brier score, AUC | $10^{-14}$ |
 
+The methods added after version 1.0.0 were checked by the short scripts `check_time_effects.R`,
+`check_interval.R` and `check_frailty.R` of the same directory (the full suite now includes them):
+
+| SurvX | Reference | Quantity | Largest difference |
+|---|---|---|---|
+| `time_effects()` (log form) | `survival::coxph(tt = )` | coefficients | $4 \times 10^{-14}$ |
+| `turnbull()` | `icenReg::ic_np`, `interval::icfit` | NPMLE log-likelihood, survival | $10^{-10}$, $10^{-7}$ |
+| `turnbull()` test | `interval::ictest` (Finkelstein scores, pclt) | statistic, p-value | identical to the printed digits |
+| `parsurv(Interval())` | `survival::survreg(interval2)` | coefficients, scale, log-likelihood | $2 \times 10^{-10}$ |
+| `parsurv(Interval())` | `flexsurv` (Gompertz, generalized gamma, spline) | log-likelihood | optimiser tolerance |
+| `cox(... + frailty())` | `frailtyEM::emfrail` | frailty variance, likelihood ratio test | identical to the printed digits |
+| `parsurv(... + frailty())` | `parfm::parfm` (Weibull, Gompertz, exponential) | log-likelihood, frailty variance | $10^{-10}$ |
+
+The penalized-likelihood frailty fit of `survival::coxph` maximises a different criterion and
+agrees closely but not exactly. For log-normal and log-logistic baselines `parfm` stopped below the
+maximum (its log-likelihood was lower than that of the model without frailty), so these rows are
+reported, not judged.
+
 "Optimiser tolerance" means that the reference package maximises the likelihood numerically
 with its own stopping rule; where the results differ beyond it, SurvX reaches the higher
 log-likelihood. `directcif()` has no other implementation in R; its likelihoods, scores and
@@ -102,5 +120,13 @@ Median time of one fit with $n = 10000$ and 5 covariates (one core):
 | generalized gamma | 0.36 s | `flexsurvreg` 2.8 s |
 | Royston-Parmar spline | 0.03 s | `flexsurvspline` 1.6 s |
 | mixture cure | 0.03 s | `flexsurvcure` 2.9 s |
+
+Methods added after version 1.0.0, $n = 5000$ (check scripts, one run):
+
+| Model | SurvX | Reference |
+|---|---|---|
+| Turnbull NPMLE | 0.02 s | `icenReg::ic_np` 0.03 s |
+| Cox with gamma frailty (1000 clusters) | 0.07 s | `coxph(frailty())` 0.42 s |
+| Weibull with gamma frailty | 0.01 s | |
 
 The full tables, figures and session information of each run are written by the suite itself.

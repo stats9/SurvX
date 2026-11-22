@@ -1,6 +1,24 @@
 # SurvX (development version)
 
-* Shared gamma frailty models: `+ frailty(id)` in the formula of `cox()` (Breslow baseline profiled
+## New methods
+
+* **Interval-censored data** (the event is only known to lie between two visits):
+  * New `Interval(left, right, cause)` outcome: interval-, left- and right-censored and exact times
+    can be mixed in one data set.
+  * New `turnbull()`: the Turnbull non-parametric maximum likelihood estimate of the survival curve
+    (EM-ICM hybrid of the self-consistency and iterative convex minorant algorithms in compiled
+    code, convergence checked on the Kuhn-Tucker conditions), by group, with bootstrap bands,
+    medians with intervals, the range of survival values that the data leave unidentified within
+    the innermost intervals, and a logrank-type test with Finkelstein scores and permutational
+    variance. `print()`, `summary()`, `plot()`, `predict()`, `as.data.frame()`.
+  * `parsurv()` fits every family (exponential, Weibull, Gompertz, log-normal, log-logistic,
+    generalized gamma, Royston-Parmar spline, piecewise exponential; PH and AFT) to `Interval()`
+    outcomes by the full likelihood with exact derivatives; `plot()` and `hazard_plot()` compare
+    the fit with the Turnbull estimate.
+  * `directcif()` (joint estimation) fits the direct parametric models for the cumulative
+    incidence to interval-censored competing risks data with a known cause, using
+    `F_k(R) - F_k(L)`.
+* **Shared gamma frailty**: `+ frailty(id)` in the formula of `cox()` (Breslow baseline profiled
   out by EM, Newton on the profile likelihood of the coefficients and the frailty variance, whose
   curvature gives standard errors that account for the estimation of the variance) and of
   `parsurv()` (every family, marginal likelihood with exact derivatives). The output gives the
@@ -8,33 +26,7 @@
   no frailty (half chi-square), Kendall's tau, the empirical Bayes frailty of every cluster, and
   `predict(fit, frailty = "marginal" | "conditional" | "cluster")`; `plot()` draws the cluster
   frailties or the marginal and conditional survival curves.
-* Interval-censored data (the event is only known to lie between two visits):
-  * New `Interval(left, right, cause)` outcome: interval-, left- and right-censored and exact times
-    can be mixed in one data set.
-  * New `turnbull()`: the Turnbull non-parametric maximum likelihood estimate of the survival curve
-    (EM-ICM hybrid of the self-consistency and iterative convex minorant algorithms in compiled code, convergence checked on
-    the Kuhn-Tucker conditions), by group, with bootstrap bands, medians with intervals, the range
-    of survival values that the data leave unidentified within the innermost intervals, and a
-    logrank-type test with Finkelstein scores and permutational variance. `print()`, `summary()`,
-    `plot()`, `predict()`, `as.data.frame()`.
-  * `parsurv()` fits every family (exponential, Weibull, Gompertz, log-normal, log-logistic,
-    generalized gamma, Royston-Parmar spline, piecewise exponential; PH and AFT) to
-    `Interval()` outcomes by the full likelihood with exact derivatives; `plot()` and
-    `hazard_plot()` compare the fit with the Turnbull estimate.
-  * `directcif()` (joint estimation) fits direct parametric models for the cumulative incidence to
-    interval-censored competing risks data with a known cause, using `F_k(R) - F_k(L)`.
-  * Functions that need exact times (Kaplan-Meier, Cox, Fine-Gray, residuals, prediction metrics,
-    `adjusted_risk()`) stop with a message that points to these functions.
-* `time_effects()`: the stability summary now reads "celltype 89%, karno 89%".
-
-* New `adjusted_risk()`: adjusted absolute risks and causal contrasts between treatments, by
-  standardisation of a fitted `cox()`, `fg()`, `csc()`, `directcif()`, `parsurv()`, `cure()` or
-  `time_effects()` model (the g-formula) and/or by inverse probability of treatment weighting
-  (weighted Kaplan-Meier or Aalen-Johansen with a logistic or multinomial treatment model), with
-  risk differences and ratios at chosen times, curves, bootstrap intervals in which the models are
-  refitted, balance (standardised mean differences) and weight diagnostics, a reading in plain
-  words, `plot()` and an HTML `report()`.
-* New `time_effects()`: for a `cox()`, `csc()` or `fg()` model, tests every term for a
+* **`time_effects()`**: for a `cox()`, `csc()` or `fg()` model, tests every term for a
   time-varying effect (Grambsch-Therneau score test, Holm-adjusted), compares forms of the change
   (constant, log-linear, a step at a change point chosen by profile likelihood, a natural spline
   in log time, or your own functions of time) by AIC or BIC and likelihood ratio tests, refits the
@@ -43,10 +35,14 @@
   forms; `bootstrap` repeats the whole procedure for intervals and selection frequencies that
   include the choice. `plot()`, `predict()` (survival or cumulative incidence with the
   time-varying effects), `as.data.frame()` and an HTML `report()`.
-* `ph_test()` points to `time_effects()` when a covariate fails the test.
-* The fertility examples no longer use `age`, which is recorded at the end of follow-up and is
-  therefore not a baseline covariate.
-* New `model_scan()`: fits every model of the package that suits the data (one event type or
+* **`adjusted_risk()`**: adjusted absolute risks and causal contrasts between treatments, by
+  standardisation of a fitted `cox()`, `fg()`, `csc()`, `directcif()`, `parsurv()`, `cure()` or
+  `time_effects()` model (the g-formula) and/or by inverse probability of treatment weighting
+  (weighted Kaplan-Meier or Aalen-Johansen with a logistic or multinomial treatment model), with
+  risk differences and ratios at chosen times, curves, bootstrap intervals in which the models are
+  refitted, balance (standardised mean differences) and weight diagnostics, a reading in plain
+  words, `plot()` and an HTML `report()`.
+* **`model_scan()`**: fits every model of the package that suits the data (one event type or
   competing risks; cure models when the Kaplan-Meier curve levels off) and compares them on
   criteria valid for the comparison: the cross-validated integrated Brier score, IPA, AUC and
   calibration error for all models, with the models within one standard error of the best
@@ -56,6 +52,9 @@
   covariates in every model side by side. `plot()` draws the ranking, the fit, the prediction
   error over time and the calibration; `report()` writes a self-contained HTML report with a
   methods paragraph and references.
+
+## Improvements to existing functions
+
 * `directcif(estimation = "weighted")`: new argument `variance`. The default, `"ipcw"`, is a
   sandwich variance that includes the effect of estimating the censoring distribution (the exact
   influence of each subject with the Kaplan-Meier estimate recomputed; the discrete form of the
@@ -69,6 +68,29 @@
   (`share_` coefficients, odds ratios of one competing cause against the first); the long-term
   incidences add up to one for every covariate value. `cond` may give one distribution per
   competing cause. K = 2 is unchanged.
+* `ph_test()` and `model_scan()` point to `time_effects()` when a covariate fails the test of
+  proportional hazards.
+* Functions that need exact times (Kaplan-Meier, Cox, Fine-Gray, residuals, prediction metrics,
+  `adjusted_risk()`) stop with a message that points to the functions for interval-censored data;
+  `frailty()` in other functions, or with delayed entry, weights, `strata()`, `cluster()` or
+  `tt()`, stops with a clear message.
+
+## Documentation and validation
+
+* New help pages `?Interval`, `?turnbull`, `?frailty`, `?time_effects`, `?adjusted_risk` and
+  `?model_scan`; sections on interval-censored data in `?parsurv` and `?directcif`; `?cox` lists
+  `frailty()`.
+* Vignettes: new sections on time-varying effects, adjusted risks, interval-censored data and
+  shared frailty (survival analysis), on `time_effects()`, adjusted cumulative incidence and
+  interval-censored competing risks (competing risks), and updated tables of measures, validation
+  and speed.
+* The validation suite (`validation/` in the repository) now covers the new methods: accuracy
+  against `survival::coxph(tt = )`, `riskRegression::ate`, `icenReg`, `interval`,
+  `survival::survreg(interval2)`, `flexsurv`, `frailtyEM` and `parfm`; speed; and Monte Carlo
+  scenarios for interval-censored Weibull regression and shared gamma frailty. Short check
+  scripts `validation/check_time_effects.R`, `check_interval.R` and `check_frailty.R`.
+* The fertility examples no longer use `age`, which is recorded at the end of follow-up and is
+  therefore not a baseline covariate.
 
 # SurvX 1.0.0
 

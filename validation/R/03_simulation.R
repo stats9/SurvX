@@ -233,6 +233,29 @@ sim_one <- function(rep, n, seed) {
                  attempt(cure(Event(time, status) ~ x2, d, cure = ~ x1, type = ty))))
   }
 
+  # interval censoring: Weibull PH times seen at irregular visits (gen_ic in 06_new_methods.R);
+  # the fit to the midpoints of the intervals is reported for comparison (it ignores the censoring)
+  di <- gen_ic(n)
+  wt <- c(x1 = 0.5, x2 = -0.4, "log(shape)" = log(1.3))
+  add(res_rows("Weibull PH, interval-censored", "parsurv(Interval) weibull", wt, attempt(parsurv(Interval(left, right) ~ x1 + x2, di))))
+  di$mid <- ifelse(is.finite(di$right), (di$left + di$right) / 2, di$left); di$ev <- as.integer(is.finite(di$right))
+  add(res_rows("Weibull PH, interval-censored", "parsurv on the midpoints (naive)", wt,
+               attempt(parsurv(Event(mid, ev) ~ x1 + x2, di)), judged = FALSE))
+
+  # shared gamma frailty (variance 0.5), clusters of 4 (gen_frailty in 06_new_methods.R)
+  dfr <- gen_frailty(max(25L, n %/% 4L), 4L, 0.5)
+  for (m in c("cox", "weibull")) {
+    f <- attempt(if (m == "cox") cox(Event(time, status) ~ x1 + x2 + frailty(id), dfr)
+                 else parsurv(Event(time, status) ~ x1 + x2 + frailty(id), dfr))
+    lab <- if (m == "cox") "cox + frailty(id)" else "parsurv weibull + frailty(id)"
+    add(res_rows("gamma frailty, clusters of 4", lab, b, f))
+    th <- if (failed(f) || isTRUE(f@boundary)) NA_real_ else f@theta
+    add(val_rows("gamma frailty, clusters of 4", lab, "log(theta)", log(0.5), log(th),
+                 if (is.finite(th)) f@theta_se / th else NA_real_))
+  }
+  add(res_rows("gamma frailty, clusters of 4", "cox ignoring the clusters (naive)", b,
+               attempt(cox(Event(time, status) ~ x1 + x2, dfr)), judged = FALSE))
+
   # non-parametric estimators: coverage of the pointwise intervals (one group, Weibull(1.3, 2))
   t0 <- 2 * (-log(runif(n)))^(1 / 1.3); cc <- runif(n, 0, 6)
   dn <- data.frame(time = pmin(t0, cc), status = as.integer(t0 <= cc))

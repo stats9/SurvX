@@ -418,6 +418,7 @@ run_accuracy <- function(cfg) {
       acc_metrics(d, nm, vars)
     }
   }
+  acc_new_methods(cfg)
   acc <- rec_get("accuracy")
   logmsg("  ", nrow(acc), " comparisons: ", sum(acc$status == "PASS"), " PASS, ", sum(acc$status == "FAIL"), " FAIL, ",
          sum(acc$status == "ERROR"), " ERROR")

@@ -16,4 +16,7 @@ keywords:
   - Fine-Gray
   - direct parametric models
   - survival analysis
+  - interval censoring
+  - frailty
+  - causal inference
   - R

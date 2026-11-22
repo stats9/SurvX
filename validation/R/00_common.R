@@ -38,7 +38,8 @@ make_config <- function(args) {
 }
 
 has <- function(p) requireNamespace(p, quietly = TRUE)
-REF_PKGS <- c("survival", "cmprsk", "riskRegression", "prodlim", "flexsurv", "flexsurvcure", "survRM2", "timeROC")
+REF_PKGS <- c("survival", "cmprsk", "riskRegression", "prodlim", "flexsurv", "flexsurvcure", "survRM2", "timeROC",
+              "icenReg", "interval", "frailtyEM", "parfm")
 
 # ---- recording ---------------------------------------------------------------------------------------
 .REC <- new.env()

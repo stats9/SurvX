@@ -24,6 +24,11 @@ Fine (2006, 2007), in one package with one formula interface and one style of ou
 - **Parametric and cure models:** exponential, Weibull, Gompertz, log-normal, log-logistic, generalized gamma, piecewise exponential and Royston-Parmar spline models (PH or AFT), and mixture and non-mixture cure models.
 - **Direct parametric CIF regression:** eight baseline families and three links (proportional subdistribution hazards, proportional odds, generalized odds rate). Three estimators are available: joint likelihood, inverse-probability-of-censoring weighted likelihood, and the constrained two-cause model of Shi, Cheng and Jeong (2013).
 - **Prediction performance:** IPCW Brier score, index of prediction accuracy (IPA), time-dependent AUC and calibration. Models are compared side by side with cross-validation.
+- **Time-varying effects:** `time_effects()` screens every covariate of a Cox, cause-specific Cox or Fine-Gray model for a change of its effect over time, chooses the form of the change and reports the hazard ratio over follow-up.
+- **Adjusted risks and causal contrasts:** `adjusted_risk()` gives the absolute risk under each treatment by standardisation (g-formula) or inverse probability weighting, with risk differences and ratios and balance diagnostics.
+- **Interval-censored data:** `Interval()` outcomes with the Turnbull estimate (`turnbull()`), parametric regression (`parsurv()`) and direct CIF models (`directcif()`).
+- **Clustered data:** shared gamma frailty in `cox()` and `parsurv()` with `+ frailty(id)`.
+- **Choosing a model:** `model_scan()` fits every suitable model and ranks them by cross-validated prediction.
 - **Cumulative incidence plots:** every model and every cause can be plotted, at chosen covariate values, at typical values, averaged over the sample, or without covariates. Confidence bands come from the delta method or the bootstrap. Plots use base graphics or ggplot2.
 
 All computation runs in a C++17 core written for this package with no external libraries. The R
@@ -33,7 +38,7 @@ layer uses [S7](https://rconsortium.github.io/S7/) classes and supports the usua
 Every function has a detailed help page (when to use it, its arguments, how to interpret and
 report the result, how to check its assumptions, and the literature behind it), and six vignettes
 cover complete analyses. Every release is checked against survival, cmprsk, riskRegression,
-flexsurv and flexsurvcure by the validation suite described [below](#validation). Please report
+flexsurv, flexsurvcure, icenReg, interval, frailtyEM and parfm by the validation suite described [below](#validation). Please report
 problems at <https://github.com/stats9/SurvX/issues>.
 
 ---
@@ -374,7 +379,8 @@ use `cv_compare()`.
 ## Objects and methods
 
 Fitted models are S7 objects: `CoxFit`, `FineGrayFit`, `CSCFit`, `ParCSCFit`, `ParSurvFit`,
-`CureFit`, `DirectCIFFit`, `KMFit`, `AJFit`, `HazardFit`, `PHTest` and `ModelComparison`. Properties are read with `@`, for example `fit@coefficients`,
+`CureFit`, `DirectCIFFit`, `FrailtyFit`, `KMFit`, `AJFit`, `TurnbullFit`, `HazardFit`, `PHTest`,
+`TimeEffects`, `AdjustedRisk`, `ModelScan` and `ModelComparison`. Properties are read with `@`, for example `fit@coefficients`,
 `fit@converged` or `fit@diagnostics`, and listed with `S7::props(fit)`. The usual S3 generics work
 as they do for `lm()` or `survival::coxph()`:
 
@@ -415,6 +421,11 @@ and one PDF of figures:
 | `parsurv()` | `survival::survreg` (1e-9); `flexsurv` | optimiser tolerance of flexsurv |
 | `cure()` | `flexsurvcure` | optimiser tolerance of flexsurvcure |
 | `brier_score()`, `auc_t()` | `riskRegression::Score` | 1e-14 |
+| `time_effects()` (log form) | `survival::coxph(tt = )` | 4e-14 (check script) |
+| `turnbull()` | `icenReg::ic_np`, `interval::icfit`, `interval::ictest` | log-likelihood 1e-10, survival 1e-7, test statistic identical (check script) |
+| `parsurv(Interval())` | `survival::survreg(interval2)`; `flexsurv` | 2e-10; optimiser tolerance (check script) |
+| `cox(... + frailty())` | `frailtyEM::emfrail`; `survival::coxph(frailty())` | variance and LRT identical, coefficients 4e-3 with tied times; coxph's penalized fit close (check script) |
+| `parsurv(... + frailty())` | `parfm::parfm` | 1e-10 for Weibull, Gompertz, exponential (check script) |
 
 The full results are summarised in `vignette("validation", "SurvX")`. On n = 10,000, `fg()` takes
 about 0.01 s against 150 s for `cmprsk::crr`, and `cure()` 0.03 s against 2.9 s for
@@ -480,6 +491,11 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 | `auc_t()` | IPCW time-dependent AUC with competing risks (cases: cause of interest by t; controls: all others) | Blanche, Dartigues & Jacqmin-Gadda (2013) |
 | `compare_models()`, `cv_compare()` | K-fold cross-validation of the measures above | Hastie, Tibshirani & Friedman (2009), Sec. 7.10 |
 | `cif_plot()` bands for Fine-Gray / CSC | nonparametric bootstrap of subjects | Efron & Tibshirani (1993) |
+| `time_effects()` | score test of proportional hazards per term with Holm adjustment; log, step (change point by profile likelihood), spline in log time and user forms compared by AIC/BIC; refit on data split at the event times; bootstrap of the whole procedure | Grambsch & Therneau (1994); Holm (1979); Hess (1994); Gray (1992); Buchholz & Sauerbrei (2011) |
+| `adjusted_risk()` | g-formula (standardisation) and inverse probability of treatment weighting with stabilised weights; weighted Kaplan-Meier / Aalen-Johansen; balance by standardised mean differences | Robins (1986); Cole & Hernan (2004); Neumann & Billionnet (2016); Austin & Stuart (2015); Hernan & Robins (2020) |
+| `turnbull()` | NPMLE on the innermost intervals; EM-ICM algorithm; Kuhn-Tucker check; logrank test with Finkelstein scores and permutational variance | Turnbull (1976); Peto (1973); Wellner & Zhan (1997); Groeneboom & Wellner (1992); Jongbloed (1998); Gentleman & Geyer (1994); Finkelstein (1986); Fay & Shaw (2010) |
+| `parsurv()` / `directcif()` with `Interval()` | full likelihood S(L) - S(R) (F_k(R) - F_k(L) for competing risks) | Lindsey & Ryan (1998); Sun (2006); Hudgens, Satten & Longini (2001) |
+| `frailty()` in `cox()`, `parsurv()` | shared gamma frailty, marginal likelihood; Breslow baseline profiled out by EM; profile likelihood variance; half chi-square test | Clayton (1978); Klein (1992); Nielsen et al. (1992); Murphy & van der Vaart (2000); Self & Liang (1987); Duchateau & Janssen (2008) |
 | Optimiser | Levenberg-Marquardt with Marquardt scaling | Levenberg (1944); Marquardt (1963) |
 | Plot colours | Okabe-Ito palette | Okabe & Ito (2008) |
 
@@ -487,13 +503,14 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 
 - Aalen OO (1978). Nonparametric inference for a family of counting processes. Annals of Statistics 6:701-726.
 - Aalen OO, Johansen S (1978). An empirical transition matrix for non-homogeneous Markov chains based on censored observations. Scandinavian Journal of Statistics 5:141-150.
-- aalen_johansen1978
 - Akaike H (1974). A new look at the statistical model identification. IEEE Transactions on Automatic Control 19:716-723.
 - Amico M, Van Keilegom I (2018). Cure models in survival analysis. Annual Review of Statistics and Its Application 5:311-342.
 - Andersen PK, Borgan O, Gill RD, Keiding N (1993). Statistical Models Based on Counting Processes. Springer, New York.
 - Andersen PK, Geskus RB, de Witte T, Putter H (2012). Competing risks in epidemiology: possibilities and pitfalls. International Journal of Epidemiology 41:861-870.
 - Andersen PK, Gill RD (1982). Cox's regression model for counting processes: a large sample study. Annals of Statistics 10:1100-1120.
 - Austin PC, Fine JP (2017). Practical recommendations for reporting Fine-Gray model analyses for competing risk data. Statistics in Medicine 36:4391-4400.
+- Austin PC, Stuart EA (2015). Moving towards best practice when using inverse probability of treatment weighting (IPTW) using the propensity score to estimate causal treatment effects in observational studies. Statistics in Medicine 34:3661-3679.
+- Balan TA, Putter H (2019). frailtyEM: an R package for estimating semiparametric shared frailty models. Journal of Statistical Software 90(7):1-29.
 - Benichou J, Gail MH (1990). Estimates of absolute cause-specific risk in cohort studies. Biometrics 46:813-826.
 - Berkson J, Gage RP (1952). Survival curve for cancer patients following treatment. Journal of the American Statistical Association 47:501-515.
 - Blanche P, Dartigues JF, Jacqmin-Gadda H (2013). Estimating and comparing time-dependent areas under receiver operating characteristic curves for censored event times with competing risks. Statistics in Medicine 32:5381-5397.
@@ -501,19 +518,27 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 - Breslow NE (1972). Discussion of the paper by D. R. Cox. Journal of the Royal Statistical Society, Series B 34:216-217.
 - Breslow NE (1974). Covariance analysis of censored survival data. Biometrics 30:89-99.
 - Brookmeyer R, Crowley J (1982). A confidence interval for the median survival time. Biometrics 38:29-41.
+- Buchholz A, Sauerbrei W (2011). Comparison of procedures to assess non-linear and time-varying effects in multivariable models for survival data. Biometrical Journal 53:308-331.
+- Burnham KP, Anderson DR (2002). Model Selection and Multimodel Inference: A Practical Information-Theoretic Approach, 2nd ed. Springer, New York.
 - Casella G, Berger RL (2002). Statistical Inference, 2nd ed. Duxbury, Pacific Grove, Section 5.5 (delta method).
 - Chen MH, Ibrahim JG, Sinha D (1999). A new Bayesian model for survival data with a surviving fraction. Journal of the American Statistical Association 94:909-919.
 - Cheng Y (2009). Modeling cumulative incidences of dementia and dementia-free death using a novel three-parameter logistic function. International Journal of Biostatistics 5(1), Article 29.
+- Clayton DG (1978). A model for association in bivariate life tables and its application in epidemiological studies of familial tendency in chronic disease incidence. Biometrika 65:141-151.
+- Cole SR, Hernan MA (2004). Adjusted survival curves with inverse probability weights. Computer Methods and Programs in Biomedicine 75:45-49.
 - Collett D (2015). Modelling Survival Data in Medical Research, 3rd ed. Chapman and Hall/CRC, Boca Raton.
 - Cox C, Chu H, Schneider MF, Munoz A (2007). Parametric survival analysis and taxonomy of hazard functions for the generalized gamma distribution. Statistics in Medicine 26:4352-4374.
 - Cox DR (1972). Regression models and life-tables. Journal of the Royal Statistical Society, Series B 34:187-220.
 - Cox DR, Snell EJ (1968). A general definition of residuals. Journal of the Royal Statistical Society, Series B 30:248-275.
 - Dabrowska DM, Doksum KA (1988). Estimation and testing in a two-sample generalized odds-rate model. Journal of the American Statistical Association 83:744-749.
+- Duchateau L, Janssen P (2008). The Frailty Model. Springer, New York.
 - Efron B (1977). The efficiency of Cox's likelihood function for censored data. Journal of the American Statistical Association 72:557-565.
 - Efron B, Tibshirani RJ (1993). An Introduction to the Bootstrap. Chapman and Hall, New York.
 - Farewell VT (1982). The use of mixture models for the analysis of survival data with long-term survivors. Biometrics 38:1041-1046.
+- Fay MP, Shaw PA (2010). Exact and asymptotic weighted logrank tests for interval censored data: the interval R package. Journal of Statistical Software 36(2):1-34.
 - Fine JP, Gray RJ (1999). A proportional hazards model for the subdistribution of a competing risk. Journal of the American Statistical Association 94:496-509.
+- Finkelstein DM (1986). A proportional hazards model for interval-censored failure time data. Biometrics 42:845-854.
 - Friedman M (1982). Piecewise exponential models for survival data with covariates. Annals of Statistics 10:101-113.
+- Gentleman R, Geyer CJ (1994). Maximum likelihood for interval censored data: consistency and computation. Biometrika 81:618-623.
 - Gerds TA, Andersen PK, Kattan MW (2014). Calibration plots for risk prediction models in the presence of competing risks. Statistics in Medicine 33:3191-3203.
 - Gerds TA, Schumacher M (2006). Consistent estimation of the expected Brier score in general survival models with right-censored event times. Biometrical Journal 48:1029-1040.
 - Gerds TA, Schumacher M (2007). Efron-type measures of prediction error for survival analysis. Biometrics 63:1283-1287.
@@ -521,19 +546,27 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 - Graf E, Schmoor C, Sauerbrei W, Schumacher M (1999). Assessment and comparison of prognostic classification schemes for survival data. Statistics in Medicine 18:2529-2545.
 - Grambsch PM, Therneau TM (1994). Proportional hazards tests and diagnostics based on weighted residuals. Biometrika 81:515-526.
 - Gray RJ (1988). A class of K-sample tests for comparing the cumulative incidence of a competing risk. Annals of Statistics 16:1141-1154.
+- Gray RJ (1992). Flexible methods for analyzing survival data using splines, with applications to breast cancer prognosis. Journal of the American Statistical Association 87:942-951.
 - Greenwood M (1926). The natural duration of cancer. Reports on Public Health and Medical Subjects 33:1-26. HMSO, London.
+- Groeneboom P, Wellner JA (1992). Information Bounds and Nonparametric Maximum Likelihood Estimation. Birkhauser, Basel.
 - Haile SR, Jeong JH, Chen X, Cheng Y (2016). A 3-parameter Gompertz distribution for survival data with competing risks, with an application to breast cancer data. Journal of Applied Statistics 43:2239-2253.
 - Hall P, Marron JS (1991). Local minima in cross-validation functions. Journal of the Royal Statistical Society, Series B 53:245-252.
 - Harrington DP, Fleming TR (1982). A class of rank test procedures for censored survival data. Biometrika 69:553-566.
 - Hastie T, Tibshirani R, Friedman J (2009). The Elements of Statistical Learning, 2nd ed. Springer, New York, Section 7.10.
+- Hernan MA, Robins JM (2020). Causal Inference: What If. Chapman and Hall/CRC, Boca Raton.
+- Hess KR (1994). Assessing time-by-covariate interactions in proportional hazards regression models using cubic spline functions. Statistics in Medicine 13:1045-1062.
 - Hinchliffe SR, Lambert PC (2013). Flexible parametric modelling of cause-specific hazards to estimate cumulative incidence functions. BMC Medical Research Methodology 13:13.
+- Holm S (1979). A simple sequentially rejective multiple test procedure. Scandinavian Journal of Statistics 6:65-70.
+- Hudgens MG, Satten GA, Longini IM (2001). Nonparametric maximum likelihood estimation for competing risks survival data subject to interval censoring and truncation. Biometrics 57:74-80.
 - Irwin JO (1949). The standard error of an estimate of expectation of life, with special reference to expectation of tumourless life in experiments with mice. Journal of Hygiene 47:188-189.
 - Jeong JH, Fine J (2006). Direct parametric inference for the cumulative incidence function. Journal of the Royal Statistical Society, Series C 55:187-200.
 - Jeong JH, Fine JP (2007). Parametric regression on cumulative incidence function. Biostatistics 8:184-196.
+- Jongbloed G (1998). The iterative convex minorant algorithm for nonparametric estimation. Journal of Computational and Graphical Statistics 7:310-321.
 - Kalbfleisch JD, Prentice RL (2002). The Statistical Analysis of Failure Time Data, 2nd ed. Wiley, Hoboken.
 - Kaplan EL, Meier P (1958). Nonparametric estimation from incomplete observations. Journal of the American Statistical Association 53:457-481.
 - Kattan MW, Gerds TA (2018). The index of prediction accuracy: an intuitive measure useful for evaluating risk prediction models. Diagnostic and Prognostic Research 2:7.
 - Kawaguchi ES, Shen JI, Suchard MA, Li G (2021). Scalable algorithms for large competing risks data. Journal of Computational and Graphical Statistics 30:685-693.
+- Klein JP (1992). Semiparametric estimation of random effects using the Cox model based on the EM algorithm. Biometrics 48:795-806.
 - Klein JP, Moeschberger ML (2003). Survival Analysis: Techniques for Censored and Truncated Data, 2nd ed. Springer, New York.
 - Lambert PC, Thompson JR, Weston CL, Dickman PW (2007). Estimating and modeling the cure fraction in population-based cancer survival analysis. Biostatistics 8:576-594.
 - Lambert PC, Wilkes SR, Crowther MJ (2017). Flexible parametric modelling of the cause-specific cumulative incidence function. Statistics in Medicine 36:1429-1446.
@@ -542,30 +575,41 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 - Lawless JF (2003). Statistical Models and Methods for Lifetime Data, 2nd ed. Wiley, Hoboken.
 - Levenberg K (1944). A method for the solution of certain non-linear problems in least squares. Quarterly of Applied Mathematics 2:164-168.
 - Lin DY, Wei LJ (1989). The robust inference for the Cox proportional hazards model. Journal of the American Statistical Association 84:1074-1078.
+- Lindsey JC, Ryan LM (1998). Tutorial in biostatistics: methods for interval-censored data. Statistics in Medicine 17:219-238.
 - Maller RA, Zhou X (1996). Survival Analysis with Long-Term Survivors. Wiley, Chichester.
 - Mantel N (1966). Evaluation of survival data and two new rank order statistics arising in its consideration. Cancer Chemotherapy Reports 50:163-170.
 - Marquardt DW (1963). An algorithm for least-squares estimation of nonlinear parameters. Journal of the Society for Industrial and Applied Mathematics 11:431-441.
 - Marubini E, Valsecchi MG (1995). Analysing Survival Data from Clinical Trials and Observational Studies. Wiley, Chichester.
 - Mozumder, S. I., Rutherford, M. J. and Lambert, P. C. (2018). Direct likelihood inference on the cause-specific cumulative incidence function: a flexible parametric regression modelling approach. *Statistics in Medicine*, 37(1), 82–97. doi:10.1002/sim.7498
 - Mueller HG, Wang JL (1994). Hazard rate estimation under random censoring with varying kernels and bandwidths. Biometrics 50:61-76.
+- Murphy SA, van der Vaart AW (2000). On profile likelihood. Journal of the American Statistical Association 95:449-465.
 - Nelson W (1972). Theory and applications of hazard plotting for censored failure data. Technometrics 14:945-966.
+- Neumann A, Billionnet C (2016). Covariate adjustment of cumulative incidence functions for competing risks data using inverse probability of treatment weighting. Computer Methods and Programs in Biomedicine 129:63-70.
+- Nielsen GG, Gill RD, Andersen PK, Sorensen TIA (1992). A counting process approach to maximum likelihood estimation in frailty models. Scandinavian Journal of Statistics 19:25-43.
 - Okabe M, Ito K (2008). Color universal design (CUD): how to make figures and presentations that are friendly to colorblind people. https://jfly.uni-koeln.de/color/
+- Ozenne BMH, Scheike TH, Staerk L, Gerds TA (2020). On the estimation of average treatment effects with right-censored time to event outcome and competing risks. Biometrical Journal 62:751-763.
 - Patil PN (1993). On the least squares cross-validation bandwidth in hazard rate estimation. Annals of Statistics 21:1792-1810.
+- Peto R (1973). Experimental survival curves for interval-censored data. Applied Statistics 22:86-91.
 - Peto R, Peto J (1972). Asymptotically efficient rank invariant test procedures. Journal of the Royal Statistical Society, Series A 135:185-207.
 - Prentice RL (1974). A log gamma model and its maximum likelihood estimation. Biometrika 61:539-544.
 - Prentice RL, Kalbfleisch JD, Peterson AV, Flournoy N, Farewell VT, Breslow NE (1978). The analysis of failure times in the presence of competing risks. Biometrics 34:541-554.
 - Putter H, Fiocco M, Geskus RB (2007). Tutorial in biostatistics: competing risks and multi-state models. Statistics in Medicine 26:2389-2430.
 - Ramlau-Hansen H (1983). Smoothing counting process intensities by means of kernel functions. Annals of Statistics 11:453-466.
+- Robins J (1986). A new approach to causal inference in mortality studies with a sustained exposure period: application to control of the healthy worker survivor effect. Mathematical Modelling 7:1393-1512.
 - Royston P, Parmar MKB (2002). Flexible parametric proportional-hazards and proportional-odds models for censored survival data, with application to prognostic modelling and estimation of treatment effects. Statistics in Medicine 21:2175-2197.
 - Royston P, Parmar MKB (2013). Restricted mean survival time: an alternative to the hazard ratio for the design and analysis of randomized trials with a time-to-event outcome. BMC Medical Research Methodology 13:152.
 - Schoenfeld D (1982). Partial residuals for the proportional hazards regression model. Biometrika 69:239-241.
 - Schwarz G (1978). Estimating the dimension of a model. Annals of Statistics 6:461-464.
+- Self SG, Liang KY (1987). Asymptotic properties of maximum likelihood estimators and likelihood ratio tests under nonstandard conditions. Journal of the American Statistical Association 82:605-610.
 - Shi H, Cheng Y, Jeong JH (2013). Constrained parametric model for simultaneous inference of two cumulative incidence functions. Biometrical Journal 55:82-96.
 - Stone M (1974). Cross-validatory choice and assessment of statistical predictions. Journal of the Royal Statistical Society, Series B 36:111-147.
+- Sun J (2006). The Statistical Analysis of Interval-censored Failure Time Data. Springer, New York.
 - Therneau TM, Grambsch PM (2000). Modeling Survival Data: Extending the Cox Model. Springer, New York.
 - Therneau TM, Grambsch PM, Fleming TR (1990). Martingale-based residuals for survival models. Biometrika 77:147-160.
 - Therneau TM. Roundoff error and tied times. Vignette of the R package survival.
+- Turnbull BW (1976). The empirical distribution function with arbitrarily grouped, censored and truncated data. Journal of the Royal Statistical Society, Series B 38:290-295.
 - Wald A (1943). Tests of statistical hypotheses concerning several parameters when the number of observations is large. Transactions of the American Mathematical Society 54:426-482.
+- Wellner JA, Zhan Y (1997). A hybrid algorithm for computation of the nonparametric maximum likelihood estimator from censored data. Journal of the American Statistical Association 92:945-959.
 - White H (1982). Maximum likelihood estimation of misspecified models. Econometrica 50:1-25.
 - Wilks SS (1938). The large-sample distribution of the likelihood ratio for testing composite hypotheses. Annals of Mathematical Statistics 9:60-62.
 - Yakovlev AY, Tsodikov AD (1996). Stochastic Models of Tumor Latency and Their Biostatistical Applications. World Scientific, Singapore.
@@ -581,6 +625,10 @@ package and are documented in the help pages:
 - **Optimiser.** The fits use a staged strategy (baseline first, then all parameters), detection of stalled or diverging fits, and a rescaled spline basis.
 - **Calibration error.** This is the mean absolute difference between predicted risk and Aalen-Johansen risk within groups of predicted risk.
 - **Bootstrap bands.** The bootstrap bands for Fine-Gray and cause-specific Cox curves use the bootstrap standard error on the complementary log-log scale.
+- **Choosing time-varying forms.** `time_effects()` combines published pieces (score test, Holm adjustment, AIC/BIC among candidate forms, change point by profile likelihood) into one procedure, and its bootstrap repeats the whole selection.
+- **Direct CIF models with interval censoring.** The direct parametric models of Jeong and Fine are fitted to interval-censored competing risks data with the likelihood of Hudgens, Satten and Longini (2001).
+- **Identified range of the Turnbull curve.** Next to the usual linear interpolation inside the innermost intervals, the survival table gives the range of values that the data do not distinguish.
+- **Frailty variance.** For the Breslow baseline, the Hessian of the profile likelihood is obtained by central differences of its exact gradient.
 
 These choices still need independent assessment. Please cite the package when you use them.
 
@@ -591,6 +639,8 @@ These choices still need independent assessment. Please cite the package when yo
 - [riskRegression](https://CRAN.R-project.org/package=riskRegression): absolute risk regression and prediction performance
 - [flexsurv](https://CRAN.R-project.org/package=flexsurv): flexible parametric survival and multi-state models
 - [timeROC](https://CRAN.R-project.org/package=timeROC): time-dependent ROC curves
+- [icenReg](https://CRAN.R-project.org/package=icenReg) and [interval](https://CRAN.R-project.org/package=interval): interval-censored data
+- [frailtyEM](https://CRAN.R-project.org/package=frailtyEM), [parfm](https://CRAN.R-project.org/package=parfm) and [frailtypack](https://CRAN.R-project.org/package=frailtypack): frailty models
 - [cmpp](https://CRAN.R-project.org/package=cmpp): direct parametric inference for the CIF (Ezzatabadipour 2025)
 
 ## Citation

@@ -36,6 +36,9 @@ lung$years <- lung$time / 365.25
 | `parsurv(scale = "AFT")` | time ratio (TR) | factor by which survival times (every quantile) are stretched | forgetting that TR > 1 is *good* while HR > 1 is *bad* |
 | `cure()` | odds ratio of cure; latency HR or TR | effect on the chance of being cured; effect on the timing among the uncured | mixing up the two parts |
 | `rmst()` difference | time units | extra event-free time over the first $\tau$ units | not stating $\tau$ |
+| `cox(... + frailty(id))` | conditional HR; frailty variance $\theta$ | HR within a cluster; how much clusters differ (Kendall's $\tau$) | reading the conditional HR as a population-average effect |
+| `adjusted_risk()` | risk difference and ratio | change of absolute risk had everyone been treated | calling it causal without discussing confounding |
+| `turnbull()` | survival with interval-censored times | the NPMLE; undetermined within the innermost intervals | imputing the midpoints and using Kaplan-Meier |
 
 Ratios are relative. A report should also give **absolute** quantities: survival or cumulative
 incidence at fixed times, medians, or restricted means, for typical patients or groups.
@@ -139,6 +142,9 @@ A report of a survival or competing risks analysis should state:
    or restricted means, for typical patients or groups.
 8. **Prediction models**: discrimination (`auc_t()`), calibration (`calibration()`) and overall
    accuracy (`brier_score()`), preferably cross-validated or on external data.
+9. **Clustered or interval-censored data**: how clustering was handled (robust variance or a
+   frailty, with the frailty variance and its test), and for events found at visits, the visit
+   schedule and the method for interval-censored data.
 
 ## References
 

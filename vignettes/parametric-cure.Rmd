@@ -153,6 +153,20 @@ The fitted population survival should follow the Kaplan-Meier curve, and its pla
 average cured fraction. When there is no plateau in the data, the cured fraction is not identified
 and the fit is flagged.
 
+## 6. Interval-censored data and shared frailty
+
+Every distribution of `parsurv()` can also be fitted to events found at visits, with
+`Interval(left, right)` on the left-hand side; `plot()` then compares the fit with the Turnbull
+estimate of `turnbull()`. For clustered data, `+ frailty(id)` adds a shared gamma frailty to any
+distribution:
+
+```r
+parsurv(Interval(left, right) ~ trt + age, data, baseline = "weibull")
+parsurv(Event(time, status) ~ trt + age + frailty(centre), data, baseline = "gompertz")
+```
+
+Both are illustrated in the survival analysis vignette (sections 10 and 11).
+
 ## References
 
 * Royston P, Parmar MKB (2002). Flexible parametric proportional-hazards and proportional-odds
