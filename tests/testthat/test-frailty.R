@@ -23,16 +23,32 @@ fr_loglik <- function(f, d) {
   ll
 }
 
-test_that("cox() with frailty() agrees with survival::coxph(frailty(distribution = 'gamma'))", {
+test_that("cox() with frailty() is the marginal maximum likelihood estimate (EM with coxph offsets)", {
   skip_if_not_installed("survival")
   d <- fr_data()
   f <- cox(Event(time, status) ~ x + trt + frailty(id), data = d)
   expect_true(S7::S7_inherits(f, SurvX:::FrailtyFit))
   expect_true(f@converged)
-  r <- survival::coxph(survival::Surv(time, status) ~ x + trt + survival::frailty(id, distribution = "gamma"),
-                       data = d, ties = "breslow")
-  expect_close(coef(f), coef(r)[1:2], 2e-3)
-  expect_close(f@theta, r$history[[1]]$theta, 5e-3)
+  th <- f@theta
+  # EM of Klein (1992) at the estimated theta, with survival::coxph for the M-step
+  a <- rep(1, max(d$id)); D <- as.vector(tapply(d$status, d$id, sum))
+  for (it in 1:1000) {
+    r <- survival::coxph(survival::Surv(time, status) ~ x + trt + offset(log(a[id])), data = d, ties = "breslow")
+    e <- exp(drop(as.matrix(d[, c("x", "trt")]) %*% coef(r)) + log(a[d$id]))
+    tk <- sort(unique(d$time[d$status == 1]))
+    hk <- vapply(tk, function(u) sum(d$status[d$time == u]) / sum(e[d$time >= u]), 1)
+    H <- vapply(d$time, function(u) sum(hk[tk <= u]), 1)
+    L <- as.vector(tapply(exp(drop(as.matrix(d[, c("x", "trt")]) %*% coef(r))) * H, d$id, sum))
+    an <- (1 + th * D) / (1 + th * L)
+    if (max(abs(an - a)) < 1e-10) { a <- an; break }
+    a <- an
+  }
+  expect_close(coef(f), coef(r), 1e-5)
+  # penalized likelihood of survival::coxph: close to the marginal estimates
+  rp <- survival::coxph(survival::Surv(time, status) ~ x + trt + survival::frailty(id, distribution = "gamma"),
+                        data = d, ties = "breslow")
+  expect_lt(max(abs(coef(f) - coef(rp)[1:2])), 0.1)
+  expect_lt(abs(log(f@theta / rp$history[[1]]$theta)), 0.3)
   expect_gt(f@lrt$statistic, 0)
   expect_output(print(f), "Shared gamma frailty")
   expect_output(print(summary(f)), "lowest and the highest")

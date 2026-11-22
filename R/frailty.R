@@ -31,9 +31,10 @@
 #' hazard is profiled out by the EM fixed point of Nielsen et al. (1992) and Klein (1992), and the
 #' profile likelihood in \eqn{(\beta, \log\theta)} is maximised by Newton-Raphson; its curvature
 #' gives standard errors of \eqn{\beta} that account for the estimation of \eqn{\theta} (Murphy and
-#' van der Vaart 2000). Ties are handled as in Breslow's method. The estimates are those of
-#' \code{survival::coxph(... + frailty(id, distribution = "gamma"), ties = "breslow")} and of
-#' \code{frailtyEM::emfrail}.
+#' van der Vaart 2000). Ties are handled as in Breslow's method. \code{frailtyEM::emfrail}
+#' maximises the same likelihood; the penalized likelihood of
+#' \code{survival::coxph(... + frailty(id, distribution = "gamma"))} gives close but not identical
+#' values.
 #'
 #' \strong{Reading the results.} Hazard ratios are conditional on the frailty: they compare
 #' subjects of the same cluster (or of clusters with equal frailty). The population-average
