@@ -175,9 +175,9 @@ void SX_cv_folds(int* n, int* folds, int* out, int* rc) {
 void SX_kernel_hazard(int* m, double* et, double* d, double* Y, double* bw, int* boundary, int* nx, double* x, double* out_h, double* out_se, double* bw_used, int* rc) {
   *rc = sc_kernel_hazard(*m, et, d, Y, *bw, *boundary, *nx, x, out_h, out_se, bw_used);
 }
-void SX_par_fit_ic(int* n, int* p, int* dist, int* aft, int* nk, double* knots, double* time, double* time2, int* type, double* X, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc) {
+void SX_par_fit_ic(int* n, int* p, int* dist, int* aft, int* nk, double* knots, double* time, double* time2, int* type, double* X, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, int* rc) {
   sc_fit_info f = sc_fit_info();
-  *rc = sc_par_fit_ic(*n, *p, *dist, *aft, *nk, knots, time, time2, type, X, init, *max_iter, *tol, theta, var, &f);
+  *rc = sc_par_fit_ic(*n, *p, *dist, *aft, *nk, knots, time, time2, type, X, *has_init ? init : nullptr, *max_iter, *tol, theta, var, &f);
   put(f, info_d, info_i);
 }
 void SX_direct_fit_ic(int* n, int* p, int* K, double* time, double* time2, int* cause, double* X, int* alpha_free, double* alpha_value, int* baseline, int* n_knots, double* knots, int* constraint, int* has_init, double* init, int* max_iter, double* tol, double* theta, double* var, double* info_d, int* info_i, double* diag, int* rc) {

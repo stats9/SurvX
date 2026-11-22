@@ -97,7 +97,7 @@ int sc_par_fit_ic(int n, int p, int dist, int aft, int nk, const double* knots, 
                   const int* type, const double* X, const double* init, int max_iter, double tol, double* theta,
                   double* var, sc_fit_info* info) try {
   ParSpec sp;
-  if (n <= 0 || p < 0 || !time || !time2 || !type || !init || (p > 0 && !X) || !spec_of(dist, aft, p, nk, knots, sp)) return -1;
+  if (n <= 0 || p < 0 || !time || !time2 || !type || (p > 0 && !X) || !spec_of(dist, aft, p, nk, knots, sp)) return -1;
   int events = 0;
   for (int i = 0; i < n; ++i) {
     const int ty = type[i];
@@ -112,8 +112,22 @@ int sc_par_fit_ic(int n, int p, int dist, int aft, int nk, const double* knots, 
   const ColumnScale cs = scale_columns(static_cast<std::size_t>(n), static_cast<std::size_t>(p), X);   // scaling.hpp
   ParData dat; dat.n = n; dat.time = time; dat.status = type; dat.X = cs.data(X); dat.time2 = time2;
   ParModel m{sp, dat};
-  std::vector<double> start(init, init + sp.npar());
-  coef_to_scaled(cs, 1, start.data());
+  std::vector<double> start;
+  if (init) {
+    start.assign(init, init + sp.npar());
+    coef_to_scaled(cs, 1, start.data());
+  } else {
+    // no start given: the closed-form start of the exact-time fit (exponential rate, covariate
+    // coefficients 0) computed on the midpoints of the intervals; coefficients 0 need no scaling
+    std::vector<double> mid(n); std::vector<int> ev(n);
+    for (int i = 0; i < n; ++i) {
+      const int ty = type[i];
+      mid[i] = ty == 2 ? 0.5 * (time[i] + time2[i]) : ty == 3 ? 0.5 * time2[i] : time[i];
+      ev[i] = ty > 0;
+    }
+    ParData md; md.n = n; md.time = mid.data(); md.status = ev.data();
+    start = par_start(sp, md);
+  }
   FitResult r = par_newton(m, start, max_iter, tol);
   const std::size_t P = sp.npar();
   for (std::size_t j = 0; j < P; ++j) theta[j] = r.beta[j];

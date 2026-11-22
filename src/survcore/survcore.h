@@ -291,8 +291,8 @@ int sc_par_fit(int n, int p, int dist, int aft, int nk, const double* knots, con
                const int* status, const double* X, const double* init, int max_iter, double tol, double* theta,
                double* var, sc_fit_info* info);
 /* Interval censoring (survcore/parametric.hpp, par_local_ic): type 0 right-censored at time, 1 exact
- * at time, 2 in (time, time2], 3 left-censored in (0, time2]. init is required (a start from the fit to
- * the midpoints). */
+ * at time, 2 in (time, time2], 3 left-censored in (0, time2]. init may be null: the closed-form
+ * start of the exact-time fit (exponential rate, coefficients 0) on the midpoints is then used. */
 int sc_par_fit_ic(int n, int p, int dist, int aft, int nk, const double* knots, const double* time, const double* time2,
                   const int* type, const double* X, const double* init, int max_iter, double tol, double* theta,
                   double* var, sc_fit_info* info);

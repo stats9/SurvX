@@ -377,7 +377,8 @@ parsurv <- function(formula, data, baseline = "weibull", scale = NULL, df = 3L, 
   P <- 1L + p + .nshape(dist, knots)
   r <- .C("SX_par_fit_ic", as.integer(n), as.integer(p), .par_dists[[dist]], as.integer(scale == "AFT"),
           as.integer(length(knots)), if (length(knots)) as.double(knots) else double(1),
-          as.double(L), as.double(R), as.integer(type), .rm(X), as.double(init), as.integer(max_iter), as.double(tol),
+          as.double(L), as.double(R), as.integer(type), .rm(X), as.integer(!is.null(init)),
+          if (is.null(init)) double(P) else as.double(init), as.integer(max_iter), as.double(tol),
           theta = double(P), var = double(P * P), info_d = double(3), info_i = integer(4), rc = integer(1),
           NAOK = TRUE, PACKAGE = "SurvX")
   .sx_rc(r$rc, "parametric fit (interval-censored)")
@@ -407,19 +408,25 @@ parsurv <- function(formula, data, baseline = "weibull", scale = NULL, df = 3L, 
       stop("no starting values: the model could not be fitted to the midpoints of the intervals; give init", call. = FALSE)
     unname(s0$theta)
   }
-  # The model without covariates is fitted first (its log-likelihood is reported) and, unless init is
-  # given, its estimates with all coefficients 0 start the full model: this saves the fit of the full
-  # model to the midpoints. If the full model does not converge from there, it is started from that
-  # midpoint fit as before. The estimates are those of the interval-censored likelihood either way.
+  # The model without covariates is fitted first (its log-likelihood is reported), from the
+  # closed-form start of the C++ core (exponential rate on the midpoints); unless init is given, its
+  # estimates with all coefficients 0 start the full model. Whenever a fit does not converge from such
+  # a start, it is repeated from the fit to the midpoints of the intervals (the former start). The
+  # estimates are those of the interval-censored likelihood either way.
   X0 <- f$X[, 0L, drop = FALSE]
   p <- ncol(f$X)
-  r0 <- if (p) tryCatch(.par_fit_ic(L, R, type, X0, dist, scale, start_of(X0, NULL), max_iter, tol, kn),
-                        error = function(e) NULL) else NULL
-  st <- if (!is.null(init)) as.double(init)
-        else if (!is.null(r0) && isTRUE(r0$converged)) unname(c(r0$theta[1L], rep(0, p), r0$theta[-1L]))
-        else NULL
-  r <- if (is.null(st)) NULL else tryCatch(.par_fit_ic(L, R, type, f$X, dist, scale, st, max_iter, tol, kn), error = function(e) NULL)
-  if (is.null(r) || (is.null(init) && !isTRUE(r$converged)))
+  fit <- function(X, st) tryCatch(.par_fit_ic(L, R, type, X, dist, scale, st, max_iter, tol, kn), error = function(e) NULL)
+  ok <- function(r) !is.null(r) && isTRUE(r$converged)
+  r0 <- NULL
+  if (p) {
+    r0 <- fit(X0, NULL)
+    if (!ok(r0)) { r0b <- tryCatch(fit(X0, start_of(X0, NULL)), error = function(e) NULL); if (!is.null(r0b)) r0 <- r0b }
+  }
+  r <- if (!is.null(init)) fit(f$X, as.double(init))
+       else if (!p) fit(f$X, NULL)
+       else if (ok(r0)) fit(f$X, unname(c(r0$theta[1L], rep(0, p), r0$theta[-1L])))
+       else NULL
+  if (is.null(r) || (is.null(init) && !ok(r)))
     r <- .par_fit_ic(L, R, type, f$X, dist, scale, start_of(f$X, init), max_iter, tol, kn)
   ln <- if (p) (if (is.null(r0)) NA_real_ else r0$loglik) else r$loglik
   ParSurvFit(model_call = cl, terms = f$terms, xlevels = f$xlevels, contrasts = f$contrasts,

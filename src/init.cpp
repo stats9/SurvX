@@ -42,7 +42,7 @@ static const R_CMethodDef c_methods[] = {
   {"SX_parcsc_predict", (DL_FUNC) &SX_parcsc_predict, 19, NULL},
   {"SX_cv_folds", (DL_FUNC) &SX_cv_folds, 4, NULL},
   {"SX_kernel_hazard", (DL_FUNC) &SX_kernel_hazard, 12, NULL},
-  {"SX_par_fit_ic", (DL_FUNC) &SX_par_fit_ic, 18, NULL},
+  {"SX_par_fit_ic", (DL_FUNC) &SX_par_fit_ic, 19, NULL},
   {"SX_direct_fit_ic", (DL_FUNC) &SX_direct_fit_ic, 23, NULL},
   {"SX_turnbull", (DL_FUNC) &SX_turnbull, 16, NULL},
   {"SX_par_frailty", (DL_FUNC) &SX_par_frailty, 21, NULL},

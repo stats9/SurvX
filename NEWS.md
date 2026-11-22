@@ -110,9 +110,10 @@
   The table of Gray's tests is built once, and groups that are already factors without unused
   levels are not rebuilt (also in `km()`, `logrank_test()` and `gray_test()`).
 * `parsurv()` with an `Interval()` outcome fits the model without covariates first (its
-  log-likelihood is reported anyway) and starts the full model from it with all coefficients 0,
-  instead of from a separate fit of the full model to the midpoints of the intervals (still used
-  if the full model does not converge from there). Same estimates, about one fit less.
+  log-likelihood is reported anyway), from a closed-form start computed by the C++ core, and starts
+  the full model from it with all coefficients 0. The fits of the models to the midpoints of the
+  intervals, formerly the starts, are now only a fallback when a fit does not converge. Same
+  estimates; two fits less.
 * The likelihood of `parsurv()` (Royston-Parmar and piecewise exponential baselines, and every
   family with `Interval()` outcomes) no longer allocates memory for every subject at every
   evaluation: 15-20% faster with identical results.

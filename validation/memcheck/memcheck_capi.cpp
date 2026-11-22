@@ -194,6 +194,8 @@ int main() {
         for (int i = 0; i < n; ++i) { ty[i] = d.status[i] ? (i % 5 == 0 ? 3 : (i % 3 == 0 ? 1 : 2)) : 0; t1[i] = ty[i] == 2 ? 0.7 * d.time[i] : d.time[i]; t2[i] = d.time[i]; }
         V th2(th), var2(64 * 64);
         tally(sc_par_fit_ic(n, p, di, aft, nk, knp, t1.data(), t2.data(), ty.data(), X, th.data(), 100, 1e-8, th2.data(), var2.data(), &info));
+        // without a start: the closed-form start on the midpoints
+        tally(sc_par_fit_ic(n, p, di, aft, nk, knp, t1.data(), t2.data(), ty.data(), X, nullptr, 100, 1e-8, th2.data(), var2.data(), &info));
         // shared gamma frailty
         const int C = (n + 3) / 4; V th3(65, 0.0), var3(65 * 65), sh(C), rt(C);
         V ini(th.begin(), th.begin() + 64); ini.push_back(std::log(0.5));
