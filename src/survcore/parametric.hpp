@@ -357,12 +357,32 @@ inline int pw_exposure(const std::vector<double>& c, double t, double* tau) {
 
 // Contribution of one subject with local variables (u, shape_1..shape_ns): value l, gradient g
 // (length 1 + ns) and Hessian H (row-major, (1 + ns)^2).
+// scratch of n doubles set to 0, on the stack when n <= N and on the heap beyond. The per-subject
+// functions below run for every subject at every evaluation of the likelihood; a std::vector there
+// meant one heap allocation per subject and evaluation, which cost more than the arithmetic.
+template <std::size_t N> class SmallBuf {
+ public:
+  explicit SmallBuf(std::size_t n) {
+    if (n <= N) p_ = s_; else { h_.assign(n, 0.0); p_ = h_.data(); }
+    std::fill(p_, p_ + n, 0.0);
+  }
+  SmallBuf(const SmallBuf&) = delete;
+  SmallBuf& operator=(const SmallBuf&) = delete;
+  double* data() { return p_; }
+  double& operator[](std::size_t i) { return p_[i]; }
+  double operator[](std::size_t i) const { return p_[i]; }
+ private:
+  double s_[N];
+  std::vector<double> h_;
+  double* p_;
+};
+
 inline void par_local_all(const ParSpec& sp, double entry, double t, int d, double u, const double* sh,
                           double& l, double* g, double* H) {
   const int ns = sp.nshape(), q = 1 + ns;
   for (int a = 0; a < q; ++a) { g[a] = 0.0; for (int b = 0; b < q; ++b) H[a * q + b] = 0.0; }
   if (sp.dist == PD_RP) {
-    std::vector<double> b(ns), db(ns), be(ns, 0.0), dbe(ns);
+    SmallBuf<16> b(ns), db(ns), be(ns), dbe(ns);
     par_detail::rp_basis(sp.knots, std::log(t), b.data(), db.data());
     double s = u, sd = 0.0;
     for (int j = 0; j < ns; ++j) { s += sh[j] * b[j]; sd += sh[j] * db[j]; }
@@ -389,12 +409,12 @@ inline void par_local_all(const ParSpec& sp, double entry, double t, int d, doub
   }
   if (sp.dist == PD_PWEXP) {
     const int J = ns + 1;
-    std::vector<double> tau(J), taue(J, 0.0);
+    SmallBuf<32> tau(J), taue(J);
     const int jt = par_detail::pw_exposure(sp.knots, t, tau.data());
     if (entry > 0.0) par_detail::pw_exposure(sp.knots, entry, taue.data());
     const double E = std::exp(u);
     double A = 0.0;
-    std::vector<double> ea(J);
+    SmallBuf<32> ea(J);
     for (int j = 0; j < J; ++j) { ea[j] = std::exp(j ? sh[j - 1] : 0.0) * (tau[j] - taue[j]); A += ea[j]; }
     l = (d ? u + (jt ? sh[jt - 1] : 0.0) : 0.0) - E * A;
     g[0] = (d ? 1.0 : 0.0) - E * A;
@@ -443,7 +463,8 @@ inline void par_local_all(const ParSpec& sp, double entry, double t, int d, doub
 // for the generalized gamma, its numerical) derivatives.
 inline void par_local_ic(const ParSpec& sp, double L, double R, double u, const double* sh, double& l, double* g, double* H) {
   const int q = 1 + sp.nshape();
-  std::vector<double> ga(q, 0.0), Ha(q * q, 0.0), gb(q, 0.0), Hb(q * q, 0.0);
+  SmallBuf<8> ga(q), gb(q);
+  SmallBuf<64> Ha(static_cast<std::size_t>(q) * q), Hb(static_cast<std::size_t>(q) * q);
   double a = 0.0, b = 0.0;
   if (L > 0.0) par_local_all(sp, 0.0, L, 0, u, sh, a, ga.data(), Ha.data());
   par_local_all(sp, 0.0, R, 0, u, sh, b, gb.data(), Hb.data());

@@ -400,7 +400,9 @@ parsurv <- function(formula, data, baseline = "weibull", scale = NULL, df = 3L, 
   kn <- .par_knots(dist, mid, ev, df, knots, cuts)
   start_of <- function(X, given) {
     if (!is.null(given)) return(as.double(given))
-    s0 <- tryCatch(.par_fit(mid, ev, NULL, X, dist, scale, NULL, max_iter, tol, kn), error = function(e) NULL)
+    # a start only: a looser tolerance saves the last Newton steps; the estimates are those of the
+    # interval-censored fit below, which uses the requested tolerance
+    s0 <- tryCatch(.par_fit(mid, ev, NULL, X, dist, scale, NULL, max_iter, max(tol, 1e-6), kn), error = function(e) NULL)
     if (is.null(s0) || !all(is.finite(s0$theta)))
       stop("no starting values: the model could not be fitted to the midpoints of the intervals; give init", call. = FALSE)
     unname(s0$theta)

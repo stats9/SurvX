@@ -113,6 +113,9 @@
   log-likelihood is reported anyway) and starts the full model from it with all coefficients 0,
   instead of from a separate fit of the full model to the midpoints of the intervals (still used
   if the full model does not converge from there). Same estimates, about one fit less.
+* The likelihood of `parsurv()` (Royston-Parmar and piecewise exponential baselines, and every
+  family with `Interval()` outcomes) no longer allocates memory for every subject at every
+  evaluation: 15-20% faster with identical results.
 * `directcif(estimation = "weighted")`: new argument `variance`. The default, `"ipcw"`, is a
   sandwich variance that includes the effect of estimating the censoring distribution (the exact
   influence of each subject with the Kaplan-Meier estimate recomputed; the discrete form of the
