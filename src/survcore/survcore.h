@@ -536,18 +536,22 @@ int sc_compare_models3(int n, int p, int K, const double* time, const int* cause
  *   0 Brier, 1 Brier without covariates, 2 IPA, 3 AUC, 4 calibration error (risk groups), 5 se(Brier),
  *   6 se(AUC), 7 O/E, 8-9 its interval (z), 10 ICI, 11 E50, 12 E90, 13 Brier minus that of the
  *   reference model (lowest Brier at that time, ref[j], 0-based, -1 if none), 14 its se, 15 p-value,
- *   16 AUC minus that of the reference, 17 its se, 18 p-value. Standard errors from influence
- *   functions with the censoring weights taken as known (riskRegression conservative = TRUE).
+ *   16 AUC minus that of the reference, 17 its se, 18 p-value, 19-20 interval of the Brier score,
+ *   21-22 interval of the AUC (estimate -/+ z se, within [0, 1]); 23 columns. Standard errors from
+ *   influence functions with the censoring weights taken as known (riskRegression conservative = TRUE).
  * sc_concordance: C index of `interest` (Harrell, or Uno with uno != 0; event times <= tau; Wolbers
- *   with competing causes): out = C, se, concordant, discordant, tied (weighted), pairs; dfbeta (n,
- *   may be null) the infinitesimal-jackknife influence of every subject.
+ *   with competing causes): out (8) = C, se, concordant, discordant, tied (weighted), pairs, and the
+ *   interval C -/+ z se within [0, 1]; dfbeta (n, may be null) the infinitesimal-jackknife influence
+ *   of every subject.
+ * sc_mean_curve: time average of y on the grid (trapezoids over the finite points / their range).
  * sc_net_benefit: net benefit of the predicted risks and of treating all, at m thresholds.
  * sc_smooth_calibration: ICI, E50, E90 (out) and the calibrated risk of every subject (observed,
  *   may be null); returns 1 when the calibration model cannot be fitted (out NaN). */
 int sc_assess(int n, const double* time, const int* cause, int interest, int nt, const double* times, int M,
               const double* risk, int groups, double z, double* out, int* ref);
 int sc_concordance(int n, const double* time, const int* cause, int interest, const double* risk, double tau, int uno,
-                   double* out, double* dfbeta);
+                   double z, double* out, double* dfbeta);
+int sc_mean_curve(int m, const double* grid, const double* y, double* out);
 int sc_net_benefit(int n, const double* time, const int* cause, int interest, const double* pred, double t, int m,
                    const double* thr, double* nb, double* nb_all);
 int sc_smooth_calibration(int n, const double* time, const int* cause, int interest, const double* pred, double t,

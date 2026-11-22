@@ -27,8 +27,8 @@ valgrind --error-exitcode=9 --leak-check=full --track-origins=yes ./memcheck_vg
 A clean run prints the number of calls and `invalid inputs refused 11 of 11`, with no sanitizer
 report and, for valgrind, `ERROR SUMMARY: 0 errors` and no leaks. Non-zero return codes in the
 count are expected: they are invalid combinations (for example an AFT form of a family that has
-none) refused by the core. Last run (2026-11-23): `memcheck_capi.cpp` 26592 calls under gcc 13 ASan + UBSan and clang 18 UBSan,
-no report; valgrind 6648 calls, 0 errors, all heap blocks freed. `memcheck_support.cpp` (with an
+none) refused by the core. Last run (2026-11-23): `memcheck_capi.cpp` 26628 calls under gcc 13 ASan + UBSan and clang 18 UBSan,
+no report; valgrind 6657 calls, 0 errors, all heap blocks freed. `memcheck_support.cpp` (with an
 installed index source, as the R front end uses, and every toolkit entry point): 4924 calls under
 ASan + UBSan and clang UBSan, 1470 under valgrind, no report. The workflow `.github/workflows/memcheck.yaml`
 runs the same checks on every push.

@@ -36,12 +36,14 @@ int sc_assess(int n, const double* time, const int* cause, int interest, int nt,
 } catch (...) { return -9; }
 
 int sc_concordance(int n, const double* time, const int* cause, int interest, const double* risk, double tau, int uno,
-                   double* out, double* dfbeta) try {
+                   double z, double* out, double* dfbeta) try {
   if (int rc = check_outcome(n, time, cause)) return rc;
   if (!risk || !out || interest < 1) return -1;
   if (!finite_n(risk, static_cast<std::size_t>(n)) || std::isnan(tau)) return -2;
   const ConcordanceResult r = concordance_index(static_cast<std::size_t>(n), time, cause, interest, risk, tau, uno != 0, dfbeta);
   out[0] = r.c; out[1] = r.se; out[2] = r.concordant; out[3] = r.discordant; out[4] = r.tied; out[5] = r.pairs;
+  out[6] = out[7] = kMissing;
+  if (std::isfinite(r.c) && std::isfinite(r.se) && z > 0.0) { out[6] = std::fmax(0.0, r.c - z * r.se); out[7] = std::fmin(1.0, r.c + z * r.se); }
   return 0;
 } catch (...) { return -9; }
 
@@ -68,6 +70,12 @@ int sc_smooth_calibration(int n, const double* time, const int* cause, int inter
   out[0] = s.ici; out[1] = s.e50; out[2] = s.e90;
   if (observed) for (int i = 0; i < n; ++i) observed[i] = s.ok ? obs[static_cast<std::size_t>(i)] : kMissing;
   return s.ok ? 0 : 1;
+} catch (...) { return -9; }
+
+int sc_mean_curve(int m, const double* grid, const double* y, double* out) try {
+  if (m < 1 || !grid || !y || !out) return -1;
+  *out = mean_curve(static_cast<std::size_t>(m), grid, y);
+  return 0;
 } catch (...) { return -9; }
 
 }  // extern "C"

@@ -433,8 +433,11 @@ void SX_compare3(int* n, int* p, int* K, double* time, int* cause, double* X, in
 void SX_assess(int* n, double* time, int* cause, int* interest, int* nt, double* times, int* M, double* risk, int* groups, double* z, double* out, int* ref, int* rc) {
   *rc = sc_assess(*n, time, cause, *interest, *nt, times, *M, risk, *groups, *z, out, ref);
 }
-void SX_concordance(int* n, double* time, int* cause, int* interest, double* risk, double* tau, int* uno, double* out, double* dfbeta, int* rc) {
-  *rc = sc_concordance(*n, time, cause, *interest, risk, *tau, *uno, out, dfbeta);
+void SX_concordance(int* n, double* time, int* cause, int* interest, double* risk, double* tau, int* uno, double* z, double* out, double* dfbeta, int* rc) {
+  *rc = sc_concordance(*n, time, cause, *interest, risk, *tau, *uno, *z, out, dfbeta);
+}
+void SX_mean_curve(int* m, double* grid, double* y, double* out, int* rc) {
+  *rc = sc_mean_curve(*m, grid, y, out);
 }
 void SX_net_benefit(int* n, double* time, int* cause, int* interest, double* pred, double* t, int* m, double* thr, double* nb, double* nb_all, int* rc) {
   *rc = sc_net_benefit(*n, time, cause, *interest, pred, *t, *m, thr, nb, nb_all);

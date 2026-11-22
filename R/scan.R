@@ -125,10 +125,10 @@
 # time-averaged value of a curve on the grid: trapezoidal integral over the grid points where it is
 # defined, divided by their range (integrated AUC; Heagerty & Zheng 2005, with uniform weights)
 .scan_mean_curve <- function(grid, y) {
-  ok <- is.finite(y)
-  if (sum(ok) < 2L) return(NA_real_)
-  x <- grid[ok]; v <- y[ok]; k <- length(x)
-  sum(diff(x) * (v[-1L] + v[-k]) / 2) / (x[k] - x[1L])
+  r <- .C("SX_mean_curve", length(grid), as.double(grid), as.double(y), out = double(1), rc = integer(1), NAOK = TRUE,
+          PACKAGE = "SurvX")
+  .sx_rc(r$rc, "time-averaged AUC")
+  if (is.nan(r$out)) NA_real_ else r$out
 }
 
 # the non-parametric estimate of the event probability of the cause at the times (no covariates)
@@ -544,7 +544,7 @@ model_scan <- function(formula, data, cause = 1L, goal = c("prediction", "effect
       if (is.null(pooled_t[[m]]) || m > length(per_time) || is.null(per_time[[m]])) next
       for (nm in .assess_new) per_time[[m]][[paste0(nm, "_cv")]] <- A$a[nm, , m]
       per_time[[m]]$reference_cv <- refn
-      im <- A$a["ici", , m]; tab$ici_cv[m] <- if (any(is.finite(im))) mean(im[is.finite(im)]) else NA_real_
+      im <- .sx_reduce("mean", A$a["ici", , m], TRUE); tab$ici_cv[m] <- if (is.nan(im)) NA_real_ else im
     }
   }
   # AIC within the group of models with a full likelihood of the same data

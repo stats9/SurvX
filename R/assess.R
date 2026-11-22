@@ -3,7 +3,8 @@
 # E50, E90), concordance index, decision curves, and likelihood-ratio tests of nested models.
 
 .assess_cols <- c("brier", "brier_null", "ipa", "auc", "calib_error", "brier_se", "auc_se", "oe", "oe_lower", "oe_upper",
-                  "ici", "e50", "e90", "brier_diff", "brier_diff_se", "brier_diff_p", "auc_diff", "auc_diff_se", "auc_diff_p")
+                  "ici", "e50", "e90", "brier_diff", "brier_diff_se", "brier_diff_p", "auc_diff", "auc_diff_se", "auc_diff_p",
+                  "brier_lower", "brier_upper", "auc_lower", "auc_upper")
 
 # all measures of M models at the times; risks: list of n x nt matrices (NULL for a model without
 # predictions). Returns a [measure, time, model] array and the reference model (lowest Brier score)
@@ -22,7 +23,8 @@
 }
 
 # the measures added by .sx_assess to the four of the first versions of the comparison tables
-.assess_new <- c("brier_se", "auc_se", "oe", "oe_lower", "oe_upper", "ici", "e50", "e90",
+.assess_new <- c("brier_se", "brier_lower", "brier_upper", "auc_se", "auc_lower", "auc_upper", "oe", "oe_lower", "oe_upper",
+                 "ici", "e50", "e90",
                  "brier_diff", "brier_diff_se", "brier_diff_p", "auc_diff", "auc_diff_se", "auc_diff_p")
 
 # comparison table (one row per model and time) from the apparent and cross-validated predictions
@@ -141,11 +143,11 @@ cindex <- function(object, time = NULL, status = NULL, newdata = NULL, cause = 1
   ok <- is.finite(score) & is.finite(time) & !is.na(status)
   if (!all(ok)) { score <- score[ok]; time <- time[ok]; status <- status[ok]; n <- length(time) }
   r <- .C("SX_concordance", as.integer(n), time, status, as.integer(cause), score, as.double(tau), as.integer(method == "uno"),
-          out = double(6), dfbeta = double(n), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
+          as.double(.sx_qnorm(.sx_upper_prob(level))), out = double(8), dfbeta = double(n), rc = integer(1), NAOK = TRUE,
+          PACKAGE = "SurvX")
   .sx_rc(r$rc, "cindex")
   o <- r$out; o[is.nan(o)] <- NA_real_
-  z <- .sx_qnorm(.sx_upper_prob(level))
-  structure(list(concordance = o[1L], se = o[2L], lower = max(0, o[1L] - z * o[2L]), upper = min(1, o[1L] + z * o[2L]),
+  structure(list(concordance = o[1L], se = o[2L], lower = o[7L], upper = o[8L],
                  counts = c(concordant = o[3L], discordant = o[4L], tied = o[5L], pairs = o[6L]),
                  dfbeta = r$dfbeta, method = method, tau = tau, cause = as.integer(cause), level = level,
                  competing = any(status > 0L & status != cause), n = n),
@@ -358,8 +360,10 @@ plot.DecisionCurve <- function(x, ylim = NULL, col = NULL, lwd = 2, xlab = "risk
         (!identical(fits[[k]]@time, fits[[k - 1L]]@time) || !identical(fits[[k]]@status, fits[[k - 1L]]@status)))
       stop("anova: models ", k - 1L, " and ", k, " were not fitted to the same outcome", call. = FALSE)
   }
-  chi <- c(NA_real_, 2 * diff(lv)); dd <- c(NA_real_, diff(df))
-  p <- c(NA_real_, stats::pchisq(chi[-1L], dd[-1L], lower.tail = FALSE))
+  K <- length(fits)
+  dd <- c(NA_real_, .sx_ew("sub", df[-1L], df[-K]))
+  lr <- .sx_lr(lv[-1L], lv[-K], dd[-1L])                        # 2 (ll_k - ll_{k-1}) and its chi-square p-value
+  chi <- c(NA_real_, lr$stat); p <- c(NA_real_, lr$p)
   forms <- vapply(fits, function(f) paste(deparse(stats::formula(f)[[3L]], width.cutoff = 500L), collapse = ""), "")
   tab <- data.frame(loglik = lv, Df = dd, Chisq = chi, `Pr(>|Chi|)` = p, check.names = FALSE,
                     row.names = paste("Model", seq_along(fits)))

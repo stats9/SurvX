@@ -16,7 +16,7 @@
     calibration index ICI with E50 and E90 (Austin, Harrell & van Klaveren 2020; Cox or Fine-Gray
     calibration model on a natural spline of cloglog(risk)), and the smooth calibration curve.
   * `compare_models()`, `cv_compare()` and `model_scan()` (`x@per_time`) report, apparent and
-    cross-validated, the standard errors of the Brier score and AUC, the paired difference of each
+    cross-validated, the standard errors and intervals of the Brier score and AUC, the paired difference of each
     model from the one with the lowest Brier score with its standard error and p-value, O/E with its
     interval, ICI, E50 and E90. All existing columns are kept. `print()` shows them; `plot()` has
     the measures `"ici"` and `"oe"` and draws intervals for the Brier score, AUC and O/E.
@@ -30,9 +30,11 @@
     partial likelihood, as `survival::anova.coxph`; parametric, cure, frailty, joint and
     constrained direct models: full likelihood). Refused for Fine-Gray and weighted direct models,
     whose pseudo-likelihoods do not give valid tests.
-  * New C API entries `sc_assess`, `sc_concordance`, `sc_net_benefit`, `sc_smooth_calibration` and
+  * Every number is computed in the core (intervals, time-averaged AUC, likelihood-ratio tests);
+    R only formats and draws. New C API entries `sc_assess`, `sc_concordance`, `sc_net_benefit`,
+    `sc_smooth_calibration`, `sc_mean_curve` and
     `sc_compare_models3` (the comparison that also returns the predicted risks it scored). The
-    memory check covers them (gcc ASan + UBSan and clang UBSan: 26592 calls; valgrind: 6648 calls, 0 errors, no leaks; invalid inputs refused 11 of 11).
+    memory check covers them (gcc ASan + UBSan and clang UBSan: 26628 calls; valgrind: 6657 calls, 0 errors, no leaks; invalid inputs refused 11 of 11).
   * Validation suite (`validation/R/07_assess.R`): against `survival::concordance`,
     `riskRegression::Score`, `survival::survfit`, `survival::coxph` with `splines::ns`,
     `survival::finegray`, `dcurves::dca`, `survival::anova.coxph` and `survreg`.

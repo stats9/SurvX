@@ -55,6 +55,7 @@ test_that("cindex() agrees with survival::concordance for one event type", {
   f <- cox(Event(time, ev) ~ x + z, d)
   expect_close(cindex(f)$concordance, cindex(drop(predict(f, type = "lp")), d$time, d$ev)$concordance, 1e-12)
   expect_output(print(ours), "concordance")
+  expect_close(c(ours$lower, ours$upper), ours$concordance + c(-1, 1) * stats::qnorm(0.975) * ours$se, 1e-12)
 })
 
 test_that("standard errors, paired differences and O/E of compare_models() and cv_compare()", {
@@ -84,6 +85,9 @@ test_that("standard errors, paired differences and O/E of compare_models() and c
   expect_close(c(b[["brier"]], b[["se"]]), c(s$brier, s$brier_se), 1e-9)
   a <- auc_t(d$time, d$status, r, 2, se = TRUE)
   expect_close(a[c("auc", "se")], c(s$auc, s$auc_se), 1e-9)
+  z <- stats::qnorm(0.975)
+  expect_close(a[c("lower", "upper")], c(max(0, a[["auc"]] - z * a[["se"]]), min(1, a[["auc"]] + z * a[["se"]])), 1e-12)
+  expect_close(c(s$brier_lower, s$brier_upper), c(max(0, s$brier - z * s$brier_se), s$brier + z * s$brier_se), 1e-12)
   cal <- calibration(d$time, d$status, r, 2)
   expect_close(c(attr(cal, "oe")[1L], attr(cal, "ici")), c(s$oe, s$ici), 1e-9)
   expect_output(print(cm), "difference from best")
@@ -147,4 +151,8 @@ test_that("model_scan() reports the time-averaged AUC and ICI", {
   ok <- ms@table$fitted & is.finite(ms@table$ibs_cv)
   expect_true(all(ms@table$iauc_cv[ok] > 0.4 & ms@table$iauc_cv[ok] < 1, na.rm = TRUE))
   expect_true(all(c("brier_se_cv", "auc_diff_p_cv") %in% names(ms@per_time)))
+  # the time average of the AUC: trapezoids over the grid points where it is defined
+  g <- c(0.5, 1, 2, 3); y <- c(NA, 0.6, 0.8, 0.7)
+  expect_close(SurvX:::.scan_mean_curve(g, y), ((2 - 1) * (0.6 + 0.8) / 2 + (3 - 2) * (0.8 + 0.7) / 2) / (3 - 1), 1e-14)
+  expect_true(is.na(SurvX:::.scan_mean_curve(g, c(NA, NA, 0.5, NA))))
 })

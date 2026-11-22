@@ -57,7 +57,8 @@ acc_assess_one <- function(d, label, cr) {
     o <- attempt(cindex(sc, d$time, d$status, cause = 1L))
     r <- attempt({
       dd <- data.frame(time = d$time, status = d$status, sc = sc)
-      pc <- pec::cindex(list(m = matrix(sc, ncol = 1L)), formula = prodlim::Hist(time, status) ~ 1, data = dd, cause = 1,
+      Hist <- prodlim::Hist                                # pec and riskRegression read the name Hist from the formula
+      pc <- pec::cindex(list(m = matrix(sc, ncol = 1L)), formula = Hist(time, status) ~ 1, data = dd, cause = 1,
                         eval.times = max(dd$time) + 1, cens.model = "marginal", splitMethod = "none")
       unname(unlist(pc$AppCindex))[1L]
     })
@@ -69,7 +70,8 @@ acc_assess_one <- function(d, label, cr) {
   if (has("riskRegression") && has("prodlim")) {
     ref <- attempt({
       suppressPackageStartupMessages(library(survival))
-      scr <- riskRegression::Score(list(m1 = matrix(r1), m2 = matrix(r2)), formula = prodlim::Hist(time, status) ~ 1, data = d,
+      Hist <- prodlim::Hist                                # Score reads the name Hist from the formula
+      scr <- riskRegression::Score(list(m1 = matrix(r1), m2 = matrix(r2)), formula = Hist(time, status) ~ 1, data = d,
                                   times = t, cause = 1, metrics = c("auc", "brier"), null.model = FALSE, conservative = TRUE,
                                   se.fit = TRUE, cens.model = "km", contrasts = TRUE)
       a <- as.data.frame(scr$AUC$score); b <- as.data.frame(scr$Brier$score)
@@ -142,8 +144,11 @@ acc_assess_one <- function(d, label, cr) {
   } else {
     a <- attempt(anova(csc(Event(time, status) ~ x1, d), csc(fo, d)))
     r <- attempt({
-      ll <- function(fm) sum(vapply(1:2, function(k) survival::coxph(stats::update(fm, survival::Surv(time, status == k) ~ .), d)$loglik[2L], 0))
-      st <- 2 * (ll(~ x1 + x2) - ll(~ x1))
+      ll <- function(vars) sum(vapply(1:2, function(k) {
+        dk <- d; dk$ev <- as.integer(d$status == k)          # cause k as the event, the others censored
+        survival::coxph(stats::reformulate(vars, "survival::Surv(time, ev)"), data = dk)$loglik[2L]
+      }, 0))
+      st <- 2 * (ll(c("x1", "x2")) - ll("x1"))
       c(st, stats::pchisq(st, 2, lower.tail = FALSE))
     })
     check("likelihood-ratio test", "anova (cause-specific Cox)", "survival::coxph per cause", label, "chi-square and p",

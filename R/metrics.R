@@ -152,9 +152,8 @@ auc_t <- function(time, status, risk, t, cause = 1L, se = FALSE, level = 0.95) {
           auc = double(1), rc = integer(1), NAOK = TRUE, PACKAGE = "SurvX")
   .sx_rc(r$rc, "auc_t")
   if (!isTRUE(se)) return(r$auc)
-  s <- unname(.sx_assess(time, status, list(risk), t, cause)$a["auc_se", 1L, 1L])
-  z <- .sx_qnorm(.sx_upper_prob(level))
-  c(auc = r$auc, se = s, lower = max(0, r$auc - z * s), upper = min(1, r$auc + z * s))
+  a <- .sx_assess(time, status, list(risk), t, cause, level = level)$a[, 1L, 1L]
+  c(auc = r$auc, se = unname(a["auc_se"]), lower = unname(a["auc_lower"]), upper = unname(a["auc_upper"]))
 }
 
 #' @rdname brier_score
@@ -234,7 +233,8 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L, level =
 #' pooled out-of-fold predictions (columns ending in \code{_cv}): \code{brier}, \code{ipa}, \code{auc},
 #' \code{calib_error} (see \code{\link{brier_score}}); \code{brier_se} and \code{auc_se}, standard
 #' errors from influence functions with the censoring weights taken as known (as
-#' \code{riskRegression::Score(conservative = TRUE)}); \code{oe}, \code{oe_lower}, \code{oe_upper},
+#' \code{riskRegression::Score(conservative = TRUE)}), with the 95\% intervals \code{brier_lower},
+#' \code{brier_upper}, \code{auc_lower}, \code{auc_upper}; \code{oe}, \code{oe_lower}, \code{oe_upper},
 #' the observed (Aalen-Johansen) over the mean predicted risk with its interval; \code{ici},
 #' \code{e50}, \code{e90}, the smooth calibration measures of Austin, Harrell and van Klaveren (2020);
 #' \code{brier_diff}, \code{brier_diff_se}, \code{brier_diff_p} and \code{auc_diff},

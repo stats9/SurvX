@@ -387,10 +387,12 @@ inline void net_benefit(const std::vector<double>& time, const std::vector<int>&
 //   0 brier, 1 brier_null, 2 ipa, 3 auc, 4 calibration error (risk groups), 5 se(brier),
 //   6 se(auc), 7 O/E, 8 lower, 9 upper, 10 ICI, 11 E50, 12 E90,
 //   13 brier - brier of the reference, 14 its se, 15 its p-value,
-//   16 auc - auc of the reference, 17 its se, 18 its p-value.
+//   16 auc - auc of the reference, 17 its se, 18 its p-value,
+//   19-20 interval of the Brier score (brier -/+ z se, lower end at least 0),
+//   21-22 interval of the AUC (auc -/+ z se, within [0, 1]).
 // ref[j]: the reference model (0-based) at time j, -1 if none.
 // ------------------------------------------------------------------------------------------------
-constexpr int kAssessCols = 19;
+constexpr int kAssessCols = 23;
 
 inline void assess_models(std::size_t n, const double* time, const int* cause, int interest, std::size_t nt, const double* times,
                           std::size_t M, const double* risk, int groups, double z, double* out, int* ref) {
@@ -418,6 +420,8 @@ inline void assess_models(std::size_t n, const double* time, const int* cause, i
       score_influence(tv, cv, interest, pr, t, ifa[m], ifb[m], a_if, b_if);
       o[5] = sd_over_sqrt_n(ifb[m]);
       o[6] = std::isfinite(o[3]) ? sd_over_sqrt_n(ifa[m]) : nan;
+      if (std::isfinite(o[0]) && std::isfinite(o[5])) { o[19] = std::fmax(0.0, o[0] - z * o[5]); o[20] = o[0] + z * o[5]; }
+      if (std::isfinite(o[3]) && std::isfinite(o[6])) { o[21] = std::fmax(0.0, o[3] - z * o[6]); o[22] = std::fmin(1.0, o[3] + z * o[6]); }
       observed_expected(tv, cv, interest, pr, t, z, o[7], o[8], o[9]);
       const SmoothCalibration sc = smooth_calibration(tv, cv, interest, pr, t);
       o[10] = sc.ici; o[11] = sc.e50; o[12] = sc.e90;
@@ -447,6 +451,19 @@ inline void assess_models(std::size_t n, const double* time, const int* cause, i
       }
     }
   }
+}
+
+// time average of a curve y on increasing grid points: trapezoidal integral over the points where y
+// is finite, divided by their range (NaN with fewer than two such points)
+inline double mean_curve(std::size_t m, const double* grid, const double* y) {
+  double s = 0.0, x0 = 0.0, y0 = 0.0, first = 0.0;
+  std::size_t k = 0;
+  for (std::size_t j = 0; j < m; ++j) {
+    if (!std::isfinite(y[j]) || !std::isfinite(grid[j])) continue;
+    if (k == 0) first = grid[j]; else s += (grid[j] - x0) * (y[j] + y0) / 2.0;
+    x0 = grid[j]; y0 = y[j]; ++k;
+  }
+  return (k >= 2 && x0 > first) ? s / (x0 - first) : std::nan("");
 }
 
 }  // namespace survcore

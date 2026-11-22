@@ -60,7 +60,8 @@ Every measure is computed twice, from the predictions of the full-data fit (appa
 pooled out-of-fold predictions (columns ending in \code{_cv}): \code{brier}, \code{ipa}, \code{auc},
 \code{calib_error} (see \code{\link{brier_score}}); \code{brier_se} and \code{auc_se}, standard
 errors from influence functions with the censoring weights taken as known (as
-\code{riskRegression::Score(conservative = TRUE)}); \code{oe}, \code{oe_lower}, \code{oe_upper},
+\code{riskRegression::Score(conservative = TRUE)}), with the 95\% intervals \code{brier_lower},
+\code{brier_upper}, \code{auc_lower}, \code{auc_upper}; \code{oe}, \code{oe_lower}, \code{oe_upper},
 the observed (Aalen-Johansen) over the mean predicted risk with its interval; \code{ici},
 \code{e50}, \code{e90}, the smooth calibration measures of Austin, Harrell and van Klaveren (2020);
 \code{brier_diff}, \code{brier_diff_se}, \code{brier_diff_p} and \code{auc_diff},

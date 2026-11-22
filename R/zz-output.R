@@ -726,12 +726,11 @@ S7::method(plot, ModelComparison) <- function(x, measure = c("ipa", "brier", "au
                 mgp = c(2, 0.5, 0), tcl = -0.25)
   for (j in seq_len(nt)) {
     s <- tab[tab$time == tt[j], , drop = FALSE]; v <- s[[nm]][match(mods, s$model)]
-    # 95% intervals of the Brier score and AUC (influence functions), of O/E (Aalen-Johansen)
-    se_nm <- if (measure %in% c("brier", "auc")) paste0(measure, "_se", if (cv) "_cv") else NULL
+    # 95% intervals of the Brier score and AUC (influence functions) and of O/E (Aalen-Johansen), from the core
     lo <- hi <- rep(NA_real_, ny)
-    if (!is.null(se_nm) && !is.null(s[[se_nm]])) { se <- s[[se_nm]][match(mods, s$model)]; lo <- v - 1.959964 * se; hi <- v + 1.959964 * se }
-    if (measure == "oe" && !is.null(s[[paste0("oe_lower", if (cv) "_cv")]])) {
-      lo <- s[[paste0("oe_lower", if (cv) "_cv")]][match(mods, s$model)]; hi <- s[[paste0("oe_upper", if (cv) "_cv")]][match(mods, s$model)]
+    lo_nm <- paste0(measure, "_lower", if (cv) "_cv"); hi_nm <- paste0(measure, "_upper", if (cv) "_cv")
+    if (measure %in% c("brier", "auc", "oe") && !is.null(s[[lo_nm]]) && !is.null(s[[hi_nm]])) {
+      lo <- s[[lo_nm]][match(mods, s$model)]; hi <- s[[hi_nm]][match(mods, s$model)]
     }
     graphics::par(mai = c(0.35, if (j == 1L) lab_in else 0.1, 0.3, 0.1) * c(cex, 1, cex, 1))
     xr <- range(c(v, lo, hi, if (reference && measure == "ipa") 0, if (reference && measure == "oe") 1), finite = TRUE)
