@@ -267,8 +267,12 @@ cm
 plot(cm, measure = "ipa")
 ```
 
-For a list of your own models use `cv_compare()`; the individual measures are also available as
-`brier_score()`, `auc_t()` and `calibration()`.
+The table also holds, for every measure, its standard error and interval, the paired difference
+from the best model with its p-value, the observed/expected ratio and the integrated calibration
+index ICI (`as.data.frame(cm)`); `plot(cm, measure = "ici")` and `plot(cm, measure = "oe")` draw
+them. For a list of your own models use `cv_compare()`; the individual measures are also available
+as `brier_score()`, `auc_t()`, `calibration()` and `cindex()` (the C index of Wolbers et al. for one
+cause), and `decision_curve()` gives the net benefit. Vignette 7 explains each measure.
 
 ### Scanning all models at once
 

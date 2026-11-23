@@ -23,7 +23,7 @@ Fine (2006, 2007), in one package with one formula interface and one style of ou
 - **Competing risks regression:** cause-specific hazards (Cox or parametric) and the Fine-Gray model, with delayed entry and robust or bootstrap variance, and predicted absolute risks.
 - **Parametric and cure models:** exponential, Weibull, Gompertz, log-normal, log-logistic, generalized gamma, piecewise exponential and Royston-Parmar spline models (PH or AFT), and mixture and non-mixture cure models.
 - **Direct parametric CIF regression:** eight baseline families and three links (proportional subdistribution hazards, proportional odds, generalized odds rate). Three estimators are available: joint likelihood, inverse-probability-of-censoring weighted likelihood, and the constrained model of Shi, Cheng and Jeong (2013), extended to any number of causes and to covariates that change when the competing events occur (accelerated failure time).
-- **Prediction performance:** IPCW Brier score, index of prediction accuracy (IPA), time-dependent AUC and calibration. Models are compared side by side with cross-validation.
+- **Prediction performance:** IPCW Brier score, index of prediction accuracy (IPA) and time-dependent AUC, each with its standard error; calibration in risk groups, observed/expected ratio and the integrated calibration index (ICI, E50, E90); concordance indices of Harrell, Uno and, with competing risks, Wolbers; decision curves; likelihood-ratio tests of nested models. Models are compared side by side with cross-validation and paired tests.
 - **Time-varying effects:** `time_effects()` screens every covariate of a Cox, cause-specific Cox or Fine-Gray model for a change of its effect over time, chooses the form of the change and reports the hazard ratio over follow-up.
 - **Adjusted risks and causal contrasts:** `adjusted_risk()` gives the absolute risk under each treatment by standardisation (g-formula) or inverse probability weighting, with risk differences and ratios and balance diagnostics.
 - **Interval-censored data:** `Interval()` outcomes with the Turnbull estimate (`turnbull()`), parametric regression (`parsurv()`) and direct CIF models (`directcif()`).
@@ -36,9 +36,9 @@ layer uses [S7](https://rconsortium.github.io/S7/) classes and supports the usua
 (`print`, `summary`, `coef`, `vcov`, `confint`, `predict`, `plot`, `AIC`, `update`, ...).
 
 Every function has a detailed help page (when to use it, its arguments, how to interpret and
-report the result, how to check its assumptions, and the literature behind it), and six vignettes
+report the result, how to check its assumptions, and the literature behind it), and seven vignettes
 cover complete analyses. Every release is checked against survival, cmprsk, riskRegression,
-flexsurv, flexsurvcure, icenReg, interval, frailtyEM and parfm by the validation suite described [below](#validation). Please report
+flexsurv, flexsurvcure, icenReg, interval, frailtyEM, parfm, pec and dcurves by the validation suite described [below](#validation). Please report
 problems at <https://github.com/stats9/SurvX/issues>.
 
 ---
@@ -80,6 +80,7 @@ remotes::install_github("stats9/SurvX", build_vignettes = TRUE)
 | `vignette("parametric-cure", "SurvX")` | choosing a distribution, time ratios, extrapolation, cure models |
 | `vignette("reporting", "SurvX")` | effect measures, sentences, tables and figures for a paper, a checklist |
 | `vignette("validation", "SurvX")` | agreement with the reference packages, Monte Carlo study, speed |
+| `vignette("prediction", "SurvX")` | assessing and comparing prediction models: Brier score, AUC, calibration (O/E, ICI), C index, paired tests, cross-validation, decision curves, nested models |
 
 You need a C++17 compiler: Rtools on Windows, or the Xcode command line tools on macOS
 (`xcode-select --install`). Linux usually has one already.
@@ -157,7 +158,10 @@ patient, which keeps the plateau parameters interpretable and stabilises the fit
 | `directcif(formula, data, baseline, link, estimation, ...)` | direct parametric CIF regression; see [The direct models](#the-direct-models) |
 | `predict(fit, newdata, times, cause, se)` | absolute risks (CIF or survival) for new patients; delta-method standard errors for direct models |
 | `cif_data()`, `cif_plot()` | data behind, and drawing of, cumulative incidence curves for any model(s) |
-| `brier_score()`, `auc_t()`, `calibration()` | IPCW Brier score, time-dependent AUC, calibration in risk groups, at a time horizon |
+| `brier_score()`, `auc_t()`, `calibration()` | IPCW Brier score and IPA, time-dependent AUC, each with its standard error; calibration in risk groups, observed/expected ratio with its interval, smooth calibration curve with ICI, E50 and E90; at a time horizon, with one event type or competing risks |
+| `cindex(fit or score, method, tau)` | concordance index: Harrell and Uno, and with competing risks Wolbers et al. (2009) and its weighted version (2014), with the infinitesimal-jackknife standard error, in O(n log n) time |
+| `decision_curve(risks, time, status, t, thresholds)` | decision curve analysis: net benefit of deciding by the predicted risks against treating all and none, with censoring and competing risks; `plot()` |
+| `anova(fit1, fit2, ...)` | likelihood-ratio tests of nested models (partial likelihood for Cox models, full likelihood for parametric, cure, frailty and direct models) |
 | `compare_models(formula, data, times, direct, cause, folds, constrained)` | cross-validated comparison of direct, Fine-Gray and cause-specific Cox models (runs in the C++ core), and of constrained models with any number of causes and time ratios of the competing causes |
 | `cv_compare(formula, data, models, times, ...)` | the same for any list of fitting functions with a `predict` method; with `+ frailty(id)`, folds of whole clusters |
 | `model_scan(formula, data, cause, goal, depth)` | fits every suitable model (one event type, competing risks, or one event type with `+ frailty(id)`: frailty models in folds of whole clusters), ranks them by cross-validated prediction with the equally good ones grouped, AIC only among comparable models, checks of every model; `plot()` and an HTML `report()` |
@@ -366,14 +370,20 @@ By default `compare_models()` fits:
 
 Other direct models are given in `direct =`, as `c(baseline, link[, estimation[, cond]])`.
 
-**Reported measures**, cross-validated with `folds` folds:
-- **Brier score:** IPCW (Graf et al. 1999; Gerds & Schumacher 2006)
+**Reported measures**, apparent and cross-validated with `folds` folds:
+- **Brier score:** IPCW (Graf et al. 1999; Gerds & Schumacher 2006), with its standard error and interval
 - **IPA:** index of prediction accuracy (Kattan & Gerds 2018)
-- **Time-dependent AUC:** Blanche, Dartigues & Jacqmin-Gadda (2013)
-- **Calibration error:** described under [original methods](#methods-original-to-survx)
+- **Time-dependent AUC:** Blanche, Dartigues & Jacqmin-Gadda (2013), with its standard error and interval
+- **Paired differences** of the Brier score and AUC from the best model, with standard errors and
+  p-values from influence functions on the same subjects (as `riskRegression::Score`)
+- **Calibration:** observed/expected ratio with its interval; ICI, E50 and E90 (Austin, Harrell &
+  van Klaveren 2020); the calibration error described under [original methods](#methods-original-to-survx)
 
 AIC is also reported for fits with a full likelihood. For any other model with a `predict` method,
-use `cv_compare()`.
+use `cv_compare()`. The concordance index is deliberately not in the table: it is not a proper
+measure for risks at a time horizon (Blanche, Kattan & Gerds 2019); `cindex()` computes it on its
+own. `decision_curve()` tells whether deciding by a model would do more good than harm.
+`vignette("prediction", "SurvX")` explains every measure.
 
 <p align="center"><img src="man/figures/compare.png" width="75%" alt="Cross-validated Brier score of seven models at two time horizons"/></p>
 
@@ -381,13 +391,14 @@ use `cv_compare()`.
 
 Fitted models are S7 objects: `CoxFit`, `FineGrayFit`, `CSCFit`, `ParCSCFit`, `ParSurvFit`,
 `CureFit`, `DirectCIFFit`, `FrailtyFit`, `KMFit`, `AJFit`, `TurnbullFit`, `HazardFit`, `PHTest`,
-`TimeEffects`, `AdjustedRisk`, `ModelScan` and `ModelComparison`. Properties are read with `@`, for example `fit@coefficients`,
+`TimeEffects`, `AdjustedRisk`, `ModelScan` and `ModelComparison`; `cindex()` and
+`decision_curve()` return S3 objects (`SurvXConcordance`, `DecisionCurve`) with `print` and `plot` methods. Properties are read with `@`, for example `fit@coefficients`,
 `fit@converged` or `fit@diagnostics`, and listed with `S7::props(fit)`. The usual S3 generics work
 as they do for `lm()` or `survival::coxph()`:
 
 ```r
 print(fit); summary(fit); coef(fit); vcov(fit); confint(fit); estimates(fit)
-logLik(fit); AIC(fit1, fit2); BIC(fit); nobs(fit)
+logLik(fit); AIC(fit1, fit2); BIC(fit); nobs(fit); anova(fit1, fit2)
 predict(fit, newdata, times, cause = 1, se = TRUE)
 plot(fit); ggplot2::autoplot(fit)
 formula(fit); terms(fit); model.matrix(fit); getCall(fit); update(fit, link = "PO")
@@ -422,6 +433,11 @@ and one PDF of figures:
 | `parsurv()` | `survival::survreg` (1e-9); `flexsurv` | optimiser tolerance of flexsurv |
 | `cure()` | `flexsurvcure` | optimiser tolerance of flexsurvcure |
 | `brier_score()`, `auc_t()` | `riskRegression::Score` | 1e-14 |
+| standard errors and paired differences of Brier score and AUC | `riskRegression::Score(conservative = TRUE)` | 1e-13 |
+| `cindex()` | `survival::concordance` (Harrell, and Uno with `timewt = "n/G2"`); `pec::cindex` with competing risks | 1e-16 |
+| `calibration()` (O/E, ICI, E50, E90) | `survival::survfit`; `survival::coxph` / `finegray` with `splines::ns` | 1e-9 |
+| `decision_curve()` | `dcurves::dca` | 1e-15 |
+| `anova()` | `survival::anova.coxph`, `survreg` | 1e-11 |
 | `time_effects()` (log form) | `survival::coxph(tt = )` | 4e-14 (check script) |
 | `turnbull()` | `icenReg::ic_np`, `interval::icfit`, `interval::ictest` | log-likelihood 1e-10, survival 1e-7, test statistic identical (check script) |
 | `parsurv(Interval())` | `survival::survreg(interval2)`; `flexsurv` | 2e-10; optimiser tolerance (check script) |
@@ -431,7 +447,8 @@ and one PDF of figures:
 The full results are summarised in `vignette("validation", "SurvX")`. On n = 10,000, `fg()` takes
 about 0.01 s against 150 s for `cmprsk::crr`, and `cure()` 0.03 s against 2.9 s for
 `flexsurvcure`. `inst/validation/check_SurvX.R` is an earlier, shorter check script kept with the
-package. The C++ core has its own tests: gradients and information matrices against numerical
+package. `validation/check_assess.R` checks all measures of prediction performance against the
+reference packages and a direct computation in about a minute. The C++ core has its own tests: gradients and information matrices against numerical
 derivatives, and AddressSanitizer, UndefinedBehaviorSanitizer and valgrind runs of every entry
 point of its C API (`validation/memcheck`, also run by the `C++ memcheck` workflow on every push).
 The layers of the package (C++ core, C API, R front end) and the parts that a second front end
@@ -493,7 +510,14 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 | `brier_score()` | IPCW Brier score for competing risks | Graf et al. (1999); Gerds & Schumacher (2006) |
 | IPA | 1 − Brier(model)/Brier(null model) | Kattan & Gerds (2018) |
 | `auc_t()` | IPCW time-dependent AUC with competing risks (cases: cause of interest by t; controls: all others) | Blanche, Dartigues & Jacqmin-Gadda (2013) |
-| `compare_models()`, `cv_compare()` | K-fold cross-validation of the measures above | Hastie, Tibshirani & Friedman (2009), Sec. 7.10 |
+| `compare_models()`, `cv_compare()` | K-fold cross-validation of the measures above; paired differences with influence-function standard errors | Hastie, Tibshirani & Friedman (2009), Sec. 7.10; Blanche, Dartigues & Jacqmin-Gadda (2013) |
+| standard errors of Brier score and AUC | influence functions with the censoring weights taken as known | Blanche, Dartigues & Jacqmin-Gadda (2013); Gerds & Schumacher (2006) |
+| `calibration()`: O/E, ICI, E50, E90 | Aalen-Johansen over mean predicted risk; Cox or Fine-Gray model on a natural spline of cloglog(risk) | Austin, Harrell & van Klaveren (2020) |
+| `cindex()` | concordance index, IPCW weights, competing risks; infinitesimal-jackknife variance; binary indexed trees | Harrell et al. (1982); Uno et al. (2011); Wolbers et al. (2009, 2014); Therneau & Atkinson (2024) |
+| C index not in the comparison tables | not proper for t-year risks | Blanche, Kattan & Gerds (2019) |
+| `model_scan()`: `iauc_cv` | time-averaged AUC over the grid | Heagerty & Zheng (2005) |
+| `decision_curve()` | net benefit; Kaplan-Meier / Aalen-Johansen among subjects above the threshold | Vickers & Elkin (2006); Vickers et al. (2008) |
+| `anova()` | likelihood-ratio test of nested models | Wilks (1938) |
 | `cif_plot()` bands for Fine-Gray / CSC | nonparametric bootstrap of subjects | Efron & Tibshirani (1993) |
 | `time_effects()` | score test of proportional hazards per term with Holm adjustment; log, step (change point by profile likelihood), spline in log time and user forms compared by AIC/BIC; refit on data split at the event times; bootstrap of the whole procedure | Grambsch & Therneau (1994); Holm (1979); Hess (1994); Gray (1992); Buchholz & Sauerbrei (2011) |
 | `adjusted_risk()` | g-formula (standardisation) and inverse probability of treatment weighting with stabilised weights; weighted Kaplan-Meier / Aalen-Johansen; balance by standardised mean differences | Robins (1986); Cole & Hernan (2004); Neumann & Billionnet (2016); Austin & Stuart (2015); Hernan & Robins (2020) |
@@ -513,11 +537,13 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 - Andersen PK, Geskus RB, de Witte T, Putter H (2012). Competing risks in epidemiology: possibilities and pitfalls. International Journal of Epidemiology 41:861-870.
 - Andersen PK, Gill RD (1982). Cox's regression model for counting processes: a large sample study. Annals of Statistics 10:1100-1120.
 - Austin PC, Fine JP (2017). Practical recommendations for reporting Fine-Gray model analyses for competing risk data. Statistics in Medicine 36:4391-4400.
+- Austin PC, Harrell FE, van Klaveren D (2020). Graphical calibration curves and the integrated calibration index (ICI) for survival models. Statistics in Medicine 39:2714-2742.
 - Austin PC, Stuart EA (2015). Moving towards best practice when using inverse probability of treatment weighting (IPTW) using the propensity score to estimate causal treatment effects in observational studies. Statistics in Medicine 34:3661-3679.
 - Balan TA, Putter H (2019). frailtyEM: an R package for estimating semiparametric shared frailty models. Journal of Statistical Software 90(7):1-29.
 - Benichou J, Gail MH (1990). Estimates of absolute cause-specific risk in cohort studies. Biometrics 46:813-826.
 - Berkson J, Gage RP (1952). Survival curve for cancer patients following treatment. Journal of the American Statistical Association 47:501-515.
 - Blanche P, Dartigues JF, Jacqmin-Gadda H (2013). Estimating and comparing time-dependent areas under receiver operating characteristic curves for censored event times with competing risks. Statistics in Medicine 32:5381-5397.
+- Blanche P, Kattan MW, Gerds TA (2019). The c-index is not proper for the evaluation of t-year predicted risks. Biostatistics 20:347-357.
 - Boag JW (1949). Maximum likelihood estimates of the proportion of patients cured by cancer therapy. Journal of the Royal Statistical Society, Series B 11:15-44.
 - Breslow NE (1972). Discussion of the paper by D. R. Cox. Journal of the Royal Statistical Society, Series B 34:216-217.
 - Breslow NE (1974). Covariance analysis of censored survival data. Biometrics 30:89-99.
@@ -555,8 +581,10 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 - Groeneboom P, Wellner JA (1992). Information Bounds and Nonparametric Maximum Likelihood Estimation. Birkhauser, Basel.
 - Haile SR, Jeong JH, Chen X, Cheng Y (2016). A 3-parameter Gompertz distribution for survival data with competing risks, with an application to breast cancer data. Journal of Applied Statistics 43:2239-2253.
 - Hall P, Marron JS (1991). Local minima in cross-validation functions. Journal of the Royal Statistical Society, Series B 53:245-252.
+- Harrell FE, Califf RM, Pryor DB, Lee KL, Rosati RA (1982). Evaluating the yield of medical tests. JAMA 247:2543-2546.
 - Harrington DP, Fleming TR (1982). A class of rank test procedures for censored survival data. Biometrika 69:553-566.
 - Hastie T, Tibshirani R, Friedman J (2009). The Elements of Statistical Learning, 2nd ed. Springer, New York, Section 7.10.
+- Heagerty PJ, Zheng Y (2005). Survival model predictive accuracy and ROC curves. Biometrics 61:92-105.
 - Hernan MA, Robins JM (2020). Causal Inference: What If. Chapman and Hall/CRC, Boca Raton.
 - Hess KR (1994). Assessing time-by-covariate interactions in proportional hazards regression models using cubic spline functions. Statistics in Medicine 13:1045-1062.
 - Hinchliffe SR, Lambert PC (2013). Flexible parametric modelling of cause-specific hazards to estimate cumulative incidence functions. BMC Medical Research Methodology 13:13.
@@ -608,14 +636,20 @@ Where SurvX goes beyond the literature (new baselines, estimation variants), thi
 - Shi H, Cheng Y, Jeong JH (2013). Constrained parametric model for simultaneous inference of two cumulative incidence functions. Biometrical Journal 55:82-96.
 - Stone M (1974). Cross-validatory choice and assessment of statistical predictions. Journal of the Royal Statistical Society, Series B 36:111-147.
 - Sun J (2006). The Statistical Analysis of Interval-censored Failure Time Data. Springer, New York.
+- Therneau T, Atkinson E (2024). Concordance. Vignette of the R package survival.
 - Therneau TM, Grambsch PM (2000). Modeling Survival Data: Extending the Cox Model. Springer, New York.
 - Therneau TM, Grambsch PM, Fleming TR (1990). Martingale-based residuals for survival models. Biometrika 77:147-160.
 - Therneau TM. Roundoff error and tied times. Vignette of the R package survival.
 - Turnbull BW (1976). The empirical distribution function with arbitrarily grouped, censored and truncated data. Journal of the Royal Statistical Society, Series B 38:290-295.
+- Uno H, Cai T, Pencina MJ, D'Agostino RB, Wei LJ (2011). On the C-statistics for evaluating overall adequacy of risk prediction procedures with censored survival data. Statistics in Medicine 30:1105-1117.
+- Vickers AJ, Cronin AM, Elkin EB, Gonen M (2008). Extensions to decision curve analysis, a novel method for evaluating diagnostic tests, prediction models and molecular markers. BMC Medical Informatics and Decision Making 8:53.
+- Vickers AJ, Elkin EB (2006). Decision curve analysis: a novel method for evaluating prediction models. Medical Decision Making 26:565-574.
 - Wald A (1943). Tests of statistical hypotheses concerning several parameters when the number of observations is large. Transactions of the American Mathematical Society 54:426-482.
 - Wellner JA, Zhan Y (1997). A hybrid algorithm for computation of the nonparametric maximum likelihood estimator from censored data. Journal of the American Statistical Association 92:945-959.
 - White H (1982). Maximum likelihood estimation of misspecified models. Econometrica 50:1-25.
 - Wilks SS (1938). The large-sample distribution of the likelihood ratio for testing composite hypotheses. Annals of Mathematical Statistics 9:60-62.
+- Wolbers M, Blanche P, Koller MT, Witteman JCM, Gerds TA (2014). Concordance for prognostic models with competing risks. Biostatistics 15:526-539.
+- Wolbers M, Koller MT, Witteman JCM, Steyerberg EW (2009). Prognostic models with competing risks: methods and application to coronary risk prediction. Epidemiology 20:555-561.
 - Yakovlev AY, Tsodikov AD (1996). Stochastic Models of Tumor Latency and Their Biostatistical Applications. World Scientific, Singapore.
 
 ## Methods original to SurvX

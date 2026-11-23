@@ -140,8 +140,11 @@ A report of a survival or competing risks analysis should state:
    their meaning in words.
 7. **Absolute quantities**: survival or cumulative incidence at clinically relevant times, medians
    or restricted means, for typical patients or groups.
-8. **Prediction models**: discrimination (`auc_t()`), calibration (`calibration()`) and overall
-   accuracy (`brier_score()`), preferably cross-validated or on external data.
+8. **Prediction models**: discrimination (`auc_t()`), calibration (`calibration()`: O/E with its
+   interval, calibration plot, ICI) and overall accuracy (`brier_score()` with IPA), each with its
+   interval, preferably cross-validated or on external data; for a comparison, the paired
+   differences (`compare_models()`, `cv_compare()`); for a model meant to guide decisions, the
+   decision curve (`decision_curve()`). See vignette 7.
 9. **Clustered or interval-censored data**: how clustering was handled (robust variance or a
    frailty, with the frailty variance and its test), and for events found at visits, the visit
    schedule and the method for interval-censored data.

@@ -1,0 +1,262 @@
+---
+title: "7. Assessing and comparing prediction models"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{7. Assessing and comparing prediction models}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+has_survival <- requireNamespace("survival", quietly = TRUE)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 4.5, dpi = 96,
+                      eval = has_survival)
+```
+
+A prediction model is judged by the risks it predicts, not by its coefficients. This vignette
+shows how SurvX measures the quality of predicted risks at a time horizon $t$, with one event type
+and with competing risks, how it compares models fairly, and how to decide whether a model is good
+enough to be used. Every measure below is computed in the C++ core of the package and has been
+checked against the reference implementations (vignette 6).
+
+The questions, and the functions that answer them:
+
+| Question | Measure | Function |
+|---|---|---|
+| How close are the predicted risks to the outcomes? | Brier score, IPA | `brier_score()` |
+| Do subjects with the event get higher risks? | time-dependent AUC | `auc_t()` |
+| Are predicted risks of 20% right for 20% of subjects? | O/E, calibration curve, ICI, E50, E90 | `calibration()` |
+| Does the score rank subjects over the whole follow-up? | concordance index C | `cindex()` |
+| Which of several models predicts best, and is the difference real? | all of the above, cross-validated, with paired tests | `compare_models()`, `cv_compare()`, `model_scan()` |
+| Would deciding by the model do more good than harm? | net benefit | `decision_curve()` |
+| Does a covariate add to a nested model? | likelihood-ratio test | `anova()` |
+
+## 1. Data and two models
+
+We use the `lung` data of **survival** and predict death within one year.
+
+```{r}
+library(SurvX)
+lung <- survival::lung
+lung$status <- lung$status - 1
+lung$years <- lung$time / 365.25
+lung <- lung[stats::complete.cases(lung[, c("years", "status", "age", "sex", "ph.ecog")]), ]
+f_small <- cox(Event(years, status) ~ age + sex, lung)
+f_big <- cox(Event(years, status) ~ age + sex + ph.ecog, lung)
+r_small <- 1 - predict(f_small, lung, times = 1, type = "survival")[, 1]
+r_big <- 1 - predict(f_big, lung, times = 1, type = "survival")[, 1]
+summary(r_big)
+```
+
+## 2. Overall accuracy: the Brier score and IPA
+
+The Brier score is the mean squared difference between the predicted risk and the outcome by $t$
+(1 if the event happened, 0 if not), with inverse probability of censoring weights so that
+censored subjects are accounted for (Graf et al. 1999; Gerds & Schumacher 2006). It measures
+calibration and discrimination together. On its own it is hard to read, because it depends on how
+common the event is; the index of prediction accuracy (IPA) compares it with a model that gives
+everybody the same risk, the Kaplan-Meier (with competing risks Aalen-Johansen) estimate
+(Kattan & Gerds 2018).
+
+```{r}
+brier_score(lung$years, lung$status, r_big, t = 1, se = TRUE)
+```
+
+* `brier` 0 is perfect; predicting 50% for everybody scores 0.25.
+* `ipa` 0.10 means the model removes 10% of the error of the model without covariates; a negative
+  IPA means the model is worse than no model.
+* `se` is the standard error from the influence function of the Brier score, with the censoring
+  weights taken as known: the "conservative" standard error of `riskRegression::Score`.
+
+## 3. Discrimination: the AUC at the horizon
+
+The time-dependent AUC is the probability that a subject with the event by $t$ has a higher
+predicted risk than a subject without it (Blanche et al. 2013). With competing risks, subjects
+who failed from another cause count as controls. 0.5 is no discrimination, 1 is perfect.
+
+```{r}
+auc_t(lung$years, lung$status, r_big, t = 1, se = TRUE)
+```
+
+The AUC ignores calibration: multiplying every risk by two leaves it unchanged. It must always be
+read together with a calibration measure.
+
+## 4. Calibration
+
+Calibration asks whether the predicted risks come true. `calibration()` gives three views:
+
+* **in risk groups**: the mean predicted against the observed (Kaplan-Meier or Aalen-Johansen)
+  risk in groups of predicted risk (Gerds, Andersen & Kattan 2014), and their size-weighted
+  absolute difference, the calibration error;
+* **in the large**: the observed over the expected (mean predicted) number of events, O/E, with
+  its interval; O/E = 1.2 means the model predicts 20% too few events;
+* **smooth**: a calibration curve from a Cox model (with competing risks, a Fine-Gray model) of
+  the outcome on a natural spline of $\log\{-\log(1 - \hat r)\}$, and the integrated calibration
+  index ICI, the mean absolute difference between predicted and calibrated risks, with its median
+  E50 and 90th percentile E90 (Austin, Harrell & van Klaveren 2020).
+
+```{r}
+cal <- calibration(lung$years, lung$status, r_big, t = 1, groups = 5)
+cal
+attr(cal, "oe")                                         # O/E and its interval
+c(ICI = attr(cal, "ici"), E50 = attr(cal, "e50"), E90 = attr(cal, "e90"))
+```
+
+```{r calibration-plot, fig.height = 5, fig.width = 5}
+sm <- attr(cal, "smooth")
+plot(cal$predicted, cal$observed, xlim = c(0, 1), ylim = c(0, 1), pch = 19,
+     xlab = "predicted 1-year risk", ylab = "observed 1-year risk")
+lines(sm$predicted, sm$observed, col = "#0072B2", lwd = 2)
+abline(0, 1, lty = 2)
+```
+
+Points and curve close to the diagonal and an ICI of a few hundredths mean good calibration.
+
+## 5. The concordance index, and why it is not used to compare models
+
+The C index (Harrell et al. 1982) is the share of comparable pairs in which the subject who had the
+event first has the higher score. It describes ranking over the whole follow-up and is the usual
+summary of a Cox model; it is printed by `summary()` of Cox, cause-specific Cox and parametric
+models. Uno's version weights the pairs by the inverse probability of censoring so that it does not
+depend on the censoring distribution (Uno et al. 2011); restrict it to a time `tau` where
+follow-up is still adequate. With competing risks, `cindex()` gives the C index of one cause of
+Wolbers et al. (2009), and with `method = "uno"` its weighted version (Wolbers et al. 2014); without
+competing events these are exactly Harrell's and Uno's indices.
+
+```{r}
+cindex(f_big)
+cindex(f_big, method = "uno", tau = 2)
+```
+
+For predicted risks at a time horizon the C index is not a proper measure: a model with the wrong
+risks can have a higher C than the true model (Blanche, Kattan & Gerds 2019). This is why the
+comparison tables of SurvX report the AUC at the horizon and the Brier score, and not C.
+
+## 6. Comparing models: paired differences and cross-validation
+
+Measured on the data used for fitting, every measure is optimistic, more so for larger models.
+`cv_compare()` fits any list of models in K-fold cross-validation, pools the out-of-fold
+predictions and computes every measure from them; `compare_models()` does the same in the C++ core
+for the direct, Fine-Gray and cause-specific models. The same folds are used for every model, so the
+comparison is paired: for each model the table gives its difference from the model with the lowest
+Brier score at that time, with the standard error of the paired difference (from the difference of
+the influence functions on the same subjects) and a p-value.
+
+```{r}
+cc <- cv_compare(Event(years, status) ~ age + sex + ph.ecog, lung, times = c(0.5, 1), folds = 5,
+                 models = list("age + sex" = function(f, d) cox(Event(years, status) ~ age + sex, d),
+                               "age + sex + ph.ecog" = function(f, d) cox(f, d)))
+cc
+```
+
+```{r cv-plot}
+plot(cc, measure = "brier")
+```
+
+The columns of `as.data.frame(cc)` ending in `_cv` are cross-validated. Besides the Brier score,
+IPA, AUC and calibration error they include their standard errors and 95% intervals
+(`brier_se_cv`, `auc_lower_cv`, ...), the O/E with its interval, ICI, E50, E90 and the paired
+differences (`brier_diff_cv`, `brier_diff_p_cv`, `auc_diff_cv`, ...). A difference whose interval
+excludes zero is a real difference on these data; a difference in the third decimal of the Brier
+score with a large p-value is noise, and the simpler model should be preferred.
+
+With competing risks the same applies to the risk of one cause:
+
+```{r}
+set.seed(3)
+n <- 400
+d <- data.frame(x = rbinom(n, 1, 0.5), z = rnorm(n))
+t1 <- rexp(n, 0.4 * exp(0.6 * d$x + 0.4 * d$z)); t2 <- rexp(n, 0.3); cens <- runif(n, 0, 4)
+d$time <- pmin(t1, t2, cens)
+d$status <- ifelse(d$time == cens, 0, ifelse(t1 < t2, 1, 2))
+cm <- compare_models(Event(time, status) ~ x + z, d, times = 2, folds = 3,
+                     direct = list(c("gompertz", "PH")))
+cm
+```
+
+`model_scan()` goes one step further: it fits every model of the package that suits the data,
+ranks them by the cross-validated integrated Brier score with the one-standard-error rule, and adds
+the time-averaged AUC over the follow-up (`iauc_cv`) and the mean ICI (`ici_cv`) to its table.
+
+## 7. Is the model useful? Decision curves
+
+Good accuracy does not by itself mean that deciding by the model helps. Decision curve analysis
+(Vickers & Elkin 2006) asks: if everybody with a predicted risk of at least $p$ were treated, would
+the true positives outweigh the false positives, each false positive weighted by the odds
+$p/(1-p)$ that a decision maker accepts at threshold $p$? With censored data the true positives are
+estimated by the Kaplan-Meier (Aalen-Johansen) risk among the subjects above the threshold
+(Vickers et al. 2008).
+
+```{r}
+dc <- decision_curve(list("age + sex" = r_small, "age + sex + ph.ecog" = r_big),
+                     lung$years, lung$status, t = 1, thresholds = seq(0.2, 0.8, by = 0.02))
+dc
+```
+
+```{r decision-plot}
+plot(dc)
+```
+
+A model is useful at a threshold where its net benefit is above both "treat all" and "treat none".
+Look only at the thresholds that matter for the decision.
+
+## 8. Nested models: likelihood-ratio tests
+
+When the question is whether a covariate adds information, a likelihood-ratio test of nested models
+answers it directly:
+
+```{r}
+anova(f_small, f_big)
+```
+
+The test uses the partial likelihood for Cox models (as `survival::anova.coxph`) and the full
+likelihood for parametric, cure, frailty and joint or constrained direct models. Fine-Gray and
+weighted direct models maximise pseudo-likelihoods; for them `anova()` refuses and the Wald tests of
+`summary()` should be used.
+
+## 9. What to report
+
+For a prediction model, report at the horizons of interest (Collins et al. 2015, TRIPOD):
+
+1. the Brier score with IPA, and the AUC, each with its interval, cross-validated or on external data;
+2. calibration: O/E with its interval, the calibration plot and ICI;
+3. for a comparison, the paired differences from the reference model with their intervals;
+4. for a model meant to guide decisions, the decision curve over the relevant thresholds.
+
+`sx_references("cindex")`, `sx_references("calibration")`, `sx_references("compare_models")` and
+`sx_references("decision_curve")` print the full references of every method used.
+
+## References
+
+* Austin PC, Harrell FE, van Klaveren D (2020). Graphical calibration curves and the integrated
+  calibration index (ICI) for survival models. *Statistics in Medicine*, 39, 2714-2742.
+* Blanche P, Dartigues JF, Jacqmin-Gadda H (2013). Estimating and comparing time-dependent areas
+  under receiver operating characteristic curves for censored event times with competing risks.
+  *Statistics in Medicine*, 32, 5381-5397.
+* Blanche P, Kattan MW, Gerds TA (2019). The c-index is not proper for the evaluation of t-year
+  predicted risks. *Biostatistics*, 20, 347-357.
+* Collins GS, Reitsma JB, Altman DG, Moons KGM (2015). Transparent reporting of a multivariable
+  prediction model for individual prognosis or diagnosis (TRIPOD): the TRIPOD statement. *BMJ*,
+  350, g7594.
+* Gerds TA, Andersen PK, Kattan MW (2014). Calibration plots for risk prediction models in the
+  presence of competing risks. *Statistics in Medicine*, 33, 3191-3203.
+* Gerds TA, Schumacher M (2006). Consistent estimation of the expected Brier score in general
+  survival models with right-censored event times. *Biometrical Journal*, 48, 1029-1040.
+* Graf E, Schmoor C, Sauerbrei W, Schumacher M (1999). Assessment and comparison of prognostic
+  classification schemes for survival data. *Statistics in Medicine*, 18, 2529-2545.
+* Harrell FE, Califf RM, Pryor DB, Lee KL, Rosati RA (1982). Evaluating the yield of medical
+  tests. *JAMA*, 247, 2543-2546.
+* Kattan MW, Gerds TA (2018). The index of prediction accuracy: an intuitive measure useful for
+  evaluating risk prediction models. *Diagnostic and Prognostic Research*, 2, 7.
+* Uno H, Cai T, Pencina MJ, D'Agostino RB, Wei LJ (2011). On the C-statistics for evaluating
+  overall adequacy of risk prediction procedures with censored survival data. *Statistics in
+  Medicine*, 30, 1105-1117.
+* Vickers AJ, Elkin EB (2006). Decision curve analysis: a novel method for evaluating prediction
+  models. *Medical Decision Making*, 26, 565-574.
+* Vickers AJ, Cronin AM, Elkin EB, Gonen M (2008). Extensions to decision curve analysis, a novel
+  method for evaluating diagnostic tests, prediction models and molecular markers. *BMC Medical
+  Informatics and Decision Making*, 8, 53.
+* Wolbers M, Koller MT, Witteman JCM, Steyerberg EW (2009). Prognostic models with competing
+  risks: methods and application to coronary risk prediction. *Epidemiology*, 20, 555-561.
+* Wolbers M, Blanche P, Koller MT, Witteman JCM, Gerds TA (2014). Concordance for prognostic models
+  with competing risks. *Biostatistics*, 15, 526-539.

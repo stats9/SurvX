@@ -238,15 +238,18 @@ by cross-validation:
 ```{r}
 f1 <- cox(Event(years, status) ~ sex + age + ph.ecog, l2)
 risk <- 1 - predict(f1, l2, times = 1, type = "survival")[, 1]
-bs <- brier_score(l2$years, l2$status, risk, t = 1)
+bs <- brier_score(l2$years, l2$status, risk, t = 1, se = TRUE)
 bs
-auc_t(l2$years, l2$status, risk, t = 1)
+auc_t(l2$years, l2$status, risk, t = 1, se = TRUE)
+cindex(f1)                                   # Harrell's C of the linear predictor
 ```
 
 The IPA (index of prediction accuracy) of `r round(bs[["ipa"]], 2)` means that the model removes
 `r round(100 * bs[["ipa"]])`% of the prediction error of a model without covariates. These are
 apparent measures, computed on the data used for fitting; `cv_compare()` gives cross-validated
-ones.
+ones, with paired tests between models. `calibration()` adds the observed/expected ratio and the
+integrated calibration index, `decision_curve()` the net benefit of deciding by the model, and
+`anova(fit1, fit2)` tests nested models. Vignette 7 covers all of them.
 
 ## 10. Interval-censored data
 

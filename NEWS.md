@@ -4,7 +4,9 @@
 
 * **Further measures of prediction performance** (C++ core, `src/survcore/assess.hpp`):
   * New `cindex()`: Harrell's and Uno's concordance index, and with competing risks the C index of
-    Wolbers et al. (2009), with the infinitesimal-jackknife standard error of
+    Wolbers et al. (2009) and its inverse-probability-of-censoring weighted version (Wolbers et al.
+    2014); without competing events these are exactly Harrell's and Uno's. With the
+    infinitesimal-jackknife standard error of
     `survival::concordance`, in O(n log n) time (binary indexed trees). For a fitted model it uses
     the linear predictor (Cox) or the predicted risk at one time. The summaries of `cox()`, `csc()`
     and `parsurv()` show Harrell's C. C is not added to the comparison tables: it is not a proper
@@ -35,6 +37,14 @@
     `sc_smooth_calibration`, `sc_mean_curve` and
     `sc_compare_models3` (the comparison that also returns the predicted risks it scored). The
     memory check covers them (gcc ASan + UBSan and clang UBSan: 26628 calls; valgrind: 6657 calls, 0 errors, no leaks; invalid inputs refused 11 of 11).
+  * New vignette 7, "Assessing and comparing prediction models" (`vignette("prediction", "SurvX")`):
+    every measure, what it means and how to report it. Vignettes 1, 2, 3, 5 and 6, the README, the
+    help pages (`?brier_score`, `?compare_models`, `?cv_compare`, `?model_scan`, `?SurvX`,
+    `?"SurvX-methods"`) and `sx_references()` (new topics `cindex`, `decision_curve`, `anova`,
+    `tt_effect`) are updated.
+  * New quick check `validation/check_assess.R` (about a minute): every measure against the
+    reference packages and a direct computation of the C index over all pairs, with the numbers of
+    both packages printed for every disagreement.
   * Validation suite (`validation/R/07_assess.R`): against `survival::concordance`,
     `riskRegression::Score`, `survival::survfit`, `survival::coxph` with `splines::ns`,
     `survival::finegray`, `dcurves::dca`, `survival::anova.coxph` and `survreg`.

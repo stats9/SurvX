@@ -54,7 +54,7 @@ acc_assess_one <- function(d, label, cr) {
     check("concordance", "cindex (Uno, tau)", "survival::concordance(timewt = \"n/G2\", ymax)", label, "C",
           if (failed(o)) o else o$concordance, if (failed(r)) r else unname(r$concordance))
   } else if (has("pec")) {
-    o <- attempt(cindex(sc, d$time, d$status, cause = 1L))
+    o <- attempt(cindex(sc, d$time, d$status, cause = 1L, method = "uno"))
     r <- attempt({
       dd <- data.frame(time = d$time, status = d$status, sc = sc)
       Hist <- prodlim::Hist                                # pec and riskRegression read the name Hist from the formula
@@ -62,8 +62,8 @@ acc_assess_one <- function(d, label, cr) {
                         eval.times = max(dd$time) + 1, cens.model = "marginal", splitMethod = "none")
       unname(unlist(pc$AppCindex))[1L]
     })
-    check("concordance", "cindex (Wolbers, competing risks)", "pec::cindex(cause = 1)", label, "C", if (failed(o)) o else o$concordance, r,
-          tol = "info", note = "pec weights pairs by 1/G; reported only")
+    check("concordance", "cindex (Uno, competing risks: Wolbers et al. 2014)", "pec::cindex(cause = 1)", label, "C",
+          if (failed(o)) o else o$concordance, r)
   }
   # ---- standard errors and paired differences (riskRegression::Score, conservative) ---------------
   ours <- attempt(.sx_assess_ext(d, list(m1 = r1, m2 = r2), t))

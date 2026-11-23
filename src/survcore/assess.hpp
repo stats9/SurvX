@@ -6,7 +6,8 @@
 //     inverse probability of censoring weights 1/G(T_i-)^2, restricted to event times <= tau.
 //   Wolbers M, Koller MT, Witteman JCM, Steyerberg EW (2009) Epidemiology 20:555-561 -- C for one
 //     cause with competing risks: a subject who failed from a competing cause stays comparable
-//     (as a control) with every case.
+//     (as a control) with every case; Wolbers M, Blanche P, Koller MT, Witteman JCM, Gerds TA
+//     (2014) Biostatistics 15:526-539 -- its inverse probability of censoring weighted version.
 //   Therneau TM, Atkinson EJ (2024) Concordance, vignette of the survival package -- the
 //     infinitesimal jackknife variance used here (var = sum of squared dfbetas).
 //   Blanche P, Dartigues JF, Jacqmin-Gadda H (2013) Stat Med 32:5381-5397 -- influence functions
@@ -105,14 +106,21 @@ inline double sd_over_sqrt_n(const std::vector<double>& x) {   // sd(x) / sqrt(n
 // ------------------------------------------------------------------------------------------------
 // concordance index
 // ------------------------------------------------------------------------------------------------
-// A case is a subject with an event of `interest` at a time <= tau. Its controls are the subjects
-// still event-free after it (time larger, or the same time and censored) and, with competing
-// risks, every subject who failed from another cause (Wolbers et al. 2009). Events of interest at
-// the same time are not compared. A pair is concordant when the case has the higher risk score;
-// tied scores count 1/2. Each pair has the weight of its case: 1 (Harrell) or 1/G(T_i-)^2 (Uno).
-// C = sum of weight x (1, 1/2 or 0) / sum of weights; standard error from the infinitesimal
-// jackknife: dfbeta_u = (N_u - C D_u) / D, with N_u and D_u the weighted concordance and the
-// weight of the pairs that contain subject u (in either role); var = sum dfbeta_u^2.
+// A case is a subject with an event of `interest` at a time <= tau. Its controls are of two kinds:
+//   A: subjects still event-free after it (time larger, or the same time and censored);
+//   B: with competing risks, subjects who failed from another cause at or before its time
+//      (Wolbers et al. 2009); a competing failure after it is a control of kind A.
+// Events of interest at the same time are not compared. A pair is concordant when the case has the
+// higher risk score; tied scores count 1/2. Pair weights: 1 (Harrell; Wolbers 2009), or inverse
+// probability of censoring weights (Uno et al. 2011 for one event type; Wolbers et al. 2014,
+// Biostatistics 15:526-539, with competing risks): 1/G(T_i-)^2 for kind A (case and control both
+// uncensored up to T_i; at tied times censorings come after the events, so G at T_i-), and
+// 1/{G(T_i-) G(T_j-)} for kind B (case uncensored up to T_i, control up to its own failure T_j).
+// Without competing risks there are no pairs of kind B and the weights are those of Uno (equal to
+// survival::concordance(timewt = "n/G2")). C = sum of weight x (1, 1/2 or 0) / sum of weights;
+// standard error from the infinitesimal jackknife: dfbeta_u = (N_u - C D_u) / D, with N_u and D_u
+// the weighted concordance and the weight of the pairs that contain subject u (in either role);
+// var = sum dfbeta_u^2 (the estimation of G is ignored, as in survival::concordance).
 struct ConcordanceResult {
   double c = std::nan(""), se = std::nan("");
   double concordant = 0.0, discordant = 0.0, tied = 0.0;   // weighted counts of the pairs
@@ -126,72 +134,80 @@ inline ConcordanceResult concordance_index(std::size_t n, const double* time, co
   std::size_t R = 0;
   const std::vector<std::size_t> rk = dense_ranks(risk, n, R);
   const std::vector<double> gm = g_minus(time, cause, n);
-  std::vector<double> a(n, 0.0);                           // case weights
-  for (std::size_t i = 0; i < n; ++i)
-    if (cause[i] == interest && time[i] <= tau) a[i] = uno ? (gm[i] > 0.0 ? 1.0 / (gm[i] * gm[i]) : 0.0) : 1.0;
+  auto inv = [](double g) { return g > 0.0 ? 1.0 / g : 0.0; };
   auto competing = [&](std::size_t i) { return cause[i] != 0 && cause[i] != interest; };
+  // aA, aB: weight factors of a case in pairs of kind A and B; b: factor of a competing control (B)
+  std::vector<double> aA(n, 0.0), aB(n, 0.0), b(n, 0.0);
+  for (std::size_t i = 0; i < n; ++i) {
+    if (cause[i] == interest && time[i] <= tau) { aA[i] = uno ? inv(gm[i]) * inv(gm[i]) : 1.0; aB[i] = uno ? inv(gm[i]) : 1.0; }
+    if (competing(i)) b[i] = uno ? inv(gm[i]) : 1.0;
+  }
   std::vector<std::size_t> asc(n);
   std::iota(asc.begin(), asc.end(), 0);
   std::stable_sort(asc.begin(), asc.end(), [&](std::size_t x, std::size_t y) { return time[x] < time[y]; });
-  std::vector<double> Nu(n, 0.0), Du(n, 0.0);              // per subject: weighted concordance and weight of its pairs
+  // blocks of tied times in ascending order: [start, end) into asc
+  std::vector<std::size_t> bs;
+  for (std::size_t i = 0; i < n; ++i) if (i == 0 || time[asc[i]] != time[asc[i - 1]]) bs.push_back(i);
+  bs.push_back(n);
+  const std::size_t nb = bs.size() - 1;
+  std::vector<double> Nu(n, 0.0), Du(n, 0.0);
   double cnt_lo = 0.0, cnt_eq = 0.0, cnt_hi = 0.0, npairs = 0.0;
-  // the controls of every case: subjects at risk after it (descending pass) ...
-  {
-    Fenwick F(R), Fc(R);                                    // weights 1; Fc counts each subject once (for the pair count)
-    std::size_t j = n;
-    while (j > 0) {
-      std::size_t i = j;
-      const double u = time[asc[j - 1]];
-      while (i > 0 && time[asc[i - 1]] == u) --i;          // block asc[i..j-1] has time u
-      for (std::size_t q = i; q < j; ++q) if (cause[asc[q]] == 0) F.add(rk[asc[q]], 1.0);
-      for (std::size_t q = i; q < j; ++q) {
-        const std::size_t k = asc[q];
-        if (a[k] == 0.0) continue;
-        const double lo = F.prefix(rk[k]), eq = F.prefix(rk[k] + 1) - lo, tot = F.total(), hi = tot - lo - eq;
-        Nu[k] += a[k] * (lo + 0.5 * eq); Du[k] += a[k] * tot;
-        cnt_lo += a[k] * lo; cnt_eq += a[k] * eq; cnt_hi += a[k] * hi; npairs += tot;
-      }
-      for (std::size_t q = i; q < j; ++q) if (cause[asc[q]] != 0) F.add(rk[asc[q]], 1.0);
-      j = i;
-    }
-  }
-  // ... and the subjects who failed from a competing cause at or before it (ascending pass)
+  auto add_case = [&](std::size_t k, double w, double lo, double eq, double tot, double cnt) {
+    const double hi = tot - lo - eq;
+    Nu[k] += w * (lo + 0.5 * eq); Du[k] += w * tot;
+    cnt_lo += w * lo; cnt_eq += w * eq; cnt_hi += w * hi; npairs += cnt;
+  };
+  // kind A, cases: the controls at risk after the case (descending; censored at the same time count)
   {
     Fenwick F(R);
-    std::size_t i = 0;
-    while (i < n) {
-      std::size_t j = i;
-      const double u = time[asc[i]];
-      while (j < n && time[asc[j]] == u) ++j;
-      for (std::size_t q = i; q < j; ++q) if (competing(asc[q])) F.add(rk[asc[q]], 1.0);
-      for (std::size_t q = i; q < j; ++q) {
-        const std::size_t k = asc[q];
-        if (a[k] == 0.0) continue;
-        const double lo = F.prefix(rk[k]), eq = F.prefix(rk[k] + 1) - lo, tot = F.total(), hi = tot - lo - eq;
-        Nu[k] += a[k] * (lo + 0.5 * eq); Du[k] += a[k] * tot;
-        cnt_lo += a[k] * lo; cnt_eq += a[k] * eq; cnt_hi += a[k] * hi; npairs += tot;
+    for (std::size_t q = nb; q-- > 0;) {
+      const std::size_t s = bs[q], e = bs[q + 1];
+      for (std::size_t r = s; r < e; ++r) if (cause[asc[r]] == 0) F.add(rk[asc[r]], 1.0);
+      for (std::size_t r = s; r < e; ++r) {
+        const std::size_t k = asc[r];
+        if (aA[k] == 0.0) continue;
+        const double lo = F.prefix(rk[k]), eq = F.prefix(rk[k] + 1) - lo, tot = F.total();
+        add_case(k, aA[k], lo, eq, tot, tot);
       }
-      i = j;
+      for (std::size_t r = s; r < e; ++r) if (cause[asc[r]] != 0) F.add(rk[asc[r]], 1.0);
     }
   }
-  // every subject as a control: the weighted cases it is compared with (ascending pass)
+  // kind B, cases: the competing failures at or before the case (ascending), control weights b
   {
-    Fenwick C(R);
-    std::size_t i = 0;
-    auto as_control = [&](std::size_t k) {
-      const double tot = C.total(), le = C.prefix(rk[k] + 1), eq = le - C.prefix(rk[k]), gt = tot - le;
-      Nu[k] += gt + 0.5 * eq; Du[k] += tot;
-    };
-    while (i < n) {
-      std::size_t j = i;
-      const double u = time[asc[i]];
-      while (j < n && time[asc[j]] == u) ++j;
-      for (std::size_t q = i; q < j; ++q) if (cause[asc[q]] == interest) as_control(asc[q]);   // cases strictly before u
-      for (std::size_t q = i; q < j; ++q) if (a[asc[q]] > 0.0) C.add(rk[asc[q]], a[asc[q]]);
-      for (std::size_t q = i; q < j; ++q) if (cause[asc[q]] == 0) as_control(asc[q]);          // cases up to u
-      i = j;
+    Fenwick F(R), C(R);
+    for (std::size_t q = 0; q < nb; ++q) {
+      const std::size_t s = bs[q], e = bs[q + 1];
+      for (std::size_t r = s; r < e; ++r) if (b[asc[r]] > 0.0) { F.add(rk[asc[r]], b[asc[r]]); C.add(rk[asc[r]], 1.0); }
+      for (std::size_t r = s; r < e; ++r) {
+        const std::size_t k = asc[r];
+        if (aB[k] == 0.0) continue;
+        const double lo = F.prefix(rk[k]), eq = F.prefix(rk[k] + 1) - lo, tot = F.total();
+        add_case(k, aB[k], lo, eq, tot, C.total());
+      }
     }
-    for (std::size_t k = 0; k < n; ++k) if (competing(k)) as_control(k);                       // every case
+  }
+  // every subject as a control (for the jackknife): the weighted cases it is compared with
+  {
+    // kind A (ascending): an event of interest at u is a control of the cases strictly before u,
+    // a censored subject of the cases up to u, a competing failure of the cases strictly before u
+    Fenwick CA(R);
+    auto as_control = [&](std::size_t k, const Fenwick& T, double f) {
+      const double tot = T.total(), le = T.prefix(rk[k] + 1), eq = le - T.prefix(rk[k]), gt = tot - le;
+      Nu[k] += f * (gt + 0.5 * eq); Du[k] += f * tot;
+    };
+    for (std::size_t q = 0; q < nb; ++q) {
+      const std::size_t s = bs[q], e = bs[q + 1];
+      for (std::size_t r = s; r < e; ++r) if (cause[asc[r]] != 0) as_control(asc[r], CA, 1.0);
+      for (std::size_t r = s; r < e; ++r) if (aA[asc[r]] > 0.0) CA.add(rk[asc[r]], aA[asc[r]]);
+      for (std::size_t r = s; r < e; ++r) if (cause[asc[r]] == 0) as_control(asc[r], CA, 1.0);
+    }
+    // kind B (descending): a competing failure at u is a control of the cases at or after u
+    Fenwick CB(R);
+    for (std::size_t q = nb; q-- > 0;) {
+      const std::size_t s = bs[q], e = bs[q + 1];
+      for (std::size_t r = s; r < e; ++r) if (aB[asc[r]] > 0.0) CB.add(rk[asc[r]], aB[asc[r]]);
+      for (std::size_t r = s; r < e; ++r) if (b[asc[r]] > 0.0) as_control(asc[r], CB, b[asc[r]]);
+    }
   }
   const double den = cnt_lo + cnt_eq + cnt_hi;
   res.concordant = cnt_lo; res.discordant = cnt_hi; res.tied = cnt_eq; res.pairs = npairs;

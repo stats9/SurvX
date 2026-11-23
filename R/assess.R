@@ -50,9 +50,11 @@
 #' Concordance index
 #'
 #' @description
-#' Harrell's concordance index C of a risk score, Uno's version with inverse probability of
-#' censoring weights, and, with competing risks, the version of Wolbers et al. (2009) for one
-#' cause, with the standard error of the infinitesimal jackknife.
+#' Harrell's concordance index C of a risk score and Uno's version with inverse probability of
+#' censoring weights; with competing risks, the C index of one cause of Wolbers et al. (2009) and its
+#' weighted version (Wolbers et al. 2014). One function adapts to both kinds of data: without
+#' competing events the competing-risks versions are exactly Harrell's and Uno's. Standard errors
+#' from the infinitesimal jackknife.
 #'
 #' \strong{Use it} to describe how well a score ranks subjects by the time to the event over the
 #' whole follow-up. \strong{Do not use it} to compare models that predict the risk by a fixed time
@@ -67,9 +69,11 @@
 #' @param newdata for a fitted model: data on which to compute C (default: the data of the fit;
 #'   must contain the outcome variables).
 #' @param cause cause of interest.
-#' @param method \code{"harrell"} (all comparable pairs have weight 1) or \code{"uno"} (a pair whose
-#'   first event is at \eqn{T_i} has weight \eqn{1/\hat G(T_i-)^2}, \eqn{\hat G} the Kaplan-Meier
-#'   estimate of the censoring distribution).
+#' @param method \code{"harrell"} (all comparable pairs have weight 1) or \code{"uno"} (inverse
+#'   probability of censoring weights, \eqn{\hat G} the Kaplan-Meier estimate of the censoring
+#'   distribution: \eqn{1/\hat G(T_i-)^2} for a pair whose control is still event-free at the case's
+#'   time \eqn{T_i}, and \eqn{1/\{\hat G(T_i-)\hat G(T_j-)\}} for a control that failed from a
+#'   competing cause at \eqn{T_j \le T_i}).
 #' @param tau only events at times \eqn{\le} \code{tau} define comparable pairs (Uno et al. 2011
 #'   recommend a \code{tau} where follow-up is still adequate).
 #' @param times for a model that does not have a linear predictor (Fine-Gray, cause-specific and
@@ -96,7 +100,7 @@
 #' @section Validation:
 #' Harrell's C and its standard error equal \code{survival::concordance(..., reverse = TRUE)} and,
 #' with \code{method = "uno"}, \code{timewt = "n/G2"} with \code{ymax = tau} (validation suite,
-#' \code{validation/R/07_assess.R}); with competing risks the estimate is reported next to \code{pec::cindex}. The C++ code
+#' \code{validation/R/07_assess.R}); with competing risks Uno's version equals \code{pec::cindex}. The C++ code
 #' is tested against a direct computation over all pairs.
 #' @return an object of class \code{SurvXConcordance}: a list with \code{concordance}, \code{se},
 #'   \code{lower}, \code{upper}, \code{counts} (weighted numbers of concordant, discordant and tied
@@ -112,11 +116,16 @@
 #' Wolbers M, Koller MT, Witteman JCM, Steyerberg EW (2009) Prognostic models with competing risks:
 #'   methods and application to coronary risk prediction. Epidemiology 20:555-561.
 #'
+#' Wolbers M, Blanche P, Koller MT, Witteman JCM, Gerds TA (2014) Concordance for prognostic models
+#'   with competing risks. Biostatistics 15:526-539.
+#'
 #' Blanche P, Kattan MW, Gerds TA (2019) The c-index is not proper for the evaluation of t-year
 #'   predicted risks. Biostatistics 20:347-357.
 #'
 #' Therneau T, Atkinson E (2024) Concordance. Vignette of the survival package.
-#' @seealso \code{\link{auc_t}}, \code{\link{compare_models}}.
+#'
+#' All references: \code{sx_references("cindex")}.
+#' @seealso \code{\link{auc_t}}, \code{\link{compare_models}}, \code{vignette("prediction", "SurvX")}.
 #' @examples
 #' set.seed(3)
 #' n <- 300
@@ -167,7 +176,7 @@ cindex <- function(object, time = NULL, status = NULL, newdata = NULL, cause = 1
   }
   if (S7::S7_inherits(object, CoxFit) && is.null(object@tt))
     return(list(score = as.double(stats::predict(object, newdata = nd, type = "lp")), time = time, status = status))
-  if (is.null(times)) times <- stats::median(time)
+  if (is.null(times)) times <- .sx_quantile(time, 0.5)         # median follow-up time (core)
   if (length(times) != 1L) stop("cindex: times must be one time", call. = FALSE)
   d <- if (is.null(nd)) .cindex_data(object) else nd
   r <- .cv_predict(object, d, times, cause)
@@ -186,7 +195,8 @@ cindex <- function(object, time = NULL, status = NULL, newdata = NULL, cause = 1
 #' @export
 print.SurvXConcordance <- function(x, digits = 4L, ...) {
   lab <- if (x$method == "uno") "Uno's concordance index" else "Harrell's concordance index"
-  if (x$competing) lab <- paste0(lab, " for cause ", x$cause, " with competing risks (Wolbers et al. 2009)")
+  if (x$competing) lab <- paste0(lab, " for cause ", x$cause, " with competing risks (Wolbers et al. ",
+                                 if (x$method == "uno") "2014" else "2009", ")")
   cat(lab, if (is.finite(x$tau)) paste0(", events up to time ", format(x$tau)), "\n", sep = "")
   cat("  C = ", format(round(x$concordance, digits), nsmall = digits), " (se ", format(round(x$se, digits), nsmall = digits), "), ",
       format(100 * x$level), "% interval ", format(round(x$lower, digits), nsmall = digits), " to ",
@@ -239,7 +249,9 @@ print.SurvXConcordance <- function(x, digits = 4L, ...) {
 #' Vickers AJ, Cronin AM, Elkin EB, Gonen M (2008) Extensions to decision curve analysis, a novel
 #'   method for evaluating diagnostic tests, prediction models and molecular markers. BMC Medical
 #'   Informatics and Decision Making 8:53.
-#' @seealso \code{\link{brier_score}}, \code{\link{compare_models}}.
+#'
+#' All references: \code{sx_references("decision_curve")}.
+#' @seealso \code{\link{brier_score}}, \code{\link{compare_models}}, \code{vignette("prediction", "SurvX")}.
 #' @examples
 #' set.seed(3)
 #' n <- 400

@@ -680,7 +680,7 @@ S7::method(model.matrix, ParCSCFit) <- function(object, ...) object@X
   }
   out <- c(out, "", .fit_line(x))
   if (!.is_ic(x) && is.null(x@entry) && nrow(eb) > 0L)
-    out <- c(out, .cindex_line(tryCatch(1 - stats::predict(x, times = stats::median(x@time), type = "survival")[, 1L],
+    out <- c(out, .cindex_line(tryCatch(.sx_ew("complement", stats::predict(x, times = .sx_quantile(x@time, 0.5), type = "survival")[, 1L]),
                                         error = function(e) rep(NA_real_, length(x@time))), x@time, x@status))
   if (detail)
     out <- c(out, "",

@@ -61,7 +61,10 @@ competing risks treat it correctly.
 | How much would the risk change if everyone were treated? (adjusted, causal) | `adjusted_risk()` |
 | The event is only known to have happened between two visits (interval censoring) | `Interval()` with `turnbull()`, `parsurv()`, `directcif()` |
 | Subjects in clusters (centres, families, recurrent events) with shared unmeasured risk | `cox()` or `parsurv()` with `+ frailty(id)` |
-| How good are the predictions? Which model is best? | `brier_score()`, `compare_models()` |
+| How good are the predictions? Which model is best? | `brier_score()`, `auc_t()`, `calibration()`, `compare_models()`, `cv_compare()` |
+| Does the score rank subjects over the follow-up? | `cindex()` |
+| Would deciding by the model do more good than harm? | `decision_curve()` |
+| Does a covariate add to a nested model? | `anova(fit1, fit2)` |
 
 The same table is in `?SurvX`.
 
@@ -155,6 +158,8 @@ everything to one HTML file.
 ## Where next
 
 * Vignette 2 for survival with one event, and vignette 3 for competing risks.
+* Vignette 4 for parametric and cure models, vignette 5 for reporting, vignette 6 for the
+  validation of the package, and vignette 7 for assessing and comparing prediction models.
 * The help page of every function: when to use it, its arguments, how to interpret the result,
   how to check its assumptions, and the literature behind it.
 

@@ -7,7 +7,10 @@ cumulative incidence of one cause: direct parametric models (\code{\link{directc
 estimator), the Fine-Gray model (\code{\link{fg}}), cause-specific Cox models
 (\code{\link{csc}}) and, optionally, parametric cause-specific hazard models. For each model it
 reports the apparent and K-fold cross-validated Brier score, index of prediction accuracy (IPA),
-time-dependent AUC and calibration error at the chosen times, and the AIC where it is comparable.
+time-dependent AUC and calibration error at the chosen times, and the AIC where it is comparable,
+with the standard errors and intervals of the Brier score and AUC, the paired difference of every
+model from the best one with its p-value, the observed/expected ratio and the integrated
+calibration index (see the section "Columns of the table").
 Fitting, cross-validation and scoring are done in the C++ core, so the comparison is fast.
 
 \strong{Use it when} choosing a model for predicting the risk of a cause.
@@ -99,8 +102,9 @@ Blanche P, Kattan MW, Gerds TA (2019). The c-index is not proper for the evaluat
 All references: \code{sx_references("compare_models")}.
 }
 \seealso{
-\code{\link{cv_compare}}, \code{\link{brier_score}}, \code{\link{directcif}}, \code{\link{fg}},
-\code{\link{csc}}.
+\code{\link{cv_compare}}, \code{\link{model_scan}}, \code{\link{brier_score}}, \code{\link{cindex}},
+\code{\link{decision_curve}}, \code{\link{directcif}}, \code{\link{fg}}, \code{\link{csc}},
+\code{vignette("prediction", "SurvX")}.
 }
 \examples{
 set.seed(3)

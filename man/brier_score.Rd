@@ -12,8 +12,12 @@ with competing risks, under right censoring:
   \item \code{auc_t()}: the time-dependent area under the ROC curve (discrimination: are
     subjects who have the event by \eqn{t} given higher risks?);
   \item \code{calibration()}: predicted against observed risk in risk groups (do predicted
-    risks of 20\% come true for 20\% of subjects?).
+    risks of 20\% come true for 20\% of subjects?), the observed/expected ratio and the
+    integrated calibration index of a smooth calibration curve.
 }
+With \code{se = TRUE} the Brier score and the AUC come with standard errors. Related:
+\code{\link{cindex}} (concordance over the whole follow-up) and \code{\link{decision_curve}}
+(net benefit).
 \strong{Use them} to validate a prediction model, ideally on new data or with cross-validation
 (\code{\link{compare_models}}, \code{\link{cv_compare}}), which call these functions.
 }
@@ -138,7 +142,8 @@ All references: \code{sx_references("brier_score")}, \code{sx_references("auc_t"
 }
 \seealso{
 \code{\link{compare_models}} and \code{\link{cv_compare}} (cross-validated comparison),
-\code{\link{predict.SurvX}}.
+\code{\link{cindex}}, \code{\link{decision_curve}}, \code{\link{predict.SurvX}},
+\code{vignette("prediction", "SurvX")}.
 }
 \examples{
 set.seed(3)
@@ -153,9 +158,12 @@ fit <- fg(Event(time, status) ~ x, d)
 risk <- predict(fit, d, times = 2)[, 1]
 
 brier_score(d$time, d$status, risk, t = 2)     # brier, brier_null, ipa
-auc_t(d$time, d$status, risk, t = 2)
+brier_score(d$time, d$status, risk, t = 2, se = TRUE)
+auc_t(d$time, d$status, risk, t = 2, se = TRUE)   # auc, se, lower, upper
 cal <- calibration(d$time, d$status, risk, t = 2, groups = 5)
 cal
+attr(cal, "oe")                                # observed / expected, with its interval
+c(ICI = attr(cal, "ici"), E50 = attr(cal, "e50"), E90 = attr(cal, "e90"))
 plot(cal$predicted, cal$observed, xlim = c(0, 1), ylim = c(0, 1),
      xlab = "predicted risk", ylab = "observed risk"); abline(0, 1, lty = 2)
 }

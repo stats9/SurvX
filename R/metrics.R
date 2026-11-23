@@ -9,8 +9,12 @@
 #'   \item \code{auc_t()}: the time-dependent area under the ROC curve (discrimination: are
 #'     subjects who have the event by \eqn{t} given higher risks?);
 #'   \item \code{calibration()}: predicted against observed risk in risk groups (do predicted
-#'     risks of 20\% come true for 20\% of subjects?).
+#'     risks of 20\% come true for 20\% of subjects?), the observed/expected ratio and the
+#'     integrated calibration index of a smooth calibration curve.
 #' }
+#' With \code{se = TRUE} the Brier score and the AUC come with standard errors. Related:
+#' \code{\link{cindex}} (concordance over the whole follow-up) and \code{\link{decision_curve}}
+#' (net benefit).
 #' \strong{Use them} to validate a prediction model, ideally on new data or with cross-validation
 #' (\code{\link{compare_models}}, \code{\link{cv_compare}}), which call these functions.
 #' @param time,status follow-up time and status (0 = censored, 1..K = cause) of the subjects whose
@@ -112,7 +116,8 @@
 #' \code{sx_references("calibration")}.
 #' @seealso
 #' \code{\link{compare_models}} and \code{\link{cv_compare}} (cross-validated comparison),
-#' \code{\link{predict.SurvX}}.
+#' \code{\link{cindex}}, \code{\link{decision_curve}}, \code{\link{predict.SurvX}},
+#' \code{vignette("prediction", "SurvX")}.
 #' @examples
 #' set.seed(3)
 #' n <- 400
@@ -126,9 +131,12 @@
 #' risk <- predict(fit, d, times = 2)[, 1]
 #'
 #' brier_score(d$time, d$status, risk, t = 2)     # brier, brier_null, ipa
-#' auc_t(d$time, d$status, risk, t = 2)
+#' brier_score(d$time, d$status, risk, t = 2, se = TRUE)
+#' auc_t(d$time, d$status, risk, t = 2, se = TRUE)   # auc, se, lower, upper
 #' cal <- calibration(d$time, d$status, risk, t = 2, groups = 5)
 #' cal
+#' attr(cal, "oe")                                # observed / expected, with its interval
+#' c(ICI = attr(cal, "ici"), E50 = attr(cal, "e50"), E90 = attr(cal, "e90"))
 #' plot(cal$predicted, cal$observed, xlim = c(0, 1), ylim = c(0, 1),
 #'      xlab = "predicted risk", ylab = "observed risk"); abline(0, 1, lty = 2)
 #' @export
@@ -185,7 +193,10 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L, level =
 #' estimator), the Fine-Gray model (\code{\link{fg}}), cause-specific Cox models
 #' (\code{\link{csc}}) and, optionally, parametric cause-specific hazard models. For each model it
 #' reports the apparent and K-fold cross-validated Brier score, index of prediction accuracy (IPA),
-#' time-dependent AUC and calibration error at the chosen times, and the AIC where it is comparable.
+#' time-dependent AUC and calibration error at the chosen times, and the AIC where it is comparable,
+#' with the standard errors and intervals of the Brier score and AUC, the paired difference of every
+#' model from the best one with its p-value, the observed/expected ratio and the integrated
+#' calibration index (see the section "Columns of the table").
 #' Fitting, cross-validation and scoring are done in the C++ core, so the comparison is fast.
 #'
 #' \strong{Use it when} choosing a model for predicting the risk of a cause.
@@ -269,8 +280,9 @@ calibration <- function(time, status, risk, t, cause = 1L, groups = 10L, level =
 #'
 #' All references: \code{sx_references("compare_models")}.
 #' @seealso
-#' \code{\link{cv_compare}}, \code{\link{brier_score}}, \code{\link{directcif}}, \code{\link{fg}},
-#' \code{\link{csc}}.
+#' \code{\link{cv_compare}}, \code{\link{model_scan}}, \code{\link{brier_score}}, \code{\link{cindex}},
+#' \code{\link{decision_curve}}, \code{\link{directcif}}, \code{\link{fg}}, \code{\link{csc}},
+#' \code{vignette("prediction", "SurvX")}.
 #' @examples
 #' set.seed(3)
 #' n <- 300
@@ -373,7 +385,9 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
 #' @description
 #' Fits every model to the full data (apparent performance) and in K-fold cross-validation, and
 #' reports the Brier score, the index of prediction accuracy, the time-dependent AUC and the
-#' calibration error of the predicted risk of one cause at the chosen times.
+#' calibration error of the predicted risk of one cause at the chosen times, with standard errors,
+#' paired differences from the best model, the observed/expected ratio and the integrated calibration
+#' index, as \code{\link{compare_models}}.
 #' \code{\link{compare_models}} does this in the C++ core for the models of this package;
 #' \code{cv_compare} is for anything else that has a \code{predict(fit, newdata, times, cause)} method
 #' (a model from another package wrapped in a function, a model with its own options).
@@ -415,7 +429,8 @@ compare_models <- function(formula, data, times, direct = NULL, cause = 1L, fold
 #'
 #' All references: \code{sx_references("cv_compare")}.
 #' @seealso
-#' \code{\link{compare_models}}, \code{\link{brier_score}}.
+#' \code{\link{compare_models}}, \code{\link{brier_score}}, \code{\link{cindex}},
+#' \code{\link{decision_curve}}, \code{vignette("prediction", "SurvX")}.
 #' @examples
 #' set.seed(3)
 #' n <- 300

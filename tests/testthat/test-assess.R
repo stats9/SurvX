@@ -16,11 +16,12 @@ ref_cindex <- function(score, time, status, cause = 1L, tau = Inf, uno = FALSE) 
   num <- den <- 0; Nu <- Du <- numeric(n)
   for (a in seq_len(n)) {
     if (status[a] != cause || time[a] > tau) next
-    w <- if (uno) 1 / G[a]^2 else 1
     for (b in seq_len(n)) {
       if (b == a) next
-      ctrl <- time[b] > time[a] || (time[b] == time[a] && status[b] == 0L) || (status[b] != 0L && status[b] != cause)
-      if (!ctrl) next
+      A <- time[b] > time[a] || (time[b] == time[a] && status[b] == 0L)        # still event-free after the case
+      B <- !A && status[b] != 0L && status[b] != cause                          # competing failure at or before it
+      if (!A && !B) next
+      w <- if (!uno) 1 else if (A) 1 / G[a]^2 else 1 / (G[a] * G[b])            # Uno (2011), Wolbers et al. (2014)
       s <- if (score[a] > score[b]) 1 else if (score[a] == score[b]) 0.5 else 0
       num <- num + w * s; den <- den + w
       Nu[a] <- Nu[a] + w * s; Du[a] <- Du[a] + w; Nu[b] <- Nu[b] + w * s; Du[b] <- Du[b] + w
@@ -30,7 +31,7 @@ ref_cindex <- function(score, time, status, cause = 1L, tau = Inf, uno = FALSE) 
   c(C = C, se = sqrt(sum(((Nu - C * Du) / den)^2)))
 }
 
-test_that("cindex() equals the C index over all pairs (Harrell, Uno, Wolbers, ties, tau)", {
+test_that("cindex() equals the C index over all pairs (Harrell, Uno, Wolbers 2009 and 2014, ties, tau)", {
   set.seed(11)
   for (r in 1:6) {
     n <- 60

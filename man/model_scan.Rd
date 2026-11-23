@@ -232,7 +232,7 @@ All references: \code{sx_references("model_scan")}.
 \seealso{
 \code{\link{compare_models}} and \code{\link{cv_compare}} (a chosen set of models at chosen times),
 \code{\link{brier_score}}, \code{\link{ph_test}}, \code{\link{time_effects}}, \code{\link{km}},
-\code{\link{aj}}.
+\code{\link{aj}}, \code{vignette("prediction", "SurvX")}.
 }
 \examples{
 ## one event type

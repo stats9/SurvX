@@ -72,7 +72,7 @@ Vickers AJ, Cronin AM, Elkin EB, Gonen M (2008) Extensions to decision curve ana
 All references: \code{sx_references("decision_curve")}.
 }
 \seealso{
-\code{\link{brier_score}}, \code{\link{compare_models}}.
+\code{\link{brier_score}}, \code{\link{compare_models}}, \code{vignette("prediction", "SurvX")}.
 }
 \examples{
 set.seed(3)

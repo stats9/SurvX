@@ -29,7 +29,11 @@
 #'     \code{\link{hazard_plot}}, \code{\link{dist_plot}} \cr
 #'   Absolute risks for given patients \tab \code{\link{predict.SurvX}}, \code{\link{cif_plot}} \cr
 #'   How good are the predictions? Which model predicts best? \tab \code{\link{brier_score}},
-#'     \code{\link{compare_models}}, \code{\link{cv_compare}} \cr
+#'     \code{\link{auc_t}}, \code{\link{calibration}}, \code{\link{compare_models}}, \code{\link{cv_compare}},
+#'     \code{\link{model_scan}} \cr
+#'   Does a score rank subjects over the follow-up (concordance)? \tab \code{\link{cindex}} \cr
+#'   Would deciding by the model do more good than harm? \tab \code{\link{decision_curve}} \cr
+#'   Does a covariate add to a nested model? \tab \code{anova(fit1, fit2)} (see \code{\link{SurvX-methods}}) \cr
 #'   Residuals and model checks \tab \code{\link{residuals.SurvX}}, \code{\link{ph_test}} \cr
 #' }
 #' @section Getting started:

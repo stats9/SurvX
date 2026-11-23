@@ -4,7 +4,9 @@
 \description{
 Fits every model to the full data (apparent performance) and in K-fold cross-validation, and
 reports the Brier score, the index of prediction accuracy, the time-dependent AUC and the
-calibration error of the predicted risk of one cause at the chosen times.
+calibration error of the predicted risk of one cause at the chosen times, with standard errors,
+paired differences from the best model, the observed/expected ratio and the integrated calibration
+index, as \code{\link{compare_models}}.
 \code{\link{compare_models}} does this in the C++ core for the models of this package;
 \code{cv_compare} is for anything else that has a \code{predict(fit, newdata, times, cause)} method
 (a model from another package wrapped in a function, a model with its own options).
@@ -52,7 +54,8 @@ Akaike H (1974) A new look at the statistical model identification. IEEE Transac
 
 All references: \code{sx_references("cv_compare")}.
 }
-\seealso{\code{\link{compare_models}}, \code{\link{brier_score}}.}
+\seealso{\code{\link{compare_models}}, \code{\link{brier_score}}, \code{\link{cindex}},
+\code{\link{decision_curve}}, \code{vignette("prediction", "SurvX")}.}
 \examples{
 set.seed(3)
 n <- 300

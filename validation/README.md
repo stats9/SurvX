@@ -114,6 +114,7 @@ to the established package and write a text file and a PDF of the figures:
 | `check_time_effects.R` | `time_effects()`, `adjusted_risk()` | `survival::coxph(tt = )` |
 | `check_interval.R` | `Interval()`, `turnbull()`, `parsurv()` and `directcif()` with interval-censored data | `survival::survreg(type = "interval2")`, `interval::icfit`/`ictest`, `icenReg::ic_np`, `flexsurv::flexsurvreg` (when installed) |
 | `check_frailty.R` | `cox()` and `parsurv()` with `frailty()` | `survival::coxph(frailty())`, `frailtyEM::emfrail`, `parfm::parfm` (when installed) |
+| `check_assess.R` | `cindex()`, standard errors and paired differences of `brier_score()`/`auc_t()` and of the comparison tables, `calibration()` (O/E, ICI, E50, E90), `decision_curve()`, `anova()`, the new columns of `compare_models()`/`model_scan()` | `survival::concordance`, `coxph`, `survfit`, `finegray`, `survreg`, `anova.coxph`; a direct R computation of the C index over all pairs; `riskRegression::Score`, `pec::cindex`, `dcurves::dca` (when installed). About a minute; writes `check_assess.txt` with PASS/FAIL per comparison and the numbers of both packages for every disagreement |
 
 ## C++ memory check
 

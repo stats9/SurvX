@@ -22,8 +22,9 @@ Description: Estimators, tests and regression models for time-to-event data with
     regression and direct cumulative incidence models. Shared gamma frailty models with a Breslow
     or parametric baseline. Selection of time-varying effects, and adjusted absolute risks by
     standardisation or inverse probability weighting. Also residuals, proportional hazards tests,
-    prediction, prediction performance (Brier score, time-dependent AUC, calibration) and
-    cross-validated model comparison. Every result names the publications it rests on, and the results were
+    prediction, prediction performance (Brier score and time-dependent AUC with standard errors,
+    calibration with the integrated calibration index, concordance indices with and without
+    competing risks, decision curves) and cross-validated model comparison with paired tests. Every result names the publications it rests on, and the results were
     checked against established reference implementations.
 License: GPL (>= 3)
 URL: https://github.com/stats9/SurvX

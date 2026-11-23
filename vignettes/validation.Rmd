@@ -56,7 +56,7 @@ Largest difference over all data sets of the full run (82 data sets, up to $n = 
 | `brier_score()`, `auc_t()` | `riskRegression::Score` | Brier score, AUC | $10^{-14}$ |
 
 The methods added after version 1.0.0 were checked by the short scripts `check_time_effects.R`,
-`check_interval.R` and `check_frailty.R` of the same directory (the full suite now includes them):
+`check_interval.R`, `check_frailty.R` and `check_assess.R` of the same directory (the full suite now includes them):
 
 | SurvX | Reference | Quantity | Largest difference |
 |---|---|---|---|
@@ -67,6 +67,20 @@ The methods added after version 1.0.0 were checked by the short scripts `check_t
 | `parsurv(Interval())` | `flexsurv` (Gompertz, generalized gamma, spline) | log-likelihood | optimiser tolerance |
 | `cox(... + frailty())` | `frailtyEM::emfrail` | frailty variance, likelihood ratio test | identical to the printed digits |
 | `parsurv(... + frailty())` | `parfm::parfm` (Weibull, Gompertz, exponential) | log-likelihood, frailty variance | $10^{-10}$ |
+
+The further measures of prediction performance are checked in `validation/R/07_assess.R` (part of
+the suite) and by the short script `check_assess.R`:
+
+| SurvX | Reference | Quantity | Largest difference (quick run) |
+|---|---|---|---|
+| `cindex()` (Harrell) | `survival::concordance(reverse = TRUE)` | C and its standard error | $10^{-17}$ |
+| `cindex(method = "uno")` | `survival::concordance(timewt = "n/G2", ymax)` | C | $10^{-16}$ |
+| `cindex(method = "uno")`, competing risks | `pec::cindex(cause = )` | C (Wolbers et al. 2014) | see the check script |
+| standard errors and paired differences of Brier score and AUC | `riskRegression::Score(conservative = TRUE)` | SE, difference, its SE and p-value | $10^{-13}$ |
+| `calibration()`: O/E | `survival::survfit` (Aalen-Johansen) | O/E | $10^{-15}$ |
+| `calibration()`: ICI, E50, E90 | `survival::coxph` (or `finegray`) with `splines::ns` | ICI, E50, E90 | $10^{-9}$ |
+| `decision_curve()` | `dcurves::dca`; `survival::survfit` | net benefit | $10^{-15}$ |
+| `anova()` | `survival::anova.coxph`; `survreg` and cause-specific `coxph` log-likelihoods | statistic, p-value | $10^{-11}$ |
 
 The penalized-likelihood frailty fit of `survival::coxph` maximises a different criterion and
 agrees closely but not exactly. For log-normal and log-logistic baselines `parfm` stopped below the

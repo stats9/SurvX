@@ -3,9 +3,11 @@
 \alias{print.SurvXConcordance}
 \title{Concordance index}
 \description{
-Harrell's concordance index C of a risk score, Uno's version with inverse probability of
-censoring weights, and, with competing risks, the version of Wolbers et al. (2009) for one
-cause, with the standard error of the infinitesimal jackknife.
+Harrell's concordance index C of a risk score and Uno's version with inverse probability of
+censoring weights; with competing risks, the C index of one cause of Wolbers et al. (2009) and its
+weighted version (Wolbers et al. 2014). One function adapts to both kinds of data: without
+competing events the competing-risks versions are exactly Harrell's and Uno's. Standard errors
+from the infinitesimal jackknife.
 
 \strong{Use it} to describe how well a score ranks subjects by the time to the event over the
 whole follow-up. \strong{Do not use it} to compare models that predict the risk by a fixed time
@@ -28,9 +30,11 @@ cindex(object, time = NULL, status = NULL, newdata = NULL, cause = 1L,
 \item{newdata}{for a fitted model: data on which to compute C (default: the data of the fit; must
   contain the outcome variables).}
 \item{cause}{cause of interest.}
-\item{method}{\code{"harrell"} (all comparable pairs have weight 1) or \code{"uno"} (a pair whose
-  first event is at \eqn{T_i} has weight \eqn{1/\hat G(T_i-)^2}, \eqn{\hat G} the Kaplan-Meier
-  estimate of the censoring distribution).}
+\item{method}{\code{"harrell"} (all comparable pairs have weight 1) or \code{"uno"} (inverse
+  probability of censoring weights, \eqn{\hat G} the Kaplan-Meier estimate of the censoring
+  distribution: \eqn{1/\hat G(T_i-)^2} for a pair whose control is still event-free at the case's
+  time \eqn{T_i}, and \eqn{1/\{\hat G(T_i-)\hat G(T_j-)\}} for a control that failed from a
+  competing cause at \eqn{T_j \le T_i}).}
 \item{tau}{only events at times \eqn{\le} \code{tau} define comparable pairs (Uno et al. 2011
   recommend a \code{tau} where follow-up is still adequate).}
 \item{times}{for a model without a linear predictor for the cause (Fine-Gray, cause-specific,
@@ -67,7 +71,7 @@ proportional; Uno's version removes that dependence up to \code{tau}.
 \section{Validation}{
 Harrell's C and its standard error equal \code{survival::concordance(..., reverse = TRUE)} and,
 with \code{method = "uno"}, \code{timewt = "n/G2"} with \code{ymax = tau} (validation suite,
-\code{validation/R/07_assess.R}); with competing risks the estimate is reported next to \code{pec::cindex}. The C++ code
+\code{validation/R/07_assess.R}); with competing risks Uno's version equals \code{pec::cindex}. The C++ code
 is tested against a direct computation over all pairs.
 }
 \value{
@@ -87,6 +91,9 @@ Uno H, Cai T, Pencina MJ, D'Agostino RB, Wei LJ (2011) On the C-statistics for e
 Wolbers M, Koller MT, Witteman JCM, Steyerberg EW (2009) Prognostic models with competing risks:
   methods and application to coronary risk prediction. Epidemiology 20:555-561.
 
+Wolbers M, Blanche P, Koller MT, Witteman JCM, Gerds TA (2014) Concordance for prognostic models
+  with competing risks. Biostatistics 15:526-539.
+
 Blanche P, Kattan MW, Gerds TA (2019) The c-index is not proper for the evaluation of t-year
   predicted risks. Biostatistics 20:347-357.
 
@@ -95,7 +102,7 @@ Therneau T, Atkinson E (2024) Concordance. Vignette of the survival package.
 All references: \code{sx_references("cindex")}.
 }
 \seealso{
-\code{\link{auc_t}}, \code{\link{compare_models}}.
+\code{\link{auc_t}}, \code{\link{compare_models}}, \code{vignette("prediction", "SurvX")}.
 }
 \examples{
 set.seed(3)
